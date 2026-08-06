@@ -2,12 +2,12 @@
 
 > 一个 Windows 万能文件格式转换工具 · 完全离线可用 · 内置 FFmpeg / LibreOffice / Poppler / Tesseract
 
-![GitHub release](https://img.shields.io/github/v/release/LI-2004-feng/flyingmouse-format?color=brightgreen&label=Release)
+![GitHub release](https://img.shields.io/github/v/release/LaoFeng-mouse/flyingmouse-format?color=brightgreen&label=Release)
 ![Electron](https://img.shields.io/badge/Electron-43-47848F)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6)
 ![License](https://img.shields.io/badge/License-Proprietary-lightgrey)
 
-[⬇️ 下载安装包](https://github.com/LI-2004-feng/flyingmouse-format/releases/latest) · [查看 Release](https://github.com/LI-2004-feng/flyingmouse-format/releases) · [功能清单](#-支持格式) · [快速开始](#-快速开始)
+[⬇️ 下载安装包](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [查看 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases) · [功能清单](#-支持格式) · [快速开始](#-快速开始)
 
 ---
 
@@ -48,7 +48,7 @@
 
 **方式一：下载安装包（推荐）**
 
-1. 打开 [Release 页面](https://github.com/LI-2004-feng/flyingmouse-format/releases/latest)
+1. 打开 [Release 页面](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest)
 2. 下载 `FlyingMouse Format-Setup-0.1.0-x64.exe`
 3. 双击安装，桌面上会出现"FlyingMouse Format"快捷方式
 4. 把文件拖进窗口，选择目标格式，点击转换
@@ -118,5 +118,5 @@ FFmpeg（含 GPL 组件）、LibreOffice（MPL/LGPL）、Poppler（GPL-2.0）、
 
 ## 📬 反馈
 
-问题或建议请到 [Issues](https://github.com/LI-2004-feng/flyingmouse-format/issues) 提交。
+问题或建议请到 [Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues) 提交。
 觉得好用的话，点个 ⭐ Star 支持一下！
