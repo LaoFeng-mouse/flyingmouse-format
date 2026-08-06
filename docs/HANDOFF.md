@@ -18,12 +18,12 @@
 
 | 产物 | 路径 | SHA-256 |
 |---|---|---|
-| 免安装程序 | `dist\win-unpacked\飞鼠格式.exe` | `1ED71159D138684C84D9C4BE77BF380D5183012A0C41588B721BE81CE685A590` |
-| NSIS 安装包 | `dist\飞鼠格式安装包-0.1.0-x64.exe` | `0CC6F72D52636E184E1F073CCF1CB3C6FBCFA557879698AD5541AE216F52A272` |
+| 免安装程序 | `dist\win-unpacked\FlyingMouse Format.exe` | `163FB2FA009BCEC9ADECE853FE55E2189E6B4BD49A7F9C672CF5DE9AA59C64A4` |
+| NSIS 安装包 | `dist\FlyingMouse Format-Setup-0.1.0-x64.exe` | `7765A6950B572887D919207D9F2B95D99A23F27F27C32AF5734B42877ED32834` |
 
-2026-08-06 第二次重新打包（依赖安全迁移后）：新哈希已更新；重新打包会改变哈希，发布前必须重新计算并更新交付记录。
+2026-08-06 第三次重新打包（产品更名为 FlyingMouse Format 后）：新哈希已更新，且与 GitHub Release v0.1.0 资产 digest（sha256:7765a695...）一致。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
 
-桌面快捷方式 `C:\Users\34615\Desktop\飞鼠格式.lnk` 仍指向 `dist\win-unpacked\飞鼠格式.exe`，本轮没有重写快捷方式。
+桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 重建，旧"飞鼠格式.lnk"因产品改名失效已替换）。
 
 ## 验证入口
 
@@ -44,12 +44,14 @@ npm audit --omit=dev
 
 1. EXE 和安装包均为 `NotSigned`。正式对外分发前需要真实 Windows 代码签名证书。
 2. ~~`npm audit --omit=dev` 报告漏洞~~ 已于 2026-08-06 归零（pdfjs-dist 6.x、sharp 0.35.3、exceljs 替换 xlsx、uuid 11.1.1 overrides）。今后依赖变更后需重新跑 audit 确认。
-3. PDF.js 在测试中仍提示缺少可选 `canvas` polyfill；现有 PDF/OCR 测试通过，但迁移 PDF.js 时应一并重新评估。
+3. ~~PDF.js 缺少 canvas polyfill 警告~~ 已于 2026-08-06 迁移 pdfjs-dist 6.x 后消失（改用 @napi-rs/canvas，测试无警告）。
 4. electron-builder 当前使用默认 Electron 程序图标；产品正式发布前应提供 `.ico` 并做桌面、任务栏和安装器视觉验证。
 5. ~~目录当前不是 Git 仓库~~ 已于 2026-08-06 初始化并完成首次提交；`bin/` 引擎目录不入库，重装系统或换机前需单独备份 `bin/`。
+6. 仓库已公开：https://github.com/LaoFeng-mouse/flyingmouse-format（GitHub 用户名已从 LI-2004-feng 改为 LaoFeng-mouse，提交作者统一为 LaoFeng；README 门面 + 10 个 topics + Release v0.1.0 均已就位）。当前 0 star，无 CI，搜索排名靠后属预期。
 
 ## 后续优先级
 
 1. 配置正式应用图标（.ico）和代码签名证书，在干净 Windows 环境验证 SmartScreen、安装、卸载与快捷方式。
 2. 完成签名构建后重新计算哈希，并更新本文件的交付产物表。
 3. 依赖安全已归零；后续每次依赖变更后跑 `npm audit --omit=dev` 确认不回升。
+4. 可选：定 License（如 MIT）并补 LICENSE 文件，让项目成为合规开源项目；配置 GitHub Actions 自动测试/打包 CI。

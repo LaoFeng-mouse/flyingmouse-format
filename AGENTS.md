@@ -11,7 +11,7 @@
 - `electron-main.js`: starts the local server, opens the window, handles save dialogs and batch save-to-folder.
 - `electron-security.js`: pure URL/origin policy used by navigation, external-link, IPC, and download guards.
 - `preload.js`: exposes safe IPC methods as `window.flyingMouseFormat`.
-- `dist/`, `runtime/`, `test-results/`, and `node_modules/` are generated or local-only.
+- `dist/`, `runtime/`, `test-results/`, `output/`, `.playwright-cli/`, and `node_modules/` are generated or local-only. `bin/` (bundled conversion engines) is also git-ignored and must be backed up separately.
 
 ## Rules
 
@@ -64,4 +64,11 @@ For functional checks, test:
 - Before public distribution, run `npm audit --omit=dev`; unresolved production advisories must be reported rather than hidden with a forced upgrade.
 - Audio files (e.g. MP3) must NOT offer video container targets (mp4/webm/mkv/mov); the `targetsForExt` audio branch filters them.
 
-Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 20/20 there.
+Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 25/25 there.
+
+## Repository
+
+- Remote: `https://github.com/LaoFeng-mouse/flyingmouse-format.git` (public)
+- Author identity: `LaoFeng <LaoFeng-mouse@users.noreply.github.com>` (repo-local git config; do not commit as Codex)
+- Release: v0.1.0 published; installer asset `FlyingMouse.Format-Setup-0.1.0-x64.exe` (SHA-256 7765A695...) matches local `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`.
+- Desktop shortcut: `C:\Users\34615\Desktop\FlyingMouse Format.lnk` → `dist\win-unpacked\FlyingMouse Format.exe`.
