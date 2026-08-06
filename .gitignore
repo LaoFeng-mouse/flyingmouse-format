@@ -1,0 +1,7 @@
+node_modules/
+runtime/
+dist/
+test-results/
+output/
+.playwright-cli/
+bin/
