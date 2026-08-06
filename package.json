@@ -1,0 +1,89 @@
+{
+  "name": "feishu-format",
+  "version": "0.1.0",
+  "private": true,
+  "author": "飞鼠格式",
+  "productName": "飞鼠格式",
+  "description": "Windows desktop file format converter.",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "electron .",
+    "dist": "electron-builder --win nsis",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "express": "^4.19.2",
+    "mime-types": "^2.1.35",
+    "multer": "^2.0.2",
+    "pdfjs-dist": "^3.11.174",
+    "sanitize-filename": "^1.6.3",
+    "sharp": "^0.33.5",
+    "tesseract.js": "^7.0.0",
+    "xlsx": "^0.18.5",
+    "yazl": "^3.3.1"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.feishu.format",
+    "productName": "飞鼠格式",
+    "artifactName": "${productName}安装包-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-main.js",
+      "electron-security.js",
+      "preload.js",
+      "server.js",
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/ffmpeg/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+        "from": "bin/libreoffice",
+        "to": "libreoffice"
+      },
+      {
+        "from": "bin/poppler",
+        "to": "poppler"
+      },
+      {
+        "from": "bin/tessdata",
+        "to": "tessdata"
+      },
+      {
+        "from": "node_modules/tesseract.js-core",
+        "to": "tesseract.js-core"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*",
+      "node_modules/tesseract.js/**/*",
+      "node_modules/tesseract.js-core/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "飞鼠格式"
+    }
+  }
+}

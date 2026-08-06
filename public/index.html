@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>飞鼠格式</title>
+    <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace" aria-label="文件转换工作台">
+        <div class="topbar">
+          <div class="brand-lockup">
+            <img class="brand-mouse" src="/assets/mouse-format/mouse-idle.png" alt="" aria-hidden="true">
+            <div>
+              <p class="eyebrow">飞鼠格式</p>
+              <h1>鼠鼠帮你把文件转成需要的格式</h1>
+            </div>
+          </div>
+          <div class="health" id="toolHealth">正在检测转换引擎</div>
+        </div>
+
+        <nav class="workflow-steps" id="workflowSteps" aria-label="转换流程">
+          <span class="workflow-step active" data-step="select">选择文件</span>
+          <span class="workflow-step" data-step="analyze">识别格式</span>
+          <span class="workflow-step" data-step="convert">开始转换</span>
+          <span class="workflow-step" data-step="save">保存结果</span>
+        </nav>
+
+        <div class="converter-grid">
+          <section class="drop-panel" aria-label="上传文件">
+            <input id="fileInput" type="file" class="sr-only" multiple>
+            <button class="drop-zone" id="dropZone" type="button">
+              <span class="mouse-stage" aria-hidden="true">
+                <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
+              </span>
+              <span class="drop-main">把文件丢给鼠鼠</span>
+              <span class="drop-sub" id="dropHint">图片、文档、PDF、WPS、音视频都可以试</span>
+            </button>
+
+            <div class="file-strip" id="fileStrip" hidden>
+              <div>
+                <p class="file-name" id="fileName"></p>
+                <p class="file-meta" id="fileMeta"></p>
+              </div>
+              <button class="ghost-button" id="clearButton" type="button">清空</button>
+            </div>
+
+            <div class="batch-list" id="batchList" hidden></div>
+          </section>
+
+          <aside class="controls" aria-label="转换设置">
+            <label class="field">
+              <span>目标格式</span>
+              <select id="targetSelect" disabled>
+                <option value="">先选择文件</option>
+              </select>
+            </label>
+
+            <button class="primary-button" id="convertButton" type="button" disabled>
+              开始转换
+            </button>
+
+            <div class="progress-panel" id="progressPanel" hidden>
+              <div class="progress-header">
+                <span id="progressLabel">转换进度</span>
+                <span id="progressPercent">0%</span>
+              </div>
+              <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="转换进度">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+            </div>
+
+            <div class="status-box" id="statusBox" role="status">
+              选择文件后会显示可用的转换格式。
+            </div>
+
+            <a class="download-button" id="downloadButton" hidden>下载转换后的文件</a>
+            <button class="download-button" id="batchSaveButton" type="button" hidden>保存全部</button>
+          </aside>
+        </div>
+
+        <section class="matrix" aria-label="支持格式">
+          <div class="matrix-header">
+            <h2>当前支持</h2>
+            <p>文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。</p>
+          </div>
+          <div class="format-table" id="formatTable"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
