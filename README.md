@@ -13,7 +13,8 @@
 
 ## 🖼️ 界面预览
 
-![FlyingMouse Format 主界面](public/assets/screenshots/home.png)
+![Uploading 9963867e92fae323144e9670b7c0501d.png…]()
+
 
 ---
 
