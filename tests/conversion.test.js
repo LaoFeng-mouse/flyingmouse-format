@@ -282,6 +282,30 @@ test("keeps existing TXT to HTML conversion working without changing the source"
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+test("PDF table extraction to XLSX keeps rows and cells", async () => {
+  const sourcePath = path.join(scratchRoot, "表格.pdf");
+  await createTextPdf(sourcePath);
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "表格.pdf", "xlsx", "application/pdf");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "表格.xlsx");
+  const outputPath = await downloadResult(body, "表格.xlsx");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+
+  const ExcelJS = require("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(outputPath);
+  const sheet = workbook.worksheets[0];
+  assert.ok(sheet, "xlsx 至少有一个工作表");
+  const rows = [];
+  sheet.eachRow((row) => rows.push(row.values.slice(1)));
+  const joined = rows.map((row) => row.join(" ")).join("\n");
+  assert.match(joined, /Quote/);
+  assert.match(joined, /Apple/);
+});
+
 test("audio files must not offer video container targets", async () => {
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",

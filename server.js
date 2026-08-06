@@ -11,7 +11,7 @@ const mime = require("mime-types");
 const multer = require("multer");
 const sanitize = require("sanitize-filename");
 const sharp = require("sharp");
-const XLSX = require("xlsx");
+const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 
 const ROOT = __dirname;
@@ -129,7 +129,6 @@ const allTargets = new Set([
   "zip"
 ]);
 const downloads = new Map();
-let cachedPdfjs = null;
 let cachedTesseract = null;
 
 const upload = multer({
@@ -287,11 +286,13 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+let cachedPdfjsPromise = null;
+
 function loadPdfjs() {
-  if (!cachedPdfjs) {
-    cachedPdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+  if (!cachedPdfjsPromise) {
+    cachedPdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
   }
-  return cachedPdfjs;
+  return cachedPdfjsPromise;
 }
 
 function asarUnpackedPath(filePath) {
@@ -786,7 +787,7 @@ function groupPdfItemsIntoRows(items) {
 }
 
 async function extractPdfRowsByPage(inputPath) {
-  const pdfjsLib = loadPdfjs();
+  const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
   const loadingTask = pdfjsLib.getDocument({
     data,
@@ -805,7 +806,7 @@ async function extractPdfRowsByPage(inputPath) {
     });
   }
 
-  await pdf.destroy();
+  await loadingTask.destroy();
   return pages;
 }
 
@@ -821,7 +822,7 @@ function applyColumnWidths(sheet, rows) {
       widths[index] = Math.max(widths[index] || 8, Math.min(length + 2, 48));
     });
   }
-  sheet["!cols"] = widths.map((wch) => ({ wch }));
+  sheet.columns = widths.map((wch) => ({ width: wch }));
 }
 
 async function convertPdf(inputPath, outputPath, target) {
@@ -842,14 +843,14 @@ async function convertPdf(inputPath, outputPath, target) {
   }
 
   if (target === "xlsx") {
-    const workbook = XLSX.utils.book_new();
+    const workbook = new ExcelJS.Workbook();
     for (const page of pages) {
       const rows = page.rows.length ? page.rows : [[""]];
-      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      const sheet = workbook.addWorksheet(sheetName(page.name));
+      sheet.addRows(rows);
       applyColumnWidths(sheet, rows);
-      XLSX.utils.book_append_sheet(workbook, sheet, sheetName(page.name));
     }
-    XLSX.writeFile(workbook, outputPath);
+    await workbook.xlsx.writeFile(outputPath);
     return;
   }
 
