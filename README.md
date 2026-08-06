@@ -12,8 +12,9 @@
 ---
 
 ## 🖼️ 界面预览
+<img width="1751" height="1220" alt="9963867e92fae323144e9670b7c0501d" src="https://github.com/user-attachments/assets/27bab2ab-3055-48a3-a37c-6d7fce2f6661" />
 
-![Uploading 9963867e92fae323144e9670b7c0501d.png…]()
+
 
 
 ---
