@@ -1,34 +1,59 @@
-# FlyingMouse Format
+# FlyingMouse Format 飞鼠格式
 
-FlyingMouse Format（飞鼠格式）是一个 Windows 桌面文件格式转换工具。界面支持拖拽或选择文件、自动识别可用目标格式、单文件转换、批量转换、进度条、失败原因展示，以及转换后选择保存位置。
+> 一个 Windows 万能文件格式转换工具 · 完全离线可用 · 内置 FFmpeg / LibreOffice / Poppler / Tesseract
 
-## 当前能力
+![GitHub release](https://img.shields.io/github/v/release/LI-2004-feng/flyingmouse-format?color=brightgreen&label=Release)
+![Electron](https://img.shields.io/badge/Electron-43-47848F)
+![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6)
+![License](https://img.shields.io/badge/License-Proprietary-lightgrey)
 
-- 图片：`jpg / png / webp / avif / tiff`，并支持转 `pdf / txt`（TXT 为 OCR 识别结果）
-- 文本：`txt / md / html / json / csv`
-- Word/WPS 文档：`doc / docx / odt / rtf / wps / wpt / wpd` 转 `pdf / docx / odt / rtf / txt / html`
-- Excel/WPS 表格：`xls / xlsx / xlsm / ods / csv / tsv / et / ett` 转 `pdf / xlsx / ods / csv / html`
-- PPT/WPS 演示：`ppt / pptx / odp / dps / dpt` 转 `pdf / pptx / odp / html`
-- PDF：文字型 PDF 转 `xlsx / txt / html`；扫描版/图片型 PDF 可 OCR 转 `txt`；PDF 页面可导出为 `png / jpg` 压缩包
-- 音频：`mp3 / wav / flac / m4a / aac / ogg / opus / wma`
-- 视频：`mp4 / mov / mkv / webm / avi / m4v / wmv / flv`
-- 任意文件：封装为 `zip`
+[⬇️ 下载安装包](https://github.com/LI-2004-feng/flyingmouse-format/releases/latest) · [查看 Release](https://github.com/LI-2004-feng/flyingmouse-format/releases) · [功能清单](#-支持格式) · [快速开始](#-快速开始)
 
-Office/WPS 转换依赖安装包内置的 LibreOffice Portable。音视频转换依赖安装包内置的 FFmpeg。PDF 页面导出图片依赖安装包内置的 Poppler。OCR 转 TXT 依赖安装包内置的 Tesseract.js 语言数据。PDF 转 Excel 适合文字型 PDF；扫描版图片 PDF 还原成 Excel 表格仍需要后续版面分析能力。
+---
 
-## 批量转换
+## 🖼️ 界面预览
 
-一次可以选择多个文件。前端会读取每个文件可用的目标格式，并只展示这些文件共同支持的目标格式。开始转换后，队列会逐个处理文件，并在每个文件旁边显示等待、转换中、完成或失败原因。
+![FlyingMouse Format 主界面](public/assets/screenshots/home.png)
 
-转换成功的文件名保持为：
+---
 
-```text
-原文件名.目标格式
-```
+## ✨ 特色
 
-桌面版支持单个文件选择保存位置，也支持“保存全部”到用户选择的文件夹；同名文件会自动追加序号，避免覆盖。
+- 🧩 **万能转换**：图片 / 文档 / 表格 / 演示 / PDF / 音视频 / WPS 格式互转，任意文件还能打包成 ZIP
+- 📦 **完全离线**：FFmpeg、LibreOffice、Poppler、Tesseract 全部内置，断网也能用
+- 🐭 **批量转换**：一次拖入多个文件，队列逐个处理，实时进度条 + 失败原因
+- 📄 **PDF 处理**：文字型 PDF 转 Excel/文本/网页，扫描版 PDF 可 OCR 转文本，页面可导出 PNG/JPG 压缩包
+- 🖱️ **拖拽即用**：把文件丢给鼠鼠，自动识别可用目标格式
+- 🔒 **安全可靠**：沙箱隔离 + 严格 CSP，本地服务仅监听 127.0.0.1，转换后由你选择保存位置
 
-## 运行
+---
+
+## 📋 支持格式
+
+| 类别 | 输入格式 | 可转换为 |
+|---|---|---|
+| 🖼️ 图片 | jpg png webp avif tiff gif bmp heic | png jpg webp avif tiff pdf txt(OCR) |
+| 📝 文本 | txt md html json csv log xml yaml | txt md html json csv |
+| 📄 Word/WPS | doc docx odt rtf wps wpt wpd | pdf docx odt rtf txt html |
+| 📊 Excel/WPS | xls xlsx xlsm ods csv tsv et ett | pdf xlsx ods csv html |
+| 📽️ PPT/WPS | ppt pptx odp dps dpt | pdf pptx odp html |
+| 📑 PDF | pdf | xlsx(表格提取) txt html png jpg(页面) |
+| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma | mp3 wav flac m4a ogg |
+| 🎬 视频 | mp4 mov mkv webm avi m4v wmv flv | mp4 webm mkv mov mp3 wav flac m4a ogg |
+| 📦 任意文件 | * | zip |
+
+---
+
+## 🚀 快速开始
+
+**方式一：下载安装包（推荐）**
+
+1. 打开 [Release 页面](https://github.com/LI-2004-feng/flyingmouse-format/releases/latest)
+2. 下载 `FlyingMouse Format-Setup-0.1.0-x64.exe`
+3. 双击安装，桌面上会出现"FlyingMouse Format"快捷方式
+4. 把文件拖进窗口，选择目标格式，点击转换
+
+**方式二：从源码运行（开发者）**
 
 ```powershell
 npm install
@@ -37,68 +62,61 @@ npm run desktop
 
 桌面版会自动启动本地转换服务并打开软件窗口。
 
-## 名称
+> ⚠️ 安装包当前为未签名构建（NotSigned），首次运行 Windows SmartScreen 可能提示，
+> 选择"更多信息 → 仍要运行"即可。正式代码签名证书将在后续版本提供。
 
-- 产品名：FlyingMouse Format（飞鼠格式）
-- 安装包：`FlyingMouse Format-Setup-0.1.0-x64.exe`
+---
 
-## 安全边界
+## 🔒 安全设计
 
-- Electron 使用 `contextIsolation`、关闭 `nodeIntegration` 并启用 renderer sandbox。
-- 窗口导航和 IPC 只信任本次启动的 `127.0.0.1` 随机端口。
-- 保存接口只接受同源 `/downloads/<id>` 地址；外部打开只允许无账号信息的 HTTPS URL。
-- 本地服务发送严格 CSP，动态文件名和错误信息使用 DOM API 与 `textContent` 渲染。
+- Electron `contextIsolation` + `sandbox` + 关闭 `nodeIntegration`
+- 渲染器导航与 IPC 只信任本次启动的 `127.0.0.1` 随机端口
+- 下载接口只接受同源 `/downloads/<id>` 地址；外部打开仅允许无凭据 HTTPS
+- 本地服务发送严格 CSP；动态文件名与错误信息使用 `textContent` 渲染，无 XSS 注入面
+- 生产依赖 `npm audit` 0 漏洞
 
-## 打包安装包
+---
 
-```powershell
-$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'
-$env:ELECTRON_BUILDER_BINARIES_MIRROR='https://npmmirror.com/mirrors/electron-builder-binaries/'
-$env:npm_config_registry='https://registry.npmmirror.com'
-$env:CSC_IDENTITY_AUTO_DISCOVERY='false'
-npm run dist
+## 🛠️ 技术栈
+
+| 组件 | 用途 |
+|---|---|
+| Electron 43 | 桌面壳 + 窗口 + 系统保存对话框 |
+| Express | 本地转换服务 |
+| FFmpeg | 音视频转码 |
+| LibreOffice Portable | Office/WPS 文档转换 |
+| Poppler | PDF 页面渲染 |
+| Tesseract.js | 图片/扫描 PDF OCR 识别 |
+| pdfjs-dist 6 | PDF 文本与表格提取 |
+| sharp | 图片处理 |
+| exceljs | XLSX 生成 |
+
+---
+
+## 📁 项目结构
+
+```
+├─ electron-main.js       # Electron 主进程（窗口、保存 IPC）
+├─ electron-security.js   # URL/导航/下载安全策略
+├─ preload.js             # 安全桥接 window.flyingMouseFormat
+├─ server.js              # Express 转换服务（格式识别、转换分发）
+├─ public/                # 前端界面
+├─ bin/                   # 内置转换引擎（不入库，需单独备份）
+├─ tests/                 # 自动化测试（25 个用例）
+└─ docs/HANDOFF.md        # 交接与交付说明
 ```
 
-安装包输出到：
+---
 
-```text
-dist\FlyingMouse Format-Setup-0.1.0-x64.exe
-```
+## 📜 版权与许可证
 
-### 代码签名
+软件代码版权归作者所有。内置开源组件分别遵循其各自许可证：
+FFmpeg（含 GPL 组件）、LibreOffice（MPL/LGPL）、Poppler（GPL-2.0）、Tesseract（Apache-2.0）。
+分发二进制时请遵守对应开源许可证的声明与源码提供义务。
 
-当前本地构建明确保持 `signAndEditExecutable: false`，生成的是未签名测试构建。正式对外分发时，应在安全 CI 或临时构建环境中注入 Windows 代码签名证书及密码；禁止把 `.pfx`、证书密码、访问令牌或其他密钥写入仓库、脚本或文档。未提供正式证书前，不得把产物描述为“已签名”或“已验证发布者”。
+---
 
-## 关键路径
+## 📬 反馈
 
-- `server.js`：Express 转换服务、格式识别、文件名修正、下载路由
-- `public/app.js`：前端交互、批量转换队列、进度条和保存按钮
-- `public/assets/mouse-format/`：FlyingMouse Format 鼠鼠角色动作资产。动作资产必须保持完整鼠鼠头身形象，不能使用圆裁头像贴身体。
-- `scripts/build-mouse-format-assets.js`：从本机 `D:\鼠鼠打印\assets\mouse_avatar.png` 生成飞鼠格式专属鼠鼠动作 PNG。
-- `electron-main.js`：Electron 窗口、本地服务启动、保存文件/保存全部 IPC
-- `electron-security.js`：导航、外链、IPC 来源和下载 URL 的纯函数安全策略
-- `preload.js`：暴露桌面保存能力给前端
-- `bin/ffmpeg/ffmpeg.exe`：内置 FFmpeg
-- `bin/libreoffice/`：内置 LibreOffice Portable
-- `bin/poppler/`：内置 Poppler，用于 PDF 页面导出图片
-- `bin/tessdata/`：内置 OCR 中英文语言数据，用于图片/PDF 转 TXT
-
-## 验证建议
-
-- `node --check server.js`
-- `node --check public\app.js`
-- `node --check electron-main.js`
-- `node --check electron-security.js`
-- `node --check preload.js`
-- `npm test`
-- `npm audit --omit=dev`（正式分发前必须审阅；不要直接使用破坏性 `--force`）
-- `node scripts\build-mouse-format-assets.js`
-- `node --test tests\mouse-assets.test.js tests\ui-static.test.js`
-- 打开桌面端或本地服务截图检查鼠鼠头身是否仍是同一个角色，不能出现圆头像贴矢量身体
-- 用中文文件名测试音频转换，确认输出名仍是 `原文件名.目标格式`
-- 用两个文本文件批量转 HTML，确认队列状态、保存全部和输出文件名正常
-- 用文字型 PDF 转 XLSX，检查表格列没有明显错位
-- 用 PNG 转 PDF、两张图片合并 PDF、PDF 转 PNG/JPG 压缩包，检查源文件未被修改
-- 用带文字的图片转 TXT、图片型 PDF 转 TXT，检查源文件未被修改
-
-当前可交接状态、产物哈希和未解决风险见 [`docs/HANDOFF.md`](docs/HANDOFF.md)。
+问题或建议请到 [Issues](https://github.com/LI-2004-feng/flyingmouse-format/issues) 提交。
+觉得好用的话，点个 ⭐ Star 支持一下！
