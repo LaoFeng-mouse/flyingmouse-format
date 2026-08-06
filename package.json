@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "electron": "^43.1.0",
-    "electron-builder": "^25.1.8"
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.flyingmouse.format",
@@ -78,7 +78,20 @@
     ],
     "win": {
       "signAndEditExecutable": false,
-      "target": "nsis"
+      "signExecutable": false,
+      "target": ["nsis", "appx"],
+      "signtoolOptions": {
+        "certificateSha1": "0EEEFD57DA202C56D95A63437C385F6FFB772527",
+        "signingHashAlgorithms": ["sha256"]
+      }
+    },
+    "appx": {
+      "applicationId": "FlyingMouseFormat",
+      "identityName": "488B6338.354574AC174AD",
+      "publisher": "CN=56D7A4A1-B653-4162-A5E2-7D9B3F3754AD",
+      "publisherDisplayName": "牢蜂喜欢开飞机",
+      "displayName": "FlyingMouse Format",
+      "languages": ["zh-CN", "en-US"]
     },
     "nsis": {
       "oneClick": false,
