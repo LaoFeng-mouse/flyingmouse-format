@@ -1,6 +1,6 @@
-# 飞鼠格式
+# FlyingMouse Format
 
-飞鼠格式是一个 Windows 桌面文件格式转换工具。界面支持拖拽或选择文件、自动识别可用目标格式、单文件转换、批量转换、进度条、失败原因展示，以及转换后选择保存位置。
+FlyingMouse Format（飞鼠格式）是一个 Windows 桌面文件格式转换工具。界面支持拖拽或选择文件、自动识别可用目标格式、单文件转换、批量转换、进度条、失败原因展示，以及转换后选择保存位置。
 
 ## 当前能力
 
@@ -37,6 +37,11 @@ npm run desktop
 
 桌面版会自动启动本地转换服务并打开软件窗口。
 
+## 名称
+
+- 产品名：FlyingMouse Format（飞鼠格式）
+- 安装包：`FlyingMouse Format-Setup-0.1.0-x64.exe`
+
 ## 安全边界
 
 - Electron 使用 `contextIsolation`、关闭 `nodeIntegration` 并启用 renderer sandbox。
@@ -57,7 +62,7 @@ npm run dist
 安装包输出到：
 
 ```text
-dist\飞鼠格式安装包-0.1.0-x64.exe
+dist\FlyingMouse Format-Setup-0.1.0-x64.exe
 ```
 
 ### 代码签名
@@ -68,7 +73,7 @@ dist\飞鼠格式安装包-0.1.0-x64.exe
 
 - `server.js`：Express 转换服务、格式识别、文件名修正、下载路由
 - `public/app.js`：前端交互、批量转换队列、进度条和保存按钮
-- `public/assets/mouse-format/`：飞鼠格式鼠鼠角色动作资产。动作资产必须保持完整鼠鼠头身形象，不能使用圆裁头像贴身体。
+- `public/assets/mouse-format/`：FlyingMouse Format 鼠鼠角色动作资产。动作资产必须保持完整鼠鼠头身形象，不能使用圆裁头像贴身体。
 - `scripts/build-mouse-format-assets.js`：从本机 `D:\鼠鼠打印\assets\mouse_avatar.png` 生成飞鼠格式专属鼠鼠动作 PNG。
 - `electron-main.js`：Electron 窗口、本地服务启动、保存文件/保存全部 IPC
 - `electron-security.js`：导航、外链、IPC 来源和下载 URL 的纯函数安全策略

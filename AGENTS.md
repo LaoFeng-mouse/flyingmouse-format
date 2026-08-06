@@ -2,7 +2,7 @@
 
 ## Project
 
-飞鼠格式 is a Windows Electron desktop app for file format conversion. Keep the app usable offline: FFmpeg, LibreOffice, and Poppler are bundled under `bin/` and copied into Electron `extraResources`.
+飞鼠格式 (FlyingMouse Format) is a Windows Electron desktop app for file format conversion. Keep the app usable offline: FFmpeg, LibreOffice, and Poppler are bundled under `bin/` and copied into Electron `extraResources`.
 
 ## Structure
 
@@ -10,7 +10,7 @@
 - `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display.
 - `electron-main.js`: starts the local server, opens the window, handles save dialogs and batch save-to-folder.
 - `electron-security.js`: pure URL/origin policy used by navigation, external-link, IPC, and download guards.
-- `preload.js`: exposes safe IPC methods as `window.feishuFormat`.
+- `preload.js`: exposes safe IPC methods as `window.flyingMouseFormat`.
 - `dist/`, `runtime/`, `test-results/`, and `node_modules/` are generated or local-only.
 
 ## Rules
@@ -40,7 +40,7 @@ $env:CSC_IDENTITY_AUTO_DISCOVERY='false'
 npm run dist
 ```
 
-The installer is `dist\飞鼠格式安装包-0.1.0-x64.exe`.
+The installer is `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`.
 
 ## Verification
 
@@ -59,7 +59,7 @@ For functional checks, test:
 
 - Chinese-named OGG to MP3 keeps the original Chinese basename.
 - Two TXT files batch-convert to HTML and show two successful queue rows.
-- Packaged `dist\win-unpacked\飞鼠格式.exe` can perform the same conversion after `npm run dist`.
+- Packaged `dist\win-unpacked\FlyingMouse Format.exe` can perform the same conversion after `npm run dist`.
 - Packaged startup reaches `Window finished loading`, and the browser console is free of application errors or warnings.
 - Before public distribution, run `npm audit --omit=dev`; unresolved production advisories must be reported rather than hidden with a forced upgrade.
 - Audio files (e.g. MP3) must NOT offer video container targets (mp4/webm/mkv/mov); the `targetsForExt` audio branch filters them.

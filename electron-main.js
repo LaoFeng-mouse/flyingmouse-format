@@ -41,7 +41,7 @@ function createWindow(url) {
     height: 820,
     minWidth: 900,
     minHeight: 640,
-    title: "飞鼠格式",
+    title: "FlyingMouse Format",
     backgroundColor: "#f6f3ee",
     autoHideMenuBar: true,
     webPreferences: {
@@ -68,18 +68,18 @@ function createWindow(url) {
 
 async function boot() {
   log("Boot started");
-  process.env.FEISHU_RUNTIME_DIR = path.join(os.tmpdir(), "feishu-format-runtime");
-  process.env.FEISHU_FFMPEG_PATH = bundledFfmpegPath();
-  process.env.FEISHU_LIBREOFFICE_PATH = bundledLibreOfficePath();
-  log(`Runtime dir: ${process.env.FEISHU_RUNTIME_DIR}`);
-  log(`FFmpeg path: ${process.env.FEISHU_FFMPEG_PATH}`);
-  log(`LibreOffice path: ${process.env.FEISHU_LIBREOFFICE_PATH}`);
+  process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
+  process.env.FLYINGMOUSE_FFMPEG_PATH = bundledFfmpegPath();
+  process.env.FLYINGMOUSE_LIBREOFFICE_PATH = bundledLibreOfficePath();
+  log(`Runtime dir: ${process.env.FLYINGMOUSE_RUNTIME_DIR}`);
+  log(`FFmpeg path: ${process.env.FLYINGMOUSE_FFMPEG_PATH}`);
+  log(`LibreOffice path: ${process.env.FLYINGMOUSE_LIBREOFFICE_PATH}`);
   const { startServer } = require("./server");
 
   const started = await startServer(0);
   server = started.server;
   serverUrl = started.url;
-  console.log(`Feishu Format started at ${started.url}`);
+  console.log(`FlyingMouse Format started at ${started.url}`);
   log(`Server started at ${started.url}`);
   createWindow(started.url);
 }
@@ -194,7 +194,7 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
 });
 
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.feishu.format");
+  app.setAppUserModelId("com.flyingmouse.format");
 }
 
 process.on("uncaughtException", (error) => log("Uncaught exception", error));

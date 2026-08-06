@@ -7,9 +7,9 @@ const os = require("os");
 const path = require("path");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
-const serverModule = process.env.FEISHU_FORMAT_BASE_URL ? null : require("../server");
+const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 
-const scratchRoot = path.join(os.tmpdir(), `feishu-format-tests-${process.pid}`);
+const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
 let server;
 let baseUrl;
 
@@ -139,8 +139,8 @@ function assertZipWithEntry(filePath, expectedFragment) {
 before(async () => {
   await fsp.rm(scratchRoot, { recursive: true, force: true });
   await fsp.mkdir(scratchRoot, { recursive: true });
-  if (process.env.FEISHU_FORMAT_BASE_URL) {
-    baseUrl = process.env.FEISHU_FORMAT_BASE_URL.replace(/\/$/, "");
+  if (process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
+    baseUrl = process.env.FLYINGMOUSE_FORMAT_BASE_URL.replace(/\/$/, "");
   } else {
     const started = await serverModule.startServer(0);
     server = started.server;

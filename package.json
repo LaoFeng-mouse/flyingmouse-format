@@ -1,10 +1,10 @@
 {
-  "name": "feishu-format",
+  "name": "flyingmouse-format",
   "version": "0.1.0",
   "private": true,
-  "author": "飞鼠格式",
-  "productName": "飞鼠格式",
-  "description": "Windows desktop file format converter.",
+  "author": "LaoFeng",
+  "productName": "FlyingMouse Format",
+  "description": "Windows desktop universal file format converter (offline, bundled FFmpeg/LibreOffice/Poppler/Tesseract).",
   "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
@@ -33,9 +33,9 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.feishu.format",
-    "productName": "飞鼠格式",
-    "artifactName": "${productName}安装包-${version}-${arch}.${ext}",
+    "appId": "com.flyingmouse.format",
+    "productName": "FlyingMouse Format",
+    "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -86,7 +86,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "飞鼠格式"
+      "shortcutName": "FlyingMouse Format"
     }
   }
 }

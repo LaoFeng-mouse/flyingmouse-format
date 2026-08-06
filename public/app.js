@@ -532,9 +532,9 @@ async function convertCurrentFiles() {
 async function saveResult(result) {
   if (!result) return;
 
-  if (window.feishuFormat?.saveConvertedFile) {
+  if (window.flyingMouseFormat?.saveConvertedFile) {
     setStatus(`请选择 ${result.fileName} 的保存位置...`);
-    const saved = await window.feishuFormat.saveConvertedFile({
+    const saved = await window.flyingMouseFormat.saveConvertedFile({
       downloadUrl: result.downloadUrl,
       fileName: result.fileName
     });
@@ -570,9 +570,9 @@ async function saveAllConvertedFiles() {
   if (!results.length) return;
 
   try {
-    if (window.feishuFormat?.saveConvertedFiles) {
+    if (window.flyingMouseFormat?.saveConvertedFiles) {
       setStatus(`请选择 ${results.length} 个文件的保存文件夹...`);
-      const saved = await window.feishuFormat.saveConvertedFiles({ files: results });
+      const saved = await window.flyingMouseFormat.saveConvertedFiles({ files: results });
       if (saved?.canceled) {
         setStatus(`已转换 ${results.length} 个文件，尚未保存。`, "success");
         return;

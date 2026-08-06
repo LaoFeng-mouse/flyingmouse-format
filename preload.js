@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("feishuFormat", {
+contextBridge.exposeInMainWorld("flyingMouseFormat", {
   saveConvertedFile(payload) {
     return ipcRenderer.invoke("save-converted-file", payload);
   },

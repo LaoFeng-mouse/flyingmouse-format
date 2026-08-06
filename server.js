@@ -16,7 +16,7 @@ const yazl = require("yazl");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
-const RUNTIME_DIR = process.env.FEISHU_RUNTIME_DIR || path.join(os.tmpdir(), "feishu-format-runtime");
+const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir(), "flyingmouse-format-runtime");
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
 const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
@@ -36,7 +36,7 @@ const CONTENT_SECURITY_POLICY = [
 function bundledFfmpegPath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
-    process.env.FEISHU_FFMPEG_PATH,
+    process.env.FLYINGMOUSE_FFMPEG_PATH,
     resourcesPath && path.join(resourcesPath, "ffmpeg", "ffmpeg.exe"),
     path.join(ROOT, "bin", "ffmpeg", "ffmpeg.exe"),
     path.join(process.cwd(), "bin", "ffmpeg", "ffmpeg.exe")
@@ -50,7 +50,7 @@ const FFMPEG_PATH = bundledFfmpegPath();
 function bundledLibreOfficePath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
-    process.env.FEISHU_LIBREOFFICE_PATH,
+    process.env.FLYINGMOUSE_LIBREOFFICE_PATH,
     resourcesPath && path.join(resourcesPath, "libreoffice", "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com"),
     resourcesPath && path.join(resourcesPath, "libreoffice", "App", "libreoffice", "program", "soffice.com"),
     resourcesPath && path.join(resourcesPath, "libreoffice", "program", "soffice.com"),
@@ -69,7 +69,7 @@ const LIBREOFFICE_PATH = bundledLibreOfficePath();
 function bundledPdftoppmPath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
-    process.env.FEISHU_PDFTOPPM_PATH,
+    process.env.FLYINGMOUSE_PDFTOPPM_PATH,
     resourcesPath && path.join(resourcesPath, "poppler", "Library", "bin", "pdftoppm.exe"),
     resourcesPath && path.join(resourcesPath, "poppler", "bin", "pdftoppm.cmd"),
     path.join(ROOT, "bin", "poppler", "Library", "bin", "pdftoppm.exe"),
@@ -86,7 +86,7 @@ const PDFTOPPM_PATH = bundledPdftoppmPath();
 function bundledTessdataPath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
-    process.env.FEISHU_TESSDATA_PATH,
+    process.env.FLYINGMOUSE_TESSDATA_PATH,
     resourcesPath && path.join(resourcesPath, "tessdata"),
     path.join(ROOT, "bin", "tessdata"),
     path.join(process.cwd(), "bin", "tessdata")
@@ -457,7 +457,7 @@ async function convertImage(inputPath, outputPath, target) {
 }
 
 async function prepareImageForOcr(inputPath) {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "feishu-ocr-image-"));
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ocr-image-"));
   const outputPath = path.join(tempDir, "ocr-input.png");
   const metadata = await sharp(inputPath, { limitInputPixels: false }).metadata();
   const pipeline = sharp(inputPath, { limitInputPixels: false })
@@ -891,7 +891,7 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150) {
     throw new Error("PDF 转图片引擎未启用。请确认安装包内置的 Poppler 文件完整。");
   }
 
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "feishu-pdf-pages-"));
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-pages-"));
   const prefix = path.join(tempDir, "page");
   const formatArg = target === "jpg" ? "-jpeg" : "-png";
   await run(PDFTOPPM_PATH, [formatArg, "-r", String(dpi), inputPath, prefix], { timeout: 1000 * 60 * 20 });
