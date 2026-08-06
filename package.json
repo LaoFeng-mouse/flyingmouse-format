@@ -15,15 +15,18 @@
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
-    "pdfjs-dist": "^3.11.174",
+    "pdfjs-dist": "^6.2.108",
     "sanitize-filename": "^1.6.3",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "tesseract.js": "^7.0.0",
-    "xlsx": "^0.18.5",
     "yazl": "^3.3.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "electron": "^43.1.0",
