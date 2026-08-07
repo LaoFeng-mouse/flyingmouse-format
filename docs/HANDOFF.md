@@ -14,6 +14,7 @@
 - 2026-08-06 依赖安全迁移完成：pdfjs-dist 3.11→6.2.108（ESM 动态 import 适配，`pdf.destroy`→`loadingTask.destroy`）、sharp 0.33.5→0.35.3（libvips CVE）、xlsx→exceljs 4.4.0（SheetJS 原型污染/ReDoS）、uuid 11.1.1 via overrides；`npm audit --omit=dev` 归零（0 vulnerabilities）；测试套件 25/25。
 - 2026-08-06 初始化 Git 仓库并完成首次提交（commit `6883528`），纳入全部源码、测试与文档；`bin/`（FFmpeg/LibreOffice/Poppler/Tessdata 引擎）因体积庞大不入库，需单独备份。
 - 2026-08-06 微软商店上架：MSIX 包（electron-builder 26 `appx` target + 自签名 CodeSigning 证书手动签名，`signExecutable:false`）已上传 Partner Center（产品 9NJKN37CR6H）并提交认证（提交 1，审核中，预计 1-3 个工作日）。商店渠道由微软自动签名；GitHub 直下载渠道仍为未签名。填写模板与逐屏指引见 docs/微软商店上架清单.md。
+- 2026-08-07 工程基建：build/icon.png 鼠鼠图标（512x512 透明底，electron-builder 自动使用，下次打包生效）；MIT LICENSE；GitHub Actions CI 测试门禁（.github/workflows/ci.yml）；隐私政策正式 Pages URL 确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html，HTTP 200）。
 
 ## 交付产物
 
@@ -50,13 +51,13 @@ npm audit --omit=dev
 4. electron-builder 当前使用默认 Electron 程序图标；产品正式发布前应提供 `.ico` 并做桌面、任务栏和安装器视觉验证。
 5. ~~目录当前不是 Git 仓库~~ 已于 2026-08-06 初始化并完成首次提交；`bin/` 引擎目录不入库，重装系统或换机前需单独备份 `bin/`。
 6. 仓库已公开：https://github.com/LaoFeng-mouse/flyingmouse-format（GitHub 用户名已从 LI-2004-feng 改为 LaoFeng-mouse，提交作者统一为 LaoFeng；README 门面 + 10 个 topics + Release v0.1.0 均已就位）。当前 0 star，无 CI，搜索排名靠后属预期。
-7. 微软商店认证审核中（2026-08-06 提交，产品 9NJKN37CR6H）：预计 1-3 个工作日；若打回需按认证报告修改并重传达标截图（现役达标截图：`C:\Users\34615\Desktop\FlyingMouseFormat-store-shot1.png`，1600x961）。隐私政策提交时用的是 raw.githubusercontent.com 链接（已 HTTP 200），GitHub Pages 正式链接尚未启用。
+7. 微软商店认证审核中（2026-08-06 提交，产品 9NJKN37CR6H）：预计 1-3 个工作日；若打回需按认证报告修改并重传达标截图（现役达标截图：`C:\Users\34615\Desktop\FlyingMouseFormat-store-shot1.png`，1600x961）。隐私政策提交 1 用的是 raw 链接；正式 Pages URL 已确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html），下次提交换成正式链接。
 
 ## 后续优先级
 
 1. 等待微软商店认证结果（2026-08-06 提交，预计 1-3 个工作日）；打回则按认证报告修改并重提。
-2. 配置正式应用图标（.ico）和代码签名证书，在干净 Windows 环境验证 SmartScreen、安装、卸载与快捷方式。
-3. 开启 GitHub Pages 托管隐私政策（docs/privacy-policy.html），把商店列表里的隐私政策 URL 从 raw 链接换成 `https://laofeng-mouse.github.io/flyingmouse-format/privacy-policy.html`。
+2. 下次商店提交时把隐私政策 URL 换成正式 Pages 链接：https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html（已 200，raw 链接仍可继续用）。
+3. 配置正式应用图标（.ico）：build/icon.png 已生成（512x512 鼠鼠头像），electron-builder 下次打包自动生效；打包后做桌面、任务栏和安装器视觉验证。
 4. 完成签名构建后重新计算哈希，并更新本文件的交付产物表。
 5. 依赖安全已归零；后续每次依赖变更后跑 `npm audit --omit=dev` 确认不回升。
-6. 可选：定 License（如 MIT）并补 LICENSE 文件，让项目成为合规开源项目；配置 GitHub Actions 自动测试/打包 CI。
+6. 可选：补转换过程截图（商店推荐 4 张，现 1 张）；配置 GitHub Actions 自动打包（CI 已配测试门禁 .github/workflows/ci.yml）。
