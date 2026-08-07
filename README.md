@@ -3,9 +3,10 @@
 > 一个 Windows 万能文件格式转换工具 · 完全离线可用 · 内置 FFmpeg / LibreOffice / Poppler / Tesseract
 
 ![GitHub release](https://img.shields.io/github/v/release/LaoFeng-mouse/flyingmouse-format?color=brightgreen&label=Release)
+![CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/workflows/ci.yml/badge.svg)
 ![Electron](https://img.shields.io/badge/Electron-43-47848F)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6)
-![License](https://img.shields.io/badge/License-Proprietary-lightgrey)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 [⬇️ 下载安装包](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [查看 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases) · [功能清单](#-支持格式) · [快速开始](#-快速开始)
 
