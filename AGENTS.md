@@ -7,7 +7,7 @@
 ## Structure
 
 - `server.js`: Express conversion service, target detection, filename decoding, conversion dispatch, download URLs.
-- `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display.
+- `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display. Bottom-right sponsor widget (`#sponsorWidget`, collapsible WeChat QR panel) is renderer-only; sponsor QR image lives at `public/assets/sponsor-qr.jpg`.
 - `electron-main.js`: starts the local server, opens the window, handles save dialogs and batch save-to-folder.
 - `electron-security.js`: pure URL/origin policy used by navigation, external-link, IPC, and download guards.
 - `preload.js`: exposes safe IPC methods as `window.flyingMouseFormat`.
@@ -40,11 +40,11 @@ $env:CSC_IDENTITY_AUTO_DISCOVERY='false'
 npm run dist
 ```
 
-The installer is `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`.
+The installer is `dist\FlyingMouse Format-Setup-0.2.1-x64.exe`.
 
-Store package: `npm run dist` also builds `dist\FlyingMouse Format-Setup-0.1.0-x64.appx` (MSIX, for Microsoft Store). `signExecutable:false`/`signAndEditExecutable:false` are intentional: electron-builder's bundled signtool cannot sign .appx — the appx is either signed manually with the Windows SDK signtool or left unsigned for the Store to sign at submission. The `appx` block in package.json holds the Partner Center identity (`identityName`, `publisher` CN, `displayName`). Full flow: docs/微软商店上架清单.md.
+Store package: `npm run dist` also targets `appx` (MSIX, for Microsoft Store). The store package currently in certification is still **v0.1.0** (`dist\FlyingMouse Format-Setup-0.1.0-x64.appx` / copy `上传商店用这个.appx`); the 0.2.x builds did not emit an appx locally — verify appx build before the next store submission. `signExecutable:false` is intentional (electron-builder's bundled signtool cannot sign .appx — the appx is either signed manually with the Windows SDK signtool or left unsigned for the Store to sign at submission). Do NOT reintroduce `signAndEditExecutable:false` — it also skips icon embedding (v0.2.0 shipped without the app icon because of it). The `appx` block in package.json holds the Partner Center identity (`identityName`, `publisher` CN, `displayName`). Full flow: docs/微软商店上架清单.md.
 
-App icon: `build/icon.png` (512x512, 鼠鼠 avatar, transparent) — electron-builder picks it up automatically for NSIS installer, exe, taskbar, and appx store logos. Regenerate from `public/assets/mouse-format/source-mouse-avatar.png` if the mascot changes.
+App icon: `build/icon.png` (512x512, 鼠鼠 avatar, transparent) — electron-builder picks it up automatically for NSIS installer, exe, taskbar, and appx store logos; effective since v0.2.1 (`signExecutable:false` keeps icon embedding). Regenerate from `public/assets/mouse-format/source-mouse-avatar.png` if the mascot changes.
 
 ## Verification
 
@@ -81,5 +81,5 @@ Packaging: `build.files` is an explicit whitelist — **every new root-level JS 
 - Remote: `https://github.com/LaoFeng-mouse/flyingmouse-format.git` (public)
 - Author identity: `LaoFeng <LaoFeng-mouse@users.noreply.github.com>` (repo-local git config; do not commit as Codex)
 - License: MIT (LICENSE file, author LaoFeng). CI: GitHub Actions runs syntax check + `npm test` + `npm audit --omit=dev` on push/PR (`.github/workflows/ci.yml`).
-- Release: v0.1.0 published; installer asset `FlyingMouse.Format-Setup-0.1.0-x64.exe` (SHA-256 7765A695...) matches local `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`.
-- Desktop shortcut: `C:\Users\34615\Desktop\FlyingMouse Format.lnk` → `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。
+- Release: v0.2.1 published (latest; v0.1.0 and v0.2.0 also remain). Installer asset `FlyingMouse.Format-Setup-0.2.1-x64.exe` (SHA-256 1DEC8245...) matches local `dist\FlyingMouse Format-Setup-0.2.1-x64.exe`. Release notes must not mention proprietary audio format support.
+- Desktop shortcut: `C:\Users\34615\Desktop\FlyingMouse Format.lnk` → `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-07 重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。After repacking, rebuild the shortcut and refresh the icon cache (`ie4uinit -show`; if stubborn, delete `%LOCALAPPDATA%\Microsoft\Windows\Explorer\iconcache_*.db` and restart explorer).
