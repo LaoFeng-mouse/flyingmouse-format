@@ -57,20 +57,7 @@ const progressLabel = document.querySelector("#progressLabel");
 const progressPercent = document.querySelector("#progressPercent");
 const progressTrack = document.querySelector(".progress-track");
 const progressFill = document.querySelector("#progressFill");
-const mouseMascot = document.querySelector("#mouseMascot");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
-
-const mouseAssets = {
-  idle: "/assets/mouse-format/mouse-idle.png",
-  upload: "/assets/mouse-format/mouse-upload.png",
-  analyzing: "/assets/mouse-format/mouse-analyzing.png",
-  converting: "/assets/mouse-format/mouse-converting.png",
-  pdfPages: "/assets/mouse-format/mouse-pdf-pages.png",
-  ocr: "/assets/mouse-format/mouse-ocr.png",
-  batch: "/assets/mouse-format/mouse-batch.png",
-  success: "/assets/mouse-format/mouse-success.png",
-  error: "/assets/mouse-format/mouse-error.png"
-};
 
 const labels = {
   image: "图片",
@@ -127,28 +114,10 @@ function setStatus(message, type = "") {
   statusBox.className = `status-box ${type}`.trim();
 }
 
-function setMouseState(name) {
-  if (!mouseMascot) return;
-  const src = mouseAssets[name] || mouseAssets.idle;
-  mouseMascot.src = src;
-  mouseMascot.dataset.state = name;
-}
-
 function setWorkflowStep(step) {
   for (const item of workflowSteps) {
     item.classList.toggle("active", item.dataset.step === step);
   }
-}
-
-function mouseStateForConversion(targetFormat) {
-  if (state.files.length > 1) return "batch";
-  if (targetFormat === "txt" && state.fileInfos.some((info) => info.category === "image" || info.category === "pdf")) {
-    return "ocr";
-  }
-  if ((targetFormat === "png" || targetFormat === "jpg") && state.fileInfos.some((info) => info.category === "pdf")) {
-    return "pdfPages";
-  }
-  return "converting";
 }
 
 function setProgress(value, label, type = "") {
@@ -195,7 +164,6 @@ function clearFile() {
   resetDownload();
   resetProgress();
   setStatus("选择文件后会显示可用的转换格式。");
-  setMouseState("upload");
   setWorkflowStep("select");
 }
 
@@ -340,10 +308,6 @@ async function acceptFiles(fileList) {
   state.batchResults = files.map(() => ({ status: "pending", detail: "等待转换" }));
   resetDownload();
   resetProgress();
-  setMouseState("analyzing");
-  if (files.length > 1) {
-    setMouseState("batch");
-  }
   setWorkflowStep("analyze");
 
   const summary = summarizeFiles(files);
@@ -369,7 +333,6 @@ async function acceptFiles(fileList) {
         ? "这个文件当前没有可用转换格式。"
         : "这些文件没有共同的目标格式。请分成同类型文件批量转换，或减少选择的文件。",
       "error");
-      setMouseState("error");
       syncZipCompressionField();
       return;
     }
@@ -394,11 +357,9 @@ async function acceptFiles(fileList) {
     } else {
       setStatus(`已选择 ${files.length} 个文件，共同可转换为：${targets.map((target) => target.toUpperCase()).join("、")}。`);
     }
-    setMouseState(files.length > 1 ? "batch" : "idle");
     setWorkflowStep("convert");
   } catch (error) {
     setStatus(`识别失败：${error.message}`, "error");
-    setMouseState("error");
     setWorkflowStep("analyze");
   }
 }
@@ -480,7 +441,6 @@ async function convertMergedImagesToPdf() {
     batchSaveButton.hidden = true;
     setProgress(100, "合并完成", "success");
     setStatus(`图片已合并为：${result.fileName}。`, "success");
-    setMouseState("success");
     setWorkflowStep("save");
   } catch (error) {
     state.batchResults = state.files.map(() => ({
@@ -490,7 +450,6 @@ async function convertMergedImagesToPdf() {
     renderBatchList();
     setProgress(100, "合并失败", "error");
     setStatus(`合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
   } finally {
     state.isConverting = false;
     convertButton.disabled = !state.files.length;
@@ -552,7 +511,6 @@ async function convertMergedPdfs() {
     batchSaveButton.hidden = true;
     setProgress(100, "合并完成", "success");
     setStatus(`PDF 已合并为：${result.fileName}。`, "success");
-    setMouseState("success");
     setWorkflowStep("save");
   } catch (error) {
     state.batchResults = state.files.map(() => ({
@@ -562,7 +520,6 @@ async function convertMergedPdfs() {
     renderBatchList();
     setProgress(100, "合并失败", "error");
     setStatus(`合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
   } finally {
     state.isConverting = false;
     convertButton.disabled = !state.files.length;
@@ -581,11 +538,6 @@ async function convertCurrentFiles() {
   state.batchResults = state.files.map(() => ({ status: "pending", detail: "等待转换" }));
   renderBatchList();
   setProgress(0, "准备转换");
-  setMouseState("converting");
-  const conversionMouseState = mouseStateForConversion(targetFormat);
-  if (conversionMouseState !== "converting") {
-    setMouseState(conversionMouseState);
-  }
   setWorkflowStep("convert");
   setStatus(state.files.length === 1
     ? "正在转换，请稍等。PDF、Office/WPS 或视频文件可能需要更久..."
@@ -644,7 +596,6 @@ async function convertCurrentFiles() {
   }
 
   batchSaveButton.hidden = successful.length < 2;
-  setMouseState(failCount ? "error" : "success");
   if (successful.length) {
     setWorkflowStep("save");
   }
@@ -726,12 +677,10 @@ dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
   dropZone.classList.add("dragging");
-  setMouseState("upload");
 });
 
 dropZone.addEventListener("dragleave", () => {
   dropZone.classList.remove("dragging");
-  setMouseState(state.files.length > 1 ? "batch" : state.files.length ? "idle" : "upload");
 });
 
 dropZone.addEventListener("drop", (event) => {
@@ -766,31 +715,6 @@ fetchCapabilities().catch((error) => {
   toolHealth.textContent = "检测失败";
   setStatus(error.message, "error");
   rendererLog("error", "能力检测失败", error);
-  setMouseState("error");
 });
 
-setMouseState("upload");
 setWorkflowStep("select");
-
-/* --- 打赏伸缩窗 --- */
-const sponsorToggle = document.querySelector("#sponsorToggle");
-const sponsorPanel = document.querySelector("#sponsorPanel");
-const sponsorClose = document.querySelector("#sponsorClose");
-const sponsorWidget = document.querySelector("#sponsorWidget");
-
-function setSponsorOpen(open) {
-  sponsorPanel.hidden = !open;
-  sponsorToggle.setAttribute("aria-expanded", String(open));
-}
-
-sponsorToggle.addEventListener("click", () => {
-  setSponsorOpen(sponsorPanel.hidden);
-});
-
-sponsorClose.addEventListener("click", () => setSponsorOpen(false));
-
-document.addEventListener("click", (event) => {
-  if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) {
-    setSponsorOpen(false);
-  }
-});
