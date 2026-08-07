@@ -14,6 +14,8 @@ const fileStrip = document.querySelector("#fileStrip");
 const fileName = document.querySelector("#fileName");
 const fileMeta = document.querySelector("#fileMeta");
 const targetSelect = document.querySelector("#targetSelect");
+const zipCompressionField = document.querySelector("#zipCompressionField");
+const zipCompression = document.querySelector("#zipCompression");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
@@ -297,6 +299,11 @@ function setBatchResult(index, patch) {
   renderBatchList();
 }
 
+function syncZipCompressionField() {
+  if (!zipCompressionField || !zipCompression) return;
+  zipCompressionField.hidden = targetSelect.value !== "zip";
+}
+
 async function acceptFiles(fileList) {
   const files = [...fileList].filter((file) => file && file.size >= 0);
   if (!files.length) return;
@@ -336,6 +343,7 @@ async function acceptFiles(fileList) {
         : "这些文件没有共同的目标格式。请分成同类型文件批量转换，或减少选择的文件。",
       "error");
       setMouseState("error");
+      syncZipCompressionField();
       return;
     }
 
@@ -352,6 +360,7 @@ async function acceptFiles(fileList) {
 
     targetSelect.disabled = false;
     convertButton.disabled = false;
+    syncZipCompressionField();
     if (files.length === 1) {
       const info = infos[0];
       setStatus(`识别为${labels[info.category] || labels.unknown}文件，可转换为：${targets.map((target) => target.toUpperCase()).join("、")}。`);
@@ -381,6 +390,9 @@ async function convertOneFile(file, targetFormat) {
   const form = new FormData();
   form.append("file", file);
   form.append("targetFormat", targetFormat);
+  if (targetFormat === "zip") {
+    form.append("compressionLevel", zipCompression?.value || "6");
+  }
 
   const response = await fetch("/api/convert", {
     method: "POST",
@@ -577,7 +589,11 @@ async function convertCurrentFiles() {
     try {
       const result = await convertOneFile(file, targetFormat);
       successCount += 1;
-      setBatchResult(index, { status: "success", detail: result.fileName, result });
+      let detail = result.fileName;
+      if (targetFormat === "zip" && result.compressionRatio != null) {
+        detail += `（${formatSize(result.originalBytes || 0)} → ${formatSize(result.compressedBytes || 0)}，压缩 ${result.compressionRatio}%）`;
+      }
+      setBatchResult(index, { status: "success", detail, result });
     } catch (error) {
       failCount += 1;
       setBatchResult(index, { status: "error", detail: error.message || "未知错误" });
@@ -714,6 +730,7 @@ batchList.addEventListener("click", async (event) => {
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
+targetSelect.addEventListener("change", syncZipCompressionField);
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
 

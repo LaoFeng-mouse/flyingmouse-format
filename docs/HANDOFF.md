@@ -7,7 +7,7 @@
 - Electron 已升级到 `43.1.0`。
 - 导航、外链、IPC sender、下载 URL、重定向、renderer sandbox 和 CSP 已加固。
 - 渲染器动态内容不再使用 `innerHTML`；当前页面视觉检查没有溢出、遮挡或缺失。
-- 最终语法检查通过，自动测试为 `25/25`。
+- 最终语法检查通过，自动测试为 `39/39`。
 - 打包版已实际启动，窗口正常响应且日志出现 `Window finished loading`。
 - Playwright 页面检查为 `0 error / 0 warning`；截图位于 `output/playwright/electron43-security-home.png`。
 - 2026-08-06 安全与功能修复：音频文件不再暴露视频容器目标（mp4/webm/mkv/mov）；`/api/convert` 与 `/api/convert-images-to-pdf` 增加 Origin/Referer 跨站校验（403 拒绝非本地来源）；损坏 JSON 转换改为友好报错；`npm audit fix`（非 force）已将 multer 2.0.2→2.2.0、express 4.19.2→4.22.2，漏洞数从 8 降到 5；新增 4 个回归测试（音频目标、视频目标、跨站拒绝、本地放行）。
@@ -15,6 +15,7 @@
 - 2026-08-06 初始化 Git 仓库并完成首次提交（commit `6883528`），纳入全部源码、测试与文档；`bin/`（FFmpeg/LibreOffice/Poppler/Tessdata 引擎）因体积庞大不入库，需单独备份。
 - 2026-08-06 微软商店上架：MSIX 包（electron-builder 26 `appx` target + 自签名 CodeSigning 证书手动签名，`signExecutable:false`）已上传 Partner Center（产品 9NJKN37CR6H）并提交认证（提交 1，审核中，预计 1-3 个工作日）。商店渠道由微软自动签名；GitHub 直下载渠道仍为未签名。填写模板与逐屏指引见 docs/微软商店上架清单.md。
 - 2026-08-07 工程基建：build/icon.png 鼠鼠图标（512x512 透明底，electron-builder 自动使用，下次打包生效）；MIT LICENSE；GitHub Actions CI 测试门禁（.github/workflows/ci.yml）；隐私政策正式 Pages URL 确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html，HTTP 200）。
+- 2026-08-07 格式扩展 v0.2.0（测试 39/39）：文本→PDF/DOCX（docx 纯 JS 生成）、Word↔Markdown（mammoth+turndown）、PDF 合并/拆分（pdf-lib，多选合并/单选拆单页 zip）、图片/动图→mp4/webm、音频新增 aac/opus/wma 输出、ZIP 压缩级别 0-9 可调并报告压缩前后尺寸；OCR 改进（PDF 渲染 300DPI + sharpen）。修复：便携版 LibreOffice 的 txt 导出过滤器不可用（docx→txt 改用 mammoth）、html→docx 不可用（文本→docx 全部改纯 JS 生成）；真实 Office 样本探测确认 docx→pdf/odt/rtf/html、xlsx/xls→pdf/ods/csv/html、pptx→pdf/odp/html 均可用。
 
 ## 交付产物
 
@@ -56,8 +57,8 @@ npm audit --omit=dev
 ## 后续优先级
 
 1. 等待微软商店认证结果（2026-08-06 提交，预计 1-3 个工作日）；打回则按认证报告修改并重提。
-2. 下次商店提交时把隐私政策 URL 换成正式 Pages 链接：https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html（已 200，raw 链接仍可继续用）。
-3. 配置正式应用图标（.ico）：build/icon.png 已生成（512x512 鼠鼠头像），electron-builder 下次打包自动生效；打包后做桌面、任务栏和安装器视觉验证。
-4. 完成签名构建后重新计算哈希，并更新本文件的交付产物表。
+2. ncm/kgg 音乐解密：需要用户提供真实 .ncm/.kgg 样本各一个作为验证 fixture（算法字节布局不能凭记忆写，合成测试无法证明真文件兼容）；拿到样本后实现并逐字节验证。
+3. 下次商店提交时把隐私政策 URL 换成正式 Pages 链接：https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html（已 200，raw 链接仍可继续用）。
+4. 打包 v0.2.0（build/icon.png 图标自动生效 + 新格式）：重新计算哈希并更新本文件交付产物表；打包后做桌面、任务栏和安装器视觉验证。
 5. 依赖安全已归零；后续每次依赖变更后跑 `npm audit --omit=dev` 确认不回升。
 6. 可选：补转换过程截图（商店推荐 4 张，现 1 张）；配置 GitHub Actions 自动打包（CI 已配测试门禁 .github/workflows/ci.yml）。
