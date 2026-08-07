@@ -1306,6 +1306,13 @@ function assertLocalWebRequest(req, res, next) {
     res.status(403).json({ error: "拒绝跨站请求。" });
     return;
   }
+  if (!origin && !referer) {
+    const remoteAddr = req.socket.remoteAddress;
+    if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(remoteAddr)) {
+      res.status(403).json({ error: "拒绝跨站请求。" });
+      return;
+    }
+  }
   next();
 }
 
