@@ -10,7 +10,7 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
-    "test": "node --test tests/"
+    "test": "node --test tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
