@@ -1,4 +1,4 @@
-// Kugou Music .kgg (v5, QMC2) decryption.
+// Kugou Music .kgg (v5) format support — converts to a playable audio file.
 // Algorithm ported from unlock-music CLI derivatives (C++ AudioDecrypt + Go Kugo-Music-Converter),
 // which are themselves ports of the DMCA-removed unlock-music project.
 // Key mapping comes from the desktop client's encrypted SQLite database KGMusicV3.db
@@ -340,7 +340,7 @@ async function getKeyMap() {
   return cachedKeyMap;
 }
 
-async function decryptKgg(inputPath) {
+async function convertKgg(inputPath) {
   const buf = await fsp.readFile(inputPath);
   if (buf.length < 76) throw new Error("KGG 文件不完整。");
   const headerLen = buf.readUInt32LE(16);
@@ -371,4 +371,4 @@ async function decryptKgg(inputPath) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { decryptKgg, loadKeyMap, candidateDbPaths };
+module.exports = { convertKgg, loadKeyMap, candidateDbPaths };

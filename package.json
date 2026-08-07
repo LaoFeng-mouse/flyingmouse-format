@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -49,8 +49,8 @@
       "electron-security.js",
       "preload.js",
       "server.js",
-      "ncm-decrypt.js",
-      "kgg-decrypt.js",
+      "ncm-format.js",
+      "kgg-format.js",
       "public/**/*",
       "package.json",
       "node_modules/**/*"
@@ -85,7 +85,6 @@
       "node_modules/sql.js/**/*"
     ],
     "win": {
-      "signAndEditExecutable": false,
       "signExecutable": false,
       "target": [
         "nsis",

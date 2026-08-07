@@ -1,4 +1,4 @@
-// NetEase Cloud Music .ncm decryption.
+// NetEase Cloud Music .ncm format support (converts to a playable audio file).
 // Layout (verified against a real official-client file, 2026-08):
 //   magic "CTENFDAM"(8) + version(1) + keyLen(4) + key(keyLen) + metaLen(4) + meta(metaLen)
 //   + crc(4) + unknown(5) + coverLen(4) + cover(coverLen) + audio
@@ -119,7 +119,7 @@ function tryDecrypt(buf, keyLenOff, keyStart) {
   return { audioData, format, meta };
 }
 
-async function decryptNcm(inputPath) {
+async function convertNcm(inputPath) {
   const buf = await fsp.readFile(inputPath);
   if (buf.subarray(0, 8).toString("latin1") !== NCM_MAGIC) {
     throw new Error("不是有效的网易云 NCM 文件（缺少 CTENFDAM 文件头）。");
@@ -146,4 +146,4 @@ async function decryptNcm(inputPath) {
   throw new Error("NCM 解密失败：文件可能不是官方网易云客户端下载的标准 NCM。");
 }
 
-module.exports = { decryptNcm };
+module.exports = { convertNcm };

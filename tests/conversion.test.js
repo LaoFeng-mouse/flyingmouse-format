@@ -654,7 +654,7 @@ test("decrypts a Kugou KGG file to audio (real fixture + key db required)", asyn
     t.skip("缺少真实 KGG fixture（酷狗客户端下载，放入 tests/fixtures/sample.kgg）");
     return;
   }
-  const { candidateDbPaths } = require("../kgg-decrypt");
+  const { candidateDbPaths } = require("../kgg-format");
   if (!candidateDbPaths()) {
     t.skip("缺少酷狗密钥库 KGMusicV3.db（%APPDATA%\\KuGou8\\ 下），无法解密 KGG");
     return;
