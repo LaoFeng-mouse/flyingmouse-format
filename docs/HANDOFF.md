@@ -50,9 +50,9 @@ npm audit --omit=dev
 1. EXE 和安装包均为 `NotSigned`。商店渠道已绕过该问题（微软自动签名）；GitHub 直下载与本地安装包仍无签名，正式对外分发仍需真实 Windows 代码签名证书。
 2. ~~`npm audit --omit=dev` 报告漏洞~~ 已于 2026-08-06 归零（pdfjs-dist 6.x、sharp 0.35.3、exceljs 替换 xlsx、uuid 11.1.1 overrides）。今后依赖变更后需重新跑 audit 确认。
 3. ~~PDF.js 缺少 canvas polyfill 警告~~ 已于 2026-08-06 迁移 pdfjs-dist 6.x 后消失（改用 @napi-rs/canvas，测试无警告）。
-4. electron-builder 当前使用默认 Electron 程序图标；产品正式发布前应提供 `.ico` 并做桌面、任务栏和安装器视觉验证。
+4. ~~electron-builder 使用默认图标~~ 已于 v0.2.1 解决（`signExecutable:false` 保留图标嵌入，鼠鼠图标已生效；桌面/任务栏视觉验证待正式安装后补）。
 5. ~~目录当前不是 Git 仓库~~ 已于 2026-08-06 初始化并完成首次提交；`bin/` 引擎目录不入库，重装系统或换机前需单独备份 `bin/`。
-6. 仓库已公开：https://github.com/LaoFeng-mouse/flyingmouse-format（GitHub 用户名已从 LI-2004-feng 改为 LaoFeng-mouse，提交作者统一为 LaoFeng；README 门面 + 10 个 topics + Release v0.1.0 均已就位）。当前 0 star，无 CI，搜索排名靠后属预期。
+6. 仓库已公开：https://github.com/LaoFeng-mouse/flyingmouse-format（提交作者统一为 LaoFeng；README 门面 + 10 个 topics + Release v0.1.0/v0.2.0/v0.2.1 已发布；CI 门禁 .github/workflows/ci.yml 绿色；截至 2026-08-07 约 29 star）。
 7. 微软商店认证审核中（2026-08-06 提交，产品 9NJKN37CR6H）：预计 1-3 个工作日；若打回需按认证报告修改并重传达标截图（现役达标截图：`C:\Users\34615\Desktop\FlyingMouseFormat-store-shot1.png`，1600x961）。隐私政策提交 1 用的是 raw 链接；正式 Pages URL 已确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html），下次提交换成正式链接。
 
 ## 后续优先级
