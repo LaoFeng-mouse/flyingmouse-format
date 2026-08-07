@@ -16,6 +16,7 @@ const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const TurndownService = require("turndown");
+const { decryptNcm } = require("./ncm-decrypt");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -117,7 +118,7 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov"];
@@ -1493,7 +1494,16 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      await convertMedia(file.path, outputPath, requestedTarget, category);
+      if (category === "audio" && inputExt === "ncm") {
+        const decrypted = await decryptNcm(file.path);
+        try {
+          await convertMedia(decrypted.nativePath, outputPath, requestedTarget, "audio");
+        } finally {
+          await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
+        }
+      } else {
+        await convertMedia(file.path, outputPath, requestedTarget, category);
+      }
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }

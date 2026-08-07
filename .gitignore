@@ -5,3 +5,4 @@ test-results/
 output/
 .playwright-cli/
 bin/
+tests/fixtures/

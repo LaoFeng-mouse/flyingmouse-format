@@ -629,6 +629,25 @@ test("converts a DOCX to PDF via LibreOffice", async () => {
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+test("decrypts a standard NetEase NCM file to MP3 (real fixture required)", async (t) => {
+  const fixture = path.join(__dirname, "fixtures", "sample.ncm");
+  if (!fs.existsSync(fixture)) {
+    t.skip("缺少真实 NCM fixture（官方网易云客户端下载，放入 tests/fixtures/sample.ncm）");
+    return;
+  }
+  const beforeHash = hashFile(fixture);
+
+  const { response, body } = await uploadConvert(fixture, "sample.ncm", "mp3", "application/octet-stream");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "sample.mp3");
+  const outputPath = await downloadResult(body, "sample.mp3");
+  const magic = fs.readFileSync(outputPath).subarray(0, 3);
+  const isMp3 = magic.toString("latin1") === "ID3" || (magic[0] === 0xff && (magic[1] & 0xe0) === 0xe0);
+  assert.ok(isMp3, `decrypted output must be a playable mp3, magic=${magic.toString("hex")}`);
+  assert.strictEqual(hashFile(fixture), beforeHash);
+});
+
 test("zip conversion honors compression level and reports sizes", async () => {
   const sourcePath = path.join(scratchRoot, "压缩样本.txt");
   await fsp.writeFile(sourcePath, "compress me ".repeat(4000), "utf8");
