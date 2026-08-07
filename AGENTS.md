@@ -74,6 +74,8 @@ CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/securit
 
 Encrypted audio: `ncm-decrypt.js` (NetEase standard NCM) and `kgg-decrypt.js` (Kugou v5 KGG) decrypt in-place then transcode via ffmpeg. Both are verified against real official-client files (2026-08). NCM layout: magic(8)+version(1)+keyLen@10+key@14+metaLen+meta+crc(4)+unknown(5)+coverLen(4)+cover+audio; RC4 key = AES-ECB-decrypted keyBox[17..payloadEnd] (PKCS7-stripped); audio uses a one-shot 256-byte keystream variant (NOT standard continuous RC4). KGG needs the Kugou desktop key db (`%APPDATA%\KuGou8\KGMusicV3.db`, AES-CBC page decrypt + sql.js SQLite read); only songs downloaded by the local Kugou client decrypt. `sql.js` ships the wasm inside node_modules (asarUnpack for the packaged app).
 
+Packaging: `build.files` is an explicit whitelist — **every new root-level JS module required by server.js must be added there** (ncm-decrypt.js / kgg-decrypt.js were missed once, causing MODULE_NOT_FOUND at runtime in the packaged app). After packaging, smoke-test `dist\win-unpacked\FlyingMouse Format.exe` (launch, confirm process stays alive) before publishing. Build from cmd with full PATH (electron-builder needs powershell.exe; a stripped PATH breaks the node-module collector).
+
 ## Repository
 
 - Remote: `https://github.com/LaoFeng-mouse/flyingmouse-format.git` (public)
