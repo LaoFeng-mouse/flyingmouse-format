@@ -551,3 +551,50 @@ test("converts audio to AAC, OPUS and WMA outputs without changing the source", 
 
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
+
+async function createMinimalDocx(filePath, text) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`), "_rels/.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`), "word/document.xml");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(filePath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
+test("converts a DOCX to Markdown without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "报告.docx");
+  await createMinimalDocx(sourcePath, "Hello Markdown 你好");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "报告.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "报告.md");
+  const outputPath = await downloadResult(body, "报告.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  assert.match(markdown, /Hello Markdown/);
+  assert.match(markdown, /你好/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts Markdown to DOCX without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "文档.md");
+  await fsp.writeFile(sourcePath, "# 标题\n\n正文内容 line one.", "utf8");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "文档.md", "docx", "text/markdown");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "文档.docx");
+  const outputPath = await downloadResult(body, "文档.docx");
+  assertZipWithEntry(outputPath, /word\/document\.xml/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
