@@ -41,19 +41,9 @@
 | 📊 Excel/WPS | xls xlsx xlsm ods csv tsv et ett | pdf xlsx ods csv html |
 | 📽️ PPT/WPS | ppt pptx odp dps dpt | pdf pptx odp html |
 | 📑 PDF | pdf | xlsx(表格提取) txt html png jpg(页面) pdf(拆分为单页；多选合并) |
-| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma ncm kgg | mp3 wav flac m4a ogg aac opus wma |
+| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma | mp3 wav flac m4a ogg aac opus wma |
 | 🎬 视频 | mp4 mov mkv webm avi m4v wmv flv | mp4 webm mkv mov mp3 wav flac m4a ogg aac opus wma |
 | 📦 任意文件 | * | zip（可选压缩级别 0-9） |
-
----
-
-## 🎧 音频专属格式兼容（ncm / kgg）
-
-- **ncm**：支持网易云音乐客户端下载的标准 ncm 文件（`CTENFDAM` 头），已用真实文件验证。第三方下载器/网上下载的「假 ncm」（自定义加密）无法处理——它们没有公开算法。
-- **kgg**：支持酷狗客户端下载的新版 kgg（v5），已用真实文件验证。需要读取本机酷狗客户端的密钥库 `%APPDATA%\KuGou8\KGMusicV3.db`，因此**只有在本机酷狗客户端里下载过的 kgg 才能转换**；换电脑/删了酷狗会导致密钥库缺失。
-- 转换后默认按所选目标格式输出（mp3 / flac / wav 等），与普通音频转换一致。
-
-> ⚠️ **使用须知**：以上兼容能力仅面向**个人合法取得、可自由使用的音乐文件**（例如自己购买并下载、有权转换的曲目），用于在不同设备/播放器间正常播放。请勿用于任何未经授权的用途，包括但不限于破解会员服务、绕开付费墙、传播受版权保护的音频。使用者须自行确保对所用文件拥有相应权利并遵守当地法律。
 
 ---
 
@@ -62,7 +52,7 @@
 **方式一：下载安装包（推荐）**
 
 1. 打开 [Release 页面](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest)
-2. 下载 `FlyingMouse Format-Setup-0.1.0-x64.exe`
+2. 下载 `FlyingMouse Format-Setup-0.2.0-x64.exe`
 3. 双击安装，桌面上会出现"FlyingMouse Format"快捷方式
 4. 把文件拖进窗口，选择目标格式，点击转换
 

@@ -49,6 +49,8 @@
       "electron-security.js",
       "preload.js",
       "server.js",
+      "ncm-decrypt.js",
+      "kgg-decrypt.js",
       "public/**/*",
       "package.json",
       "node_modules/**/*"

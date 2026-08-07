@@ -22,13 +22,13 @@
 
 | 产物 | 路径 | SHA-256 |
 |---|---|---|
-| 免安装程序 | `dist\win-unpacked\FlyingMouse Format.exe` | `163FB2FA009BCEC9ADECE853FE55E2189E6B4BD49A7F9C672CF5DE9AA59C64A4` |
-| NSIS 安装包 | `dist\FlyingMouse Format-Setup-0.1.0-x64.exe` | `7765A6950B572887D919207D9F2B95D99A23F27F27C32AF5734B42877ED32834` |
-| 商店包（MSIX） | `dist\FlyingMouse Format-Setup-0.1.0-x64.appx`（副本曾名"上传商店用这个.appx"） | `093777C71B92458730DC5995ACC4A4C3FBC22B6A6C460ACD7A8C433B32982D20` |
+| 免安装程序 | `dist\win-unpacked\FlyingMouse Format.exe` | `4F6F941C5836BF7981E98373D53387A5C7FE0FA39598D391294E2634E8932A82` |
+| NSIS 安装包 | `dist\FlyingMouse Format-Setup-0.2.0-x64.exe` | `CDF6DBF96B5F2B1E776567F5D70EC8A636D63236632D771748F3620518C8C778` |
+| 商店包（MSIX，仍为 v0.1.0） | `dist\FlyingMouse Format-Setup-0.1.0-x64.appx`（副本曾名"上传商店用这个.appx"） | `093777C71B92458730DC5995ACC4A4C3FBC22B6A6C460ACD7A8C433B32982D20` |
 
-2026-08-06 第三次重新打包（产品更名为 FlyingMouse Format 后）：新哈希已更新，且与 GitHub Release v0.1.0 资产 digest（sha256:7765a695...）一致。商店包哈希 093777C7... 与上传到 Partner Center 的 .appx 一致。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
+2026-08-07 v0.2.0 打包完成（新哈希已更新，含 ncm/kgg 解密与全部格式扩展；冒烟测试通过：win-unpacked 启动 4 进程存活）。注意：v0.2.0 打包时踩坑——`build.files` 白名单漏了 ncm-decrypt.js/kgg-decrypt.js 导致运行时 MODULE_NOT_FOUND，已修复并写入 AGENTS.md；以后新增根目录模块必须加进 files 白名单。商店包仍是 v0.1.0（商店审核中的提交未变）。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
 
-桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 改名后曾重建、随后缺失，2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。注意：应用本体尚未通过安装器正式安装（%LOCALAPPDATA%\Programs 无痕迹），桌面安装包副本已按用户要求删除，安装器在 `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`。
+桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 改名后曾重建、随后缺失，2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。注意：应用本体尚未通过安装器正式安装（%LOCALAPPDATA%\Programs 无痕迹），桌面安装包副本已按用户要求删除，安装器在 `dist\FlyingMouse Format-Setup-0.2.0-x64.exe`。
 
 ## 验证入口
 
@@ -60,6 +60,6 @@ npm audit --omit=dev
 1. 等待微软商店认证结果（2026-08-06 提交，预计 1-3 个工作日）；打回则按认证报告修改并重提。
 2. ~~ncm/kgg 音乐解密~~（已完成 2026-08-07，真实样本验证 41/41）：ncm 需官方网易云客户端标准文件；kgg 需本机酷狗密钥库。遗留：kgg 仅支持 v5（mode=5），旧版/概念版待样本；VipSongsDownload 假 ncm 无解（自定义加密）。
 3. 下次商店提交时把隐私政策 URL 换成正式 Pages 链接：https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html（已 200，raw 链接仍可继续用）。
-4. 打包 v0.2.0（build/icon.png 图标自动生效 + 新格式）：重新计算哈希并更新本文件交付产物表；打包后做桌面、任务栏和安装器视觉验证。
+4. ~~打包 v0.2.0~~（已完成 2026-08-07：build/icon.png 图标生效 + 全部新格式；新哈希已更新到交付产物表；桌面/任务栏视觉验证未做，待正式安装后补）。
 5. 依赖安全已归零；后续每次依赖变更后跑 `npm audit --omit=dev` 确认不回升。
 6. 可选：补转换过程截图（商店推荐 4 张，现 1 张）；配置 GitHub Actions 自动打包（CI 已配测试门禁 .github/workflows/ci.yml）。
