@@ -13,6 +13,7 @@ const sanitize = require("sanitize-filename");
 const sharp = require("sharp");
 const ExcelJS = require("exceljs");
 const yazl = require("yazl");
+const { PDFDocument } = require("pdf-lib");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -99,8 +100,9 @@ const TESSDATA_PATH = bundledTessdataPath();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
 const imageFormatTargets = ["png", "jpg", "webp", "avif", "tiff", "pdf"];
+const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
-const imageTargets = [...imageFormatTargets, ...imageOcrTargets];
+const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
 const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml"]);
 const textTargets = ["txt", "md", "html", "json", "csv"];
 const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd"]);
@@ -112,10 +114,10 @@ const presentationTargets = ["pdf", "pptx", "odp", "html"];
 const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html"];
 const pdfImageTargets = ["png", "jpg"];
-const pdfTargets = [...pdfTextTargets, ...pdfImageTargets];
+const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
 const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
-const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg"];
+const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const allTargets = new Set([
@@ -206,6 +208,9 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "image") {
     imageFormatTargets.forEach((target) => targets.add(target));
+    if (tools.ffmpeg) {
+      imageVideoTargets.forEach((target) => targets.add(target));
+    }
     if (tools.ocr) {
       imageOcrTargets.forEach((target) => targets.add(target));
     }
@@ -213,12 +218,16 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "text") {
     textTargets.forEach((target) => targets.add(target));
+    if (tools.libreoffice) {
+      targets.add("pdf");
+    }
   }
 
   if (category === "pdf") {
     pdfTextTargets.forEach((target) => targets.add(target));
     if (tools.poppler) {
       pdfImageTargets.forEach((target) => targets.add(target));
+      targets.add("pdf");
     }
   }
 
@@ -244,6 +253,7 @@ function targetsForExt(rawExt, tools) {
 
   return [...targets].filter((target) => {
     const normalizedInput = normalizeExt(rawExt);
+    if (category === "pdf" && target === "pdf") return true;
     return target !== normalizedInput || target === "zip";
   });
 }
@@ -255,6 +265,7 @@ function safeBaseName(originalName) {
 
 function outputExtFor(category, targetExt) {
   if (category === "pdf" && pdfImageTargets.includes(targetExt)) return "zip";
+  if (category === "pdf" && targetExt === "pdf") return "zip";
   return targetExt;
 }
 
@@ -451,9 +462,41 @@ async function convertImage(inputPath, outputPath, target) {
     return;
   }
 
+  if (target === "mp4" || target === "webm") {
+    await convertImageToVideo(inputPath, outputPath, target);
+    return;
+  }
+
   const image = sharp(inputPath, { animated: true, limitInputPixels: false }).rotate();
   const normalized = target === "jpg" ? "jpeg" : target;
   await image.toFormat(normalized, target === "jpg" ? { quality: 90 } : undefined).toFile(outputPath);
+}
+
+async function convertImageToVideo(inputPath, outputPath, target) {
+  const fd = fs.openSync(inputPath, "r");
+  let isGif = false;
+  try {
+    const magic = Buffer.alloc(6);
+    fs.readSync(fd, magic, 0, 6, 0);
+    isGif = magic.toString("latin1") === "GIF87a" || magic.toString("latin1") === "GIF89a";
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const args = ["-hide_banner", "-y"];
+  if (isGif) {
+    args.push("-i", inputPath);
+  } else {
+    args.push("-loop", "1", "-i", inputPath, "-t", "3");
+  }
+  args.push("-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-an");
+  if (target === "mp4") {
+    args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart");
+  } else {
+    args.push("-codec:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-pix_fmt", "yuv420p");
+  }
+  args.push(outputPath);
+  await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 10 });
 }
 
 async function prepareImageForOcr(inputPath) {
@@ -632,10 +675,26 @@ endobj
   await fsp.writeFile(outputPath, Buffer.concat([body, pdfAscii(xref + trailer)]));
 }
 
-async function convertText(inputPath, outputPath, inputExt, target) {
+async function convertText(inputPath, outputPath, inputExt, target, originalName = `converted.${normalizeExt(inputExt) || "txt"}`) {
   const raw = await fsp.readFile(inputPath, "utf8");
   const source = normalizeExt(inputExt);
   let converted = raw;
+
+  if (target === "pdf") {
+    if (source === "md") {
+      const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-textpdf-"));
+      const htmlPath = path.join(tempDir, "converted.html");
+      await fsp.writeFile(htmlPath, markdownToHtml(raw), "utf8");
+      try {
+        await convertWithLibreOffice(htmlPath, outputPath, "converted.html", "pdf");
+      } finally {
+        await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    } else {
+      await convertWithLibreOffice(inputPath, outputPath, originalName, "pdf");
+    }
+    return;
+  }
 
   if (target === "txt") {
     if (source === "html") converted = htmlToText(raw);
@@ -826,6 +885,11 @@ function applyColumnWidths(sheet, rows) {
 }
 
 async function convertPdf(inputPath, outputPath, target) {
+  if (target === "pdf") {
+    await splitPdfToZip(inputPath, outputPath);
+    return;
+  }
+
   if (pdfImageTargets.includes(target)) {
     await convertPdfPagesToImagesZip(inputPath, outputPath, target);
     return;
@@ -883,7 +947,43 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
     return;
   }
 
-  throw new Error("PDF 暂时只支持转换为 XLSX、TXT、HTML、PNG 或 JPG。");
+  throw new Error("PDF 暂时只支持转换为 XLSX、TXT、HTML、PNG、JPG，或拆分为单页 PDF。");
+}
+
+async function splitPdfToZip(inputPath, outputPath) {
+  const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
+  try {
+    const entries = [];
+    for (let index = 0; index < src.getPageCount(); index += 1) {
+      const single = await PDFDocument.create();
+      const [page] = await single.copyPages(src, [index]);
+      single.addPage(page);
+      const pagePath = path.join(tempDir, `page-${String(index + 1).padStart(3, "0")}.pdf`);
+      await fsp.writeFile(pagePath, await single.save());
+      entries.push({ inputPath: pagePath, archiveName: `page-${String(index + 1).padStart(3, "0")}.pdf` });
+    }
+    if (!entries.length) {
+      throw new Error("PDF 拆分失败，未生成任何页面。");
+    }
+    await zipFiles(entries, outputPath);
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function mergePdfFiles(pdfFiles, outputPath) {
+  const merged = await PDFDocument.create();
+  for (const file of pdfFiles) {
+    const src = await PDFDocument.load(await fsp.readFile(file.inputPath), { ignoreEncryption: true });
+    const pages = await merged.copyPages(src, src.getPageIndices());
+    pages.forEach((page) => merged.addPage(page));
+  }
+  const bytes = await merged.save();
+  if (!bytes.length) {
+    throw new Error("PDF 合并失败，未生成任何内容。");
+  }
+  await fsp.writeFile(outputPath, bytes);
 }
 
 async function renderPdfPages(inputPath, target = "png", dpi = 150) {
@@ -952,11 +1052,14 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
 async function convertMedia(inputPath, outputPath, target, category) {
   const args = ["-hide_banner", "-y", "-i", inputPath];
 
-  if (["mp3", "wav", "flac", "m4a", "ogg"].includes(target)) {
+  if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
     args.push("-vn");
     if (target === "mp3") args.push("-codec:a", "libmp3lame", "-q:a", "2");
     if (target === "m4a") args.push("-codec:a", "aac", "-b:a", "192k");
     if (target === "ogg") args.push("-codec:a", "libopus", "-b:a", "160k");
+    if (target === "aac") args.push("-codec:a", "aac", "-b:a", "192k");
+    if (target === "opus") args.push("-codec:a", "libopus", "-b:a", "160k");
+    if (target === "wma") args.push("-codec:a", "wmav2", "-b:a", "192k");
   } else if (category === "audio") {
     throw new Error("音频文件不能直接转换为视频容器。请选择音频目标格式。");
   } else if (target === "mp4" || target === "mov") {
@@ -1070,12 +1173,12 @@ app.get("/api/capabilities", async (_req, res) => {
     tools,
     maxUploadBytes: MAX_UPLOAD_BYTES,
     groups: {
-      image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ocr ? imageOcrTargets : [])] },
-      text: { inputs: [...textInput].sort(), targets: textTargets },
+      image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])] },
+      text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : [])] },
       document: { inputs: [...documentInput].sort(), targets: documentTargets },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets },
-      pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? pdfImageTargets : [])] },
+      pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
       audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
@@ -1141,6 +1244,47 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 });
 
+app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
+  const files = req.files || [];
+
+  if (!files.length) {
+    res.status(400).json({ error: "请先选择要合并的 PDF 文件。" });
+    return;
+  }
+
+  const pdfFiles = files.map((file) => ({
+    inputPath: file.path,
+    originalName: decodeUploadFileName(file.originalname)
+  }));
+
+  if (pdfFiles.some((file) => normalizeExt(extFromName(file.originalName)) !== "pdf")) {
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    res.status(400).json({ error: "批量合并 PDF 只支持 PDF 文件。请先移除非 PDF 文件。" });
+    return;
+  }
+
+  const firstBaseName = safeBaseName(pdfFiles[0].originalName);
+  const combinedName = pdfFiles.length > 1 ? `${firstBaseName}等${pdfFiles.length}个文件.pdf` : `${firstBaseName}.pdf`;
+  const outputPath = outputPathFor(combinedName, "pdf");
+  const downloadName = outputNameFor(combinedName, "pdf");
+
+  try {
+    await mergePdfFiles(pdfFiles, outputPath);
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    res.json({
+      ok: true,
+      fileName: downloadName,
+      category: "pdf",
+      mimeType: "application/pdf",
+      downloadUrl: downloadUrlFor(outputPath, downloadName, "application/pdf")
+    });
+  } catch (error) {
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    await fsp.rm(outputPath, { force: true }).catch(() => {});
+    res.status(500).json({ error: error.message || "合并 PDF 失败。" });
+  }
+});
+
 app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (req, res) => {
   const tools = await getTools();
   const file = req.file;
@@ -1178,7 +1322,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "image") {
       await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
-      await convertText(file.path, outputPath, inputExt, requestedTarget);
+      await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
