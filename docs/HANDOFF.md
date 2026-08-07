@@ -25,7 +25,7 @@
 
 2026-08-06 第三次重新打包（产品更名为 FlyingMouse Format 后）：新哈希已更新，且与 GitHub Release v0.1.0 资产 digest（sha256:7765a695...）一致。商店包哈希 093777C7... 与上传到 Partner Center 的 .appx 一致。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
 
-桌面快捷方式由 NSIS 安装器创建（`createDesktopShortcut: true`，指向 `dist\win-unpacked\FlyingMouse Format.exe`）。2026-08-06 产品改名后曾重建，但 2026-08-07 桌面已无该 .lnk（被清理）；重新安装后需验证 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 存在。
+桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 改名后曾重建、随后缺失，2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。注意：应用本体尚未通过安装器正式安装（%LOCALAPPDATA%\Programs 无痕迹），桌面安装包副本已按用户要求删除，安装器在 `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`。
 
 ## 验证入口
 
