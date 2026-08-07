@@ -512,7 +512,8 @@ async function prepareImageForOcr(inputPath) {
     .rotate()
     .flatten({ background: "#ffffff" })
     .grayscale()
-    .normalize();
+    .normalize()
+    .sharpen({ sigma: 1 });
 
   if (metadata.width && metadata.width < 1600) {
     pipeline.resize({ width: 1600, withoutEnlargement: false });
@@ -919,6 +920,30 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
   await fsp.writeFile(outputPath, `${markdown}\n`, "utf8");
 }
 
+async function convertDocumentToText(inputPath, outputPath, inputExt, originalName) {
+  const ext = normalizeExt(inputExt);
+  let text;
+  if (ext === "docx") {
+    // LibreOffice 的 txt 导出过滤器在本便携版不可用（报错/卡死），docx 直接用 mammoth 提取纯文本
+    const result = await mammoth.extractRawText({ path: inputPath });
+    text = (result.value || "").trim();
+  } else {
+    // doc/odt/rtf/wps 等走 LibreOffice html 导出（探测可用）再转纯文本
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-doctxt-"));
+    const htmlPath = path.join(tempDir, "converted.html");
+    try {
+      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html");
+      text = htmlToText(await fsp.readFile(htmlPath, "utf8")).trim();
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  if (!text) {
+    throw new Error("文档转文本失败，未提取到任何内容。");
+  }
+  await fsp.writeFile(outputPath, `${text}\n`, "utf8");
+}
+
 function groupPdfItemsIntoRows(items) {
   const cleanItems = items
     .filter((item) => String(item.str || "").trim())
@@ -1159,7 +1184,7 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
     throw new Error("OCR 引擎未启用。请确认安装包内置的 Tesseract 语言文件完整。");
   }
 
-  const rendered = await renderPdfPages(inputPath, "png", 200);
+  const rendered = await renderPdfPages(inputPath, "png", 300);
   let worker = null;
   try {
     worker = await createOcrWorker();
@@ -1204,11 +1229,13 @@ async function convertMedia(inputPath, outputPath, target, category) {
   await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 30 });
 }
 
-async function zipFile(inputPath, outputPath, originalName) {
-  await zipFiles([{ inputPath, archiveName: sanitize(originalName || "file") || "file" }], outputPath);
+async function zipFile(inputPath, outputPath, originalName, compressionLevel = 6) {
+  await zipFiles([{ inputPath, archiveName: sanitize(originalName || "file") || "file" }], outputPath, compressionLevel);
 }
 
-async function zipFiles(files, outputPath) {
+async function zipFiles(files, outputPath, compressionLevel = 6) {
+  const levelNum = Number(compressionLevel);
+  const level = Number.isFinite(levelNum) ? Math.min(9, Math.max(0, levelNum)) : 6;
   await new Promise((resolve, reject) => {
     const archive = new yazl.ZipFile();
     const output = fs.createWriteStream(outputPath);
@@ -1217,7 +1244,7 @@ async function zipFiles(files, outputPath) {
     archive.outputStream.on("error", reject);
     archive.outputStream.pipe(output);
     for (const file of files) {
-      archive.addFile(file.inputPath, sanitize(file.archiveName || "file") || "file", { compress: true });
+      archive.addFile(file.inputPath, sanitize(file.archiveName || "file") || "file", { compressionLevel: level });
     }
     archive.end();
   });
@@ -1448,7 +1475,9 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
 
   try {
     if (requestedTarget === "zip") {
-      await zipFile(file.path, outputPath, originalName);
+      const levelNum = Number(req.body?.compressionLevel);
+      const level = Number.isFinite(levelNum) ? Math.min(9, Math.max(0, levelNum)) : 6;
+      await zipFile(file.path, outputPath, originalName, level);
     } else if (category === "image") {
       await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
@@ -1458,6 +1487,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
       if (category === "document" && requestedTarget === "md") {
         await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
+      } else if (category === "document" && requestedTarget === "txt") {
+        await convertDocumentToText(file.path, outputPath, inputExt, originalName);
       } else {
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
@@ -1469,13 +1500,23 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
 
     await fsp.rm(file.path, { force: true }).catch(() => {});
     const mimeType = mime.lookup(downloadName) || "application/octet-stream";
-    res.json({
+    const payload = {
       ok: true,
       fileName: downloadName,
       category,
       mimeType,
       downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
-    });
+    };
+    if (requestedTarget === "zip") {
+      const originalBytes = file.size || 0;
+      const compressedBytes = (await fsp.stat(outputPath)).size;
+      payload.originalBytes = originalBytes;
+      payload.compressedBytes = compressedBytes;
+      payload.compressionRatio = compressedBytes >= originalBytes
+        ? 0
+        : Math.round((1 - compressedBytes / originalBytes) * 100);
+    }
+    res.json(payload);
   } catch (error) {
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});

@@ -598,3 +598,68 @@ test("converts Markdown to DOCX without changing the source", async () => {
   assertZipWithEntry(outputPath, /word\/document\.xml/);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
+
+test("converts a DOCX to plain text without LibreOffice txt export", async () => {
+  const sourcePath = path.join(scratchRoot, "纯文本.docx");
+  await createMinimalDocx(sourcePath, "提取这段文字 Extract me");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "纯文本.docx", "txt", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "纯文本.txt");
+  const outputPath = await downloadResult(body, "纯文本.txt");
+  const text = await fsp.readFile(outputPath, "utf8");
+  assert.match(text, /提取这段文字/);
+  assert.match(text, /Extract me/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts a DOCX to PDF via LibreOffice", async () => {
+  const sourcePath = path.join(scratchRoot, "文档转PDF.docx");
+  await createMinimalDocx(sourcePath, "PDF content here");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "文档转PDF.docx", "pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "文档转PDF.pdf");
+  const outputPath = await downloadResult(body, "文档转PDF.pdf");
+  assertPdf(outputPath);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("zip conversion honors compression level and reports sizes", async () => {
+  const sourcePath = path.join(scratchRoot, "压缩样本.txt");
+  await fsp.writeFile(sourcePath, "compress me ".repeat(4000), "utf8");
+  const beforeHash = hashFile(sourcePath);
+
+  async function convertZip(level) {
+    const form = new FormData();
+    form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "text/plain" }), "压缩样本.txt");
+    form.append("targetFormat", "zip");
+    if (level != null) form.append("compressionLevel", String(level));
+    const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+    const body = await parseBody(response);
+    assert.strictEqual(response.status, 200, body.error);
+    return body;
+  }
+
+  const store = await convertZip(0);
+  const max = await convertZip(9);
+
+  assert.ok(store.originalBytes > 0, "zip response must report originalBytes");
+  assert.ok(store.compressedBytes > 0, "zip response must report compressedBytes");
+  assert.ok(typeof store.compressionRatio === "number", "zip response must report compressionRatio");
+
+  const storePath = await downloadResult(store, "store.zip");
+  const maxPath = await downloadResult(max, "max.zip");
+  const storeSize = (await fsp.stat(storePath)).size;
+  const maxSize = (await fsp.stat(maxPath)).size;
+  assert.ok(maxSize < storeSize, `level 9 (${maxSize}) must be smaller than level 0 (${storeSize}) for text`);
+  assert.ok(max.compressionRatio > store.compressionRatio, "level 9 ratio must exceed level 0 ratio");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+
+  const defaultZip = await convertZip(null);
+  assert.strictEqual(defaultZip.fileName, "压缩样本.zip");
+});

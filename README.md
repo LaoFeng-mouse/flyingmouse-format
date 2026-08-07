@@ -35,15 +35,15 @@
 
 | 类别 | 输入格式 | 可转换为 |
 |---|---|---|
-| 🖼️ 图片 | jpg png webp avif tiff gif bmp heic | png jpg webp avif tiff pdf txt(OCR) |
-| 📝 文本 | txt md html json csv log xml yaml | txt md html json csv |
-| 📄 Word/WPS | doc docx odt rtf wps wpt wpd | pdf docx odt rtf txt html |
+| 🖼️ 图片 | jpg png webp avif tiff gif bmp heic | png jpg webp avif tiff pdf txt(OCR) mp4 webm(动图/静图转视频) |
+| 📝 文本 | txt md html json csv log xml yaml | txt md html json csv pdf docx |
+| 📄 Word/WPS | doc docx odt rtf wps wpt wpd | pdf docx odt rtf txt html md |
 | 📊 Excel/WPS | xls xlsx xlsm ods csv tsv et ett | pdf xlsx ods csv html |
 | 📽️ PPT/WPS | ppt pptx odp dps dpt | pdf pptx odp html |
-| 📑 PDF | pdf | xlsx(表格提取) txt html png jpg(页面) |
-| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma | mp3 wav flac m4a ogg |
-| 🎬 视频 | mp4 mov mkv webm avi m4v wmv flv | mp4 webm mkv mov mp3 wav flac m4a ogg |
-| 📦 任意文件 | * | zip |
+| 📑 PDF | pdf | xlsx(表格提取) txt html png jpg(页面) pdf(拆分为单页；多选合并) |
+| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma | mp3 wav flac m4a ogg aac opus wma |
+| 🎬 视频 | mp4 mov mkv webm avi m4v wmv flv | mp4 webm mkv mov mp3 wav flac m4a ogg aac opus wma |
+| 📦 任意文件 | * | zip（可选压缩级别 0-9） |
 
 ---
 

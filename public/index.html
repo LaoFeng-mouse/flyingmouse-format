@@ -58,6 +58,16 @@
               </select>
             </label>
 
+            <label class="field" id="zipCompressionField" hidden>
+              <span>ZIP 压缩级别（0=不压缩，9=最大）</span>
+              <select id="zipCompression">
+                <option value="0">0 不压缩（最快）</option>
+                <option value="1">1 最快</option>
+                <option value="6" selected>6 标准（默认）</option>
+                <option value="9">9 最大压缩（最慢）</option>
+              </select>
+            </label>
+
             <button class="primary-button" id="convertButton" type="button" disabled>
               开始转换
             </button>
