@@ -2,31 +2,23 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { test } = require("node:test");
-const sharp = require("sharp");
 
-const assetRoot = path.join(__dirname, "..", "public", "assets", "mouse-format");
-const expectedAssets = [
-  "mouse-idle.png",
-  "mouse-upload.png",
-  "mouse-analyzing.png",
-  "mouse-converting.png",
-  "mouse-pdf-pages.png",
-  "mouse-ocr.png",
-  "mouse-batch.png",
-  "mouse-success.png",
-  "mouse-error.png"
-];
+const assetRoot = path.join(__dirname, "..", "public", "assets");
 
-test("mouse action assets are generated transparent PNGs", async () => {
-  for (const fileName of expectedAssets) {
-    const filePath = path.join(assetRoot, fileName);
-    assert.ok(fs.existsSync(filePath), `${fileName} is missing`);
-    assert.ok(fs.statSync(filePath).size > 12_000, `${fileName} looks like a placeholder`);
+test("app icon asset exists and is a real SVG", () => {
+  const filePath = path.join(assetRoot, "app-icon.svg");
+  assert.ok(fs.existsSync(filePath), "app-icon.svg is missing");
+  assert.ok(fs.statSync(filePath).size > 200, "app-icon.svg looks like a placeholder");
 
-    const metadata = await sharp(filePath).metadata();
-    assert.strictEqual(metadata.format, "png", `${fileName} must be PNG`);
-    assert.strictEqual(metadata.hasAlpha, true, `${fileName} must have transparency`);
-    assert.ok(metadata.width >= 480, `${fileName} width is too small`);
-    assert.ok(metadata.height >= 360, `${fileName} height is too small`);
-  }
+  const content = fs.readFileSync(filePath, "utf8");
+  assert.match(content, /<svg/, "app-icon.svg must be an SVG document");
+  assert.match(content, /viewBox/, "app-icon.svg must declare a viewBox");
+});
+
+test("renderer no longer references mouse action assets", () => {
+  const html = fs.readFileSync(path.join(assetRoot, "..", "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(assetRoot, "..", "app.js"), "utf8");
+
+  assert.doesNotMatch(html, /mouse-format/, "index.html must not reference mouse assets");
+  assert.doesNotMatch(app, /mouse-format/, "app.js must not reference mouse assets");
 });

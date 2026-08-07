@@ -9,3 +9,7 @@ tests/fixtures/
 
 # 一次性验证脚本（保留供日志冒烟检查，不入库）
 scripts/tmp-e2e-log-check.js
+
+# 临时诊断脚本（agent 会话内创建，保留不入库）
+tmp_*
+scripts/tmp-*.js

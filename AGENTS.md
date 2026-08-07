@@ -56,8 +56,10 @@ separate working copy `D:\34615\飞鼠格式-win7` (NOT committed; rebuildable):
   `tests/electron-hardening-static.test.js` accepts Electron 22 or 43.
 - package.json deltas: artifactName suffix `-win7-${arch}`, `win.target` = nsis only
   (no appx — Store is Win10+).
-- Verified: `npm test` 48/48, node --check all modules, win-unpacked launches with
-  engines resolved; PE header OS requirement 5.2 (Win7 6.1 OK) vs 10.0 on mainline.
+- Verified: `npm test` 48/48 (pre-UI-rewrite test set; mainline is now 49), node --check all modules, win-unpacked launches with
+  engines resolved; PE header OS requirement 5.2 (Win7 6.1 OK) vs 10.0 on mainline. NOTE: the Win7 build was snapshotted from
+  pre-"Xianyu UI rewrite" source, so it still contains the mouse mascot + sponsor widget; rebuild from current mainline if a
+  mascot-free Win7 package is wanted.
 - Rebuild steps: copy mainline source + `bin/` (exclude node_modules/dist/.git),
   apply the deltas above, `npm install` with the mirror env vars (see below;
   electron 22 binary may need manual download to `%LOCALAPPDATA%\electron\Cache` if
@@ -66,7 +68,7 @@ separate working copy `D:\34615\飞鼠格式-win7` (NOT committed; rebuildable):
 
 Store package: `npm run dist` also targets `appx` (MSIX, for Microsoft Store). The store package currently in certification is still **v0.1.0** (`dist\FlyingMouse Format-Setup-0.1.0-x64.appx` / copy `上传商店用这个.appx`); the 0.2.x builds did not emit an appx locally — verify appx build before the next store submission. `signExecutable:false` is intentional (electron-builder's bundled signtool cannot sign .appx — the appx is either signed manually with the Windows SDK signtool or left unsigned for the Store to sign at submission). Do NOT reintroduce `signAndEditExecutable:false` — it also skips icon embedding (v0.2.0 shipped without the app icon because of it). The `appx` block in package.json holds the Partner Center identity (`identityName`, `publisher` CN, `displayName`). Full flow: docs/微软商店上架清单.md.
 
-App icon: `build/icon.png` (512x512, 鼠鼠 avatar, transparent) — electron-builder picks it up automatically for NSIS installer, exe, taskbar, and appx store logos; effective since v0.2.1 (`signExecutable:false` keeps icon embedding). Regenerate from `public/assets/mouse-format/source-mouse-avatar.png` if the mascot changes.
+App icon: `build/icon.png` (512x512, neutral mouse-free mark, transparent) — electron-builder picks it up automatically for NSIS installer, exe, taskbar, and appx store logos; effective since v0.2.1 (`signExecutable:false` keeps icon embedding). The Xianyu UI rewrite (2026-08-07) replaced the old mouse avatar icon with the current neutral mark; old mascot assets under `public/assets/mouse-format/` are unreferenced leftovers.
 
 ## Verification
 
@@ -91,9 +93,9 @@ To diagnose a user-reported conversion failure: read the tail of `%APPDATA%\Flyi
 - Before public distribution, run `npm audit --omit=dev`; unresolved production advisories must be reported rather than hidden with a forced upgrade.
 - Audio files (e.g. MP3) must NOT offer video container targets (mp4/webm/mkv/mov); the `targetsForExt` audio branch filters them.
 
-Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 48/48 there.
+Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 49/49 there.
 
-CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 48 tests; ncm/kgg fixture tests auto-skip when the real samples are absent). Workflow: `.github/workflows/ci.yml`.
+CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 20 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 49 tests; ncm/kgg fixture tests auto-skip when the real samples are absent). Workflow: `.github/workflows/ci.yml`.
 
 Proprietary audio formats: `ncm-format.js` (NetEase NCM) and `kgg-format.js` (Kugou v5 KGG) convert in-place then transcode via ffmpeg. Both are verified against real official-client files (2026-08). NCM layout: magic(8)+version(1)+keyLen@10+key@14+metaLen+meta+crc(4)+unknown(5)+coverLen(4)+cover+audio; RC4 key = AES-ECB-decrypted keyBox[17..payloadEnd] (PKCS7-stripped); audio uses a one-shot 256-byte keystream variant (NOT standard continuous RC4). KGG needs the Kugou desktop key db (`%APPDATA%\KuGou8\KGMusicV3.db`, AES-CBC page decrypt + sql.js SQLite read); only songs downloaded by the local Kugou client convert. `sql.js` ships the wasm inside node_modules (asarUnpack for the packaged app). Compliance note: these capabilities must NOT be mentioned in any public-facing intro (README / store description); keep them as quiet format support.
 

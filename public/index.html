@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FlyingMouse Format</title>
-    <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
+    <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -12,10 +12,10 @@
       <section class="workspace" aria-label="文件转换工作台">
         <div class="topbar">
           <div class="brand-lockup">
-            <img class="brand-mouse" src="/assets/mouse-format/mouse-idle.png" alt="" aria-hidden="true">
+            <div class="brand-mark" aria-hidden="true">⚡</div>
             <div>
               <p class="eyebrow">FlyingMouse Format</p>
-              <h1>鼠鼠帮你把文件转成需要的格式</h1>
+              <h1>格式转换，一步到位</h1>
             </div>
           </div>
           <div class="health" id="toolHealth">正在检测转换引擎</div>
@@ -32,11 +32,9 @@
           <section class="drop-panel" aria-label="上传文件">
             <input id="fileInput" type="file" class="sr-only" multiple>
             <button class="drop-zone" id="dropZone" type="button">
-              <span class="mouse-stage" aria-hidden="true">
-                <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
-              </span>
-              <span class="drop-main">把文件丢给鼠鼠</span>
-              <span class="drop-sub" id="dropHint">图片、文档、PDF、WPS、音视频都可以试</span>
+              <span class="drop-icon" aria-hidden="true">📁</span>
+              <span class="drop-main">把文件拖到这里，或点击选择</span>
+              <span class="drop-sub" id="dropHint">图片、文档、PDF、WPS、音视频都可以转</span>
             </button>
 
             <div class="file-strip" id="fileStrip" hidden>
@@ -100,18 +98,6 @@
         </section>
       </section>
     </main>
-
-    <aside class="sponsor-widget" id="sponsorWidget" aria-label="支持鼠鼠">
-      <button class="sponsor-toggle" id="sponsorToggle" type="button" title="支持鼠鼠" aria-expanded="false">
-        <img class="sponsor-mouse" src="/assets/mouse-format/mouse-idle.png" alt="🐭">
-      </button>
-      <div class="sponsor-panel" id="sponsorPanel" hidden>
-        <button class="sponsor-close" id="sponsorClose" type="button" aria-label="收起">×</button>
-        <p class="sponsor-title">请鼠鼠吃小鱼干 🐟</p>
-        <p class="sponsor-sub">如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费</p>
-        <img class="sponsor-qr" src="/assets/sponsor-qr.jpg" alt="微信收款码">
-      </div>
-    </aside>
 
     <script src="/app.js"></script>
   </body>
