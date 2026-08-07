@@ -69,9 +69,9 @@ function decodeMeta(buf) {
   }
 }
 
-function tryDecrypt(buf, keyStart) {
-  if (buf.length < keyStart + 4) return null;
-  const keyLen = buf.readUInt32LE(8);
+function tryDecrypt(buf, keyLenOff, keyStart) {
+  if (buf.length < keyLenOff + 4) return null;
+  const keyLen = buf.readUInt32LE(keyLenOff);
   if (keyLen <= 0 || keyLen > 8192) return null;
   if (keyStart + keyLen + 4 > buf.length) return null;
 
@@ -117,14 +117,25 @@ async function decryptNcm(inputPath) {
   if (buf.subarray(0, 8).toString("latin1") !== "CTENFDAM") {
     throw new Error("不是有效的网易云 NCM 文件（缺少 CTENFDAM 文件头）。");
   }
-  const result = tryDecrypt(buf, 10) || tryDecrypt(buf, 12);
-  if (!result) {
-    throw new Error("NCM 解密失败：文件可能不是官方网易云客户端下载的标准 NCM。");
+  // 尝试多种头部布局（密钥长度字段偏移 × 密钥起始偏移），音频魔数校验自动排除错误布局
+  const layouts = [
+    [8, 10],
+    [8, 12],
+    [10, 12],
+    [10, 14],
+    [12, 14],
+    [12, 16]
+  ];
+  for (const [keyLenOff, keyStart] of layouts) {
+    const result = tryDecrypt(buf, keyLenOff, keyStart);
+    if (result) {
+      const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ncm-"));
+      const nativePath = path.join(tempDir, `native.${result.format}`);
+      await fsp.writeFile(nativePath, result.audioData);
+      return { nativePath, format: result.format, tempDir, meta: result.meta };
+    }
   }
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ncm-"));
-  const nativePath = path.join(tempDir, `native.${result.format}`);
-  await fsp.writeFile(nativePath, result.audioData);
-  return { nativePath, format: result.format, tempDir, meta: result.meta };
+  throw new Error("NCM 解密失败：文件可能不是官方网易云客户端下载的标准 NCM。");
 }
 
 module.exports = { decryptNcm };
