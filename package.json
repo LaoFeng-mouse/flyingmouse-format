@@ -10,8 +10,8 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
-    "test": "node --test tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
-    "test:ci": "node --test tests/electron-hardening-static.test.js tests/electron-security.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
+    "test": "node --test tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
+    "test:ci": "node --test tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
@@ -49,6 +49,7 @@
       "electron-security.js",
       "preload.js",
       "server.js",
+      "logger.js",
       "ncm-format.js",
       "kgg-format.js",
       "public/**/*",

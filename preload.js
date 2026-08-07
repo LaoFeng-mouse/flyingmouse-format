@@ -6,5 +6,8 @@ contextBridge.exposeInMainWorld("flyingMouseFormat", {
   },
   saveConvertedFiles(payload) {
     return ipcRenderer.invoke("save-converted-files", payload);
+  },
+  log(level, message) {
+    return ipcRenderer.invoke("log-event", { level, message });
   }
 });

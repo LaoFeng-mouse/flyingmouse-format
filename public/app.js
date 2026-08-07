@@ -8,6 +8,33 @@ const state = {
   progressValue: 0
 };
 
+/* --- 渲染进程日志：转发到主进程 debug.log --- */
+const logBridge = window.flyingMouseFormat || {};
+
+function rendererLog(level, message, error) {
+  const detail = error ? `${message}\n${error.stack || error.message || error}` : message;
+  try {
+    if (typeof logBridge.log === "function") {
+      logBridge.log(level, detail).catch(() => {});
+    } else {
+      // 非桌面环境（纯浏览器预览）退化为 console
+      if (level === "error") console.error(detail);
+      else if (level === "warn") console.warn(detail);
+      else console.info(detail);
+    }
+  } catch {
+    // 日志转发失败不应影响功能
+  }
+}
+
+window.addEventListener("error", (event) => {
+  rendererLog("error", `未捕获的渲染进程错误: ${event.message || "unknown"}`, event.error);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  rendererLog("error", "未处理的 Promise 拒绝", event.reason);
+});
+
 const fileInput = document.querySelector("#fileInput");
 const dropZone = document.querySelector("#dropZone");
 const fileStrip = document.querySelector("#fileStrip");
@@ -596,6 +623,7 @@ async function convertCurrentFiles() {
       setBatchResult(index, { status: "success", detail, result });
     } catch (error) {
       failCount += 1;
+      rendererLog("warn", `转换失败: "${file.name || "未知文件"}" -> ${targetFormat}: ${error.message || error}`);
       setBatchResult(index, { status: "error", detail: error.message || "未知错误" });
     }
   }
@@ -737,6 +765,7 @@ batchSaveButton.addEventListener("click", saveAllConvertedFiles);
 fetchCapabilities().catch((error) => {
   toolHealth.textContent = "检测失败";
   setStatus(error.message, "error");
+  rendererLog("error", "能力检测失败", error);
   setMouseState("error");
 });
 

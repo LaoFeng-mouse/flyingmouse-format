@@ -7,6 +7,7 @@
 ## Structure
 
 - `server.js`: Express conversion service, target detection, filename decoding, conversion dispatch, download URLs.
+- `logger.js`: single leveled logger (INFO/WARN/ERROR) shared by main process, server, and renderer-forwarded IPC events; writes `userData/debug.log` (Electron) or `%TEMP%\flyingmouse-format-debug.log` (standalone `node server.js`). `FLYINGMOUSE_LOG_FILE` env var overrides the path (used by tests). Log lines are bounded to ~1MB by trimming the tail. WARN/ERROR are also mirrored to stdout.
 - `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display. Bottom-right sponsor widget (`#sponsorWidget`, collapsible WeChat QR panel) is renderer-only; sponsor QR image lives at `public/assets/sponsor-qr.jpg`.
 - `electron-main.js`: starts the local server, opens the window, handles save dialogs and batch save-to-folder.
 - `electron-security.js`: pure URL/origin policy used by navigation, external-link, IPC, and download guards.
@@ -56,10 +57,11 @@ node --check public\app.js
 node --check electron-main.js
 node --check electron-security.js
 node --check preload.js
+node --check logger.js
 npm test
 ```
 
-For functional checks, test:
+To diagnose a user-reported conversion failure: read the tail of `%APPDATA%\FlyingMouse Format\debug.log` (Electron userData). It records server startup (engine paths), every convert request (filename, extension, category, target, size), successes, rejected requests, engine stderr (`Command failed: ...`), and renderer-forwarded uncaught errors (`[renderer] ...`). In dev, `node server.js` logs to `%TEMP%\flyingmouse-format-debug.log`.
 
 - Chinese-named OGG to MP3 keeps the original Chinese basename.
 - Two TXT files batch-convert to HTML and show two successful queue rows.
@@ -68,9 +70,9 @@ For functional checks, test:
 - Before public distribution, run `npm audit --omit=dev`; unresolved production advisories must be reported rather than hidden with a forced upgrade.
 - Audio files (e.g. MP3) must NOT offer video container targets (mp4/webm/mkv/mov); the `targetsForExt` audio branch filters them.
 
-Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 41/41 there.
+Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 48/48 there.
 
-CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 41 tests; ncm/kgg fixture tests auto-skip when the real samples are absent). Workflow: `.github/workflows/ci.yml`.
+CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 48 tests; ncm/kgg fixture tests auto-skip when the real samples are absent). Workflow: `.github/workflows/ci.yml`.
 
 Proprietary audio formats: `ncm-format.js` (NetEase NCM) and `kgg-format.js` (Kugou v5 KGG) convert in-place then transcode via ffmpeg. Both are verified against real official-client files (2026-08). NCM layout: magic(8)+version(1)+keyLen@10+key@14+metaLen+meta+crc(4)+unknown(5)+coverLen(4)+cover+audio; RC4 key = AES-ECB-decrypted keyBox[17..payloadEnd] (PKCS7-stripped); audio uses a one-shot 256-byte keystream variant (NOT standard continuous RC4). KGG needs the Kugou desktop key db (`%APPDATA%\KuGou8\KGMusicV3.db`, AES-CBC page decrypt + sql.js SQLite read); only songs downloaded by the local Kugou client convert. `sql.js` ships the wasm inside node_modules (asarUnpack for the packaged app). Compliance note: these capabilities must NOT be mentioned in any public-facing intro (README / store description); keep them as quiet format support.
 
