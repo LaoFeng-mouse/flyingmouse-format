@@ -73,4 +73,4 @@ Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path
 - Remote: `https://github.com/LaoFeng-mouse/flyingmouse-format.git` (public)
 - Author identity: `LaoFeng <LaoFeng-mouse@users.noreply.github.com>` (repo-local git config; do not commit as Codex)
 - Release: v0.1.0 published; installer asset `FlyingMouse.Format-Setup-0.1.0-x64.exe` (SHA-256 7765A695...) matches local `dist\FlyingMouse Format-Setup-0.1.0-x64.exe`.
-- Desktop shortcut: created by the NSIS installer (`createDesktopShortcut: true`). Note: as of 2026-08-07 the desktop had no `FlyingMouse Format.lnk` (deleted/cleaned); reinstalling recreates it. Verify `C:\Users\34615\Desktop\FlyingMouse Format.lnk` → `dist\win-unpacked\FlyingMouse Format.exe` after install.
+- Desktop shortcut: `C:\Users\34615\Desktop\FlyingMouse Format.lnk` → `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。
