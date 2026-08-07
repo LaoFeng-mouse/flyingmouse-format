@@ -105,7 +105,7 @@ npm run desktop
 ├─ server.js              # Express 转换服务（格式识别、转换分发）
 ├─ public/                # 前端界面
 ├─ bin/                   # 内置转换引擎（不入库，需单独备份）
-├─ tests/                 # 自动化测试（41 个用例，全量本地跑）
+├─ tests/                 # 自动化测试（48 个用例，全量本地跑）
 └─ docs/HANDOFF.md        # 交接与交付说明
 ```
 
