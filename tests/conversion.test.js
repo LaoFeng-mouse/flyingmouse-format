@@ -648,6 +648,29 @@ test("decrypts a standard NetEase NCM file to MP3 (real fixture required)", asyn
   assert.strictEqual(hashFile(fixture), beforeHash);
 });
 
+test("decrypts a Kugou KGG file to audio (real fixture + key db required)", async (t) => {
+  const fixture = path.join(__dirname, "fixtures", "sample.kgg");
+  if (!fs.existsSync(fixture)) {
+    t.skip("缺少真实 KGG fixture（酷狗客户端下载，放入 tests/fixtures/sample.kgg）");
+    return;
+  }
+  const { candidateDbPaths } = require("../kgg-decrypt");
+  if (!candidateDbPaths()) {
+    t.skip("缺少酷狗密钥库 KGMusicV3.db（%APPDATA%\\KuGou8\\ 下），无法解密 KGG");
+    return;
+  }
+  const beforeHash = hashFile(fixture);
+
+  const { response, body } = await uploadConvert(fixture, "sample.kgg", "mp3", "application/octet-stream");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "sample.mp3");
+  const outputPath = await downloadResult(body, "sample.mp3");
+  const magic = fs.readFileSync(outputPath).subarray(0, 3);
+  const isMp3 = magic.toString("latin1") === "ID3" || (magic[0] === 0xff && (magic[1] & 0xe0) === 0xe0);
+  assert.ok(isMp3, `decrypted output must be a playable mp3, magic=${magic.toString("hex")}`);
+  assert.strictEqual(hashFile(fixture), beforeHash);
+});
+
 test("zip conversion honors compression level and reports sizes", async () => {
   const sourcePath = path.join(scratchRoot, "压缩样本.txt");
   await fsp.writeFile(sourcePath, "compress me ".repeat(4000), "utf8");

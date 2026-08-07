@@ -68,9 +68,11 @@ For functional checks, test:
 - Before public distribution, run `npm audit --omit=dev`; unresolved production advisories must be reported rather than hidden with a forced upgrade.
 - Audio files (e.g. MP3) must NOT offer video container targets (mp4/webm/mkv/mov); the `targetsForExt` audio branch filters them.
 
-Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 39/39 there.
+Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 41/41 there.
 
-CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 39 tests). Workflow: `.github/workflows/ci.yml`.
+CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 41 tests; ncm/kgg fixture tests auto-skip when the real samples are absent). Workflow: `.github/workflows/ci.yml`.
+
+Encrypted audio: `ncm-decrypt.js` (NetEase standard NCM) and `kgg-decrypt.js` (Kugou v5 KGG) decrypt in-place then transcode via ffmpeg. Both are verified against real official-client files (2026-08). NCM layout: magic(8)+version(1)+keyLen@10+key@14+metaLen+meta+crc(4)+unknown(5)+coverLen(4)+cover+audio; RC4 key = AES-ECB-decrypted keyBox[17..payloadEnd] (PKCS7-stripped); audio uses a one-shot 256-byte keystream variant (NOT standard continuous RC4). KGG needs the Kugou desktop key db (`%APPDATA%\KuGou8\KGMusicV3.db`, AES-CBC page decrypt + sql.js SQLite read); only songs downloaded by the local Kugou client decrypt. `sql.js` ships the wasm inside node_modules (asarUnpack for the packaged app).
 
 ## Repository
 

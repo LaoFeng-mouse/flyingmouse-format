@@ -16,6 +16,7 @@
 - 2026-08-06 微软商店上架：MSIX 包（electron-builder 26 `appx` target + 自签名 CodeSigning 证书手动签名，`signExecutable:false`）已上传 Partner Center（产品 9NJKN37CR6H）并提交认证（提交 1，审核中，预计 1-3 个工作日）。商店渠道由微软自动签名；GitHub 直下载渠道仍为未签名。填写模板与逐屏指引见 docs/微软商店上架清单.md。
 - 2026-08-07 工程基建：build/icon.png 鼠鼠图标（512x512 透明底，electron-builder 自动使用，下次打包生效）；MIT LICENSE；GitHub Actions CI 测试门禁（.github/workflows/ci.yml）；隐私政策正式 Pages URL 确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html，HTTP 200）。
 - 2026-08-07 格式扩展 v0.2.0（测试 39/39）：文本→PDF/DOCX（docx 纯 JS 生成）、Word↔Markdown（mammoth+turndown）、PDF 合并/拆分（pdf-lib，多选合并/单选拆单页 zip）、图片/动图→mp4/webm、音频新增 aac/opus/wma 输出、ZIP 压缩级别 0-9 可调并报告压缩前后尺寸；OCR 改进（PDF 渲染 300DPI + sharpen）。修复：便携版 LibreOffice 的 txt 导出过滤器不可用（docx→txt 改用 mammoth）、html→docx 不可用（文本→docx 全部改纯 JS 生成）；真实 Office 样本探测确认 docx→pdf/odt/rtf/html、xlsx/xls→pdf/ods/csv/html、pptx→pdf/odp/html 均可用。
+- 2026-08-07 音乐解密 ncm+kgg（测试 41/41，真实文件验证通过）：ncm-decrypt.js 支持官方网易云客户端标准 ncm（真实样本「国风堂,哦漏 - 知我」验证：CTENFDAM 头、keyLen@10、RC4 变种一次性 256 字节密钥流、CRC+5字节+封面跳过；含多布局回退）；kgg-decrypt.js 支持酷狗 v5 KGG（真实样本「周杰伦-晴天」「杜宣达-指纹」验证：QMC2 加密，密钥读本机酷狗密钥库 %APPDATA%\KuGou8\KGMusicV3.db，AES-CBC 1024 字节分页解密 + sql.js 查 ShareFileItems；仅本机酷狗下载的歌曲可解）。新增依赖 sql.js（asarUnpack）。「VipSongsDownload 假 ncm」仍无法解密（自定义加密无算法）。
 
 ## 交付产物
 
@@ -57,7 +58,7 @@ npm audit --omit=dev
 ## 后续优先级
 
 1. 等待微软商店认证结果（2026-08-06 提交，预计 1-3 个工作日）；打回则按认证报告修改并重提。
-2. ncm/kgg 音乐解密：需要用户提供真实 .ncm/.kgg 样本各一个作为验证 fixture（算法字节布局不能凭记忆写，合成测试无法证明真文件兼容）；拿到样本后实现并逐字节验证。
+2. ~~ncm/kgg 音乐解密~~（已完成 2026-08-07，真实样本验证 41/41）：ncm 需官方网易云客户端标准文件；kgg 需本机酷狗密钥库。遗留：kgg 仅支持 v5（mode=5），旧版/概念版待样本；VipSongsDownload 假 ncm 无解（自定义加密）。
 3. 下次商店提交时把隐私政策 URL 换成正式 Pages 链接：https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html（已 200，raw 链接仍可继续用）。
 4. 打包 v0.2.0（build/icon.png 图标自动生效 + 新格式）：重新计算哈希并更新本文件交付产物表；打包后做桌面、任务栏和安装器视觉验证。
 5. 依赖安全已归零；后续每次依赖变更后跑 `npm audit --omit=dev` 确认不回升。
