@@ -70,6 +70,8 @@ For functional checks, test:
 
 Note on running tests from git-bash/MSYS: `npm test` uses `tar -tf <windows path>` in `conversion.test.js`, and the MSYS GNU tar misreads `C:\...` as a remote host, producing two false failures (`renders PDF pages to a PNG/JPG zip`). Run the test suite from cmd/PowerShell (or set PATH to prefer `C:\Windows\System32\tar.exe`) so Windows bsdtar handles the paths; the suite passes 25/25 there.
 
+CI: GitHub Actions runs the engine-free suite (`npm run test:ci`, static/security/UI tests, 19 tests). `conversion.test.js` needs the gitignored `bin/` engines and runs locally (`npm test`, 25 tests). Workflow: `.github/workflows/ci.yml`.
+
 ## Repository
 
 - Remote: `https://github.com/LaoFeng-mouse/flyingmouse-format.git` (public)

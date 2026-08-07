@@ -28,7 +28,9 @@ jobs:
           node --check public/app.js
 
       - name: Run test suite
-        run: npm test
+        # conversion.test.js needs bin/ engines (ffmpeg/poppler/tessdata), which are gitignored;
+        # the full 25-test suite runs on the dev machine (npm test), CI runs the engine-free suite.
+        run: npm run test:ci
 
       - name: Production dependency audit
         run: npm audit --omit=dev
