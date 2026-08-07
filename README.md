@@ -4,8 +4,8 @@
 
 ![GitHub release](https://img.shields.io/github/v/release/LaoFeng-mouse/flyingmouse-format?color=brightgreen&label=Release)
 ![CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/workflows/ci.yml/badge.svg)
-![Electron](https://img.shields.io/badge/Electron-43-47848F)
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6)
+![Electron](https://img.shields.io/badge/Electron-43%20%2F%2022-47848F)
+![Platform](https://img.shields.io/badge/Platform-Windows%207%2F10%2F11-0078D6)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 [⬇️ 下载安装包](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [查看 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases) · [功能清单](#-支持格式) · [快速开始](#-快速开始)
@@ -26,7 +26,7 @@
 - 📦 **完全离线**：FFmpeg、LibreOffice、Poppler、Tesseract 全部内置，断网也能用
 - 🐭 **批量转换**：一次拖入多个文件，队列逐个处理，实时进度条 + 失败原因
 - 📄 **PDF 处理**：文字型 PDF 转 Excel/文本/网页，扫描版 PDF 可 OCR 转文本，页面可导出 PNG/JPG 压缩包
-- 🖱️ **拖拽即用**：把文件丢给鼠鼠，自动识别可用目标格式
+- 🖱️ **拖拽即用**：把文件拖进来，自动识别可用目标格式
 - 🔒 **安全可靠**：沙箱隔离 + 严格 CSP，本地服务仅监听 127.0.0.1，转换后由你选择保存位置
 
 ---
@@ -52,9 +52,13 @@
 **方式一：下载安装包（推荐）**
 
 1. 打开 [Release 页面](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest)
-2. 下载 `FlyingMouse Format-Setup-0.2.1-x64.exe`
+2. 按系统选择安装包：
+   - **Windows 10 / 11（64 位）**：下载 `FlyingMouse Format-Setup-0.2.1-x64.exe`（Electron 43，推荐）
+   - **Windows 7（64 位，SP1）**：下载 `FlyingMouse Format-Setup-0.2.1-win7-x64.exe`（Electron 22 兼容内核）
 3. 双击安装，桌面上会出现"FlyingMouse Format"快捷方式
 4. 把文件拖进窗口，选择目标格式，点击转换
+
+> ⚠️ 系统要求：Windows 7 需要 64 位 + SP1（Win7 版仅支持 64 位）；Windows 10/11 请优先使用主版本（非 win7 后缀）。
 
 **方式二：从源码运行（开发者）**
 
@@ -84,7 +88,7 @@ npm run desktop
 
 | 组件 | 用途 |
 |---|---|
-| Electron 43 | 桌面壳 + 窗口 + 系统保存对话框 |
+| Electron 43（主版）/ 22（Win7 兼容版） | 桌面壳 + 窗口 + 系统保存对话框 |
 | Express | 本地转换服务 |
 | FFmpeg | 音视频转码 |
 | LibreOffice Portable | Office/WPS 文档转换 |
@@ -124,14 +128,6 @@ npm run desktop
 | sharp / pdfjs-dist / exceljs 等 npm 依赖 | 见各包 LICENSE | 随 `npm install` 分发于 node_modules |
 
 按 GPL/LGPL 的要求，以上引擎的源码可从对应链接获取；如需本发行版所用具体构建的源码索取渠道，可通过 [Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues) 联系作者。
-
----
-
-## 🐭 请鼠鼠吃小鱼干
-
-如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干 🐟（纯自愿，软件永远免费）
-
-<img src="public/assets/sponsor-qr.jpg" alt="微信收款码" width="220">
 
 ---
 

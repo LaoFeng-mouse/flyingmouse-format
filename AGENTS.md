@@ -8,7 +8,7 @@
 
 - `server.js`: Express conversion service, target detection, filename decoding, conversion dispatch, download URLs.
 - `logger.js`: single leveled logger (INFO/WARN/ERROR) shared by main process, server, and renderer-forwarded IPC events; writes `userData/debug.log` (Electron) or `%TEMP%\flyingmouse-format-debug.log` (standalone `node server.js`). `FLYINGMOUSE_LOG_FILE` env var overrides the path (used by tests). Log lines are bounded to ~1MB by trimming the tail. WARN/ERROR are also mirrored to stdout.
-- `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display. Bottom-right sponsor widget (`#sponsorWidget`, collapsible WeChat QR panel) is renderer-only; sponsor QR image lives at `public/assets/sponsor-qr.jpg`.
+- `public/index.html`, `public/app.js`, `public/styles.css`: renderer UI, single-file and batch conversion queue, progress and error display. Clean neutral theme (orange accent, rounded cards, no mascot, no donation widget).
 - `electron-main.js`: starts the local server, opens the window, handles save dialogs and batch save-to-folder.
 - `electron-security.js`: pure URL/origin policy used by navigation, external-link, IPC, and download guards.
 - `preload.js`: exposes safe IPC methods as `window.flyingMouseFormat`.
@@ -23,8 +23,7 @@
 - PDF to PNG/JPG uses bundled Poppler and returns a zip because a PDF can contain multiple pages.
 - Image/PDF OCR to TXT uses bundled Tesseract.js language data. Do not claim scanned table-to-XLSX reconstruction is supported until layout analysis is added and tested.
 - Keep UI text wrapped with `overflow-wrap: anywhere` or equivalent when adding long filenames, error messages, or buttons.
-- Mouse-style UI assets must preserve the `鼠鼠打印` character grammar: full low-resolution mouse head, white blob body, rough black outline, and pink accent. Never crop the head into a circle or attach it to a generic vector body.
-- Mouse UI state changes are renderer-only. Do not couple mascot states to conversion backend logic or change conversion APIs for visual effects.
+- UI has no mascot and no donation/sponsor widget (removed for the Xianyu sales build). Do not reintroduce mouse mascot states or a sponsor QR panel. Favicon is `public/assets/app-icon.svg` (neutral lightning mark).
 - Keep Electron privilege boundaries intact: renderer navigation and IPC must stay on the exact local service origin; downloads must stay under `/downloads/<id>`; external opening only permits credential-free HTTPS URLs.
 - Do not reintroduce dynamic `innerHTML` for filenames, conversion errors, capability data, or other runtime values. Use DOM APIs and `textContent`.
 - Local builds are intentionally unsigned. Never store signing certificates, passwords, or tokens in the repository.
@@ -42,6 +41,28 @@ npm run dist
 ```
 
 The installer is `dist\FlyingMouse Format-Setup-0.2.1-x64.exe`.
+
+### Win7 兼容版（Electron 22）
+
+Mainline tracks Electron 43+ (Windows 10/11). A Win7-compatible build lives in a
+separate working copy `D:\34615\飞鼠格式-win7` (NOT committed; rebuildable):
+
+- Downgrades: `electron` 22.3.27 (last line supporting Win7, requires Win7 x64 SP1),
+  `sharp` ^0.32.6 (last Node-14-compatible; N-API build loads under Electron 22's Node 16.17),
+  `pdfjs-dist` 2.16.105 (3.11.x legacy build crashes under Node 16 with `Cannot read
+  properties of undefined (reading 'prototype')` — core-js interop; 4.x+ needs Node 20).
+- Code delta vs mainline: `server.js` `loadPdfjs()` falls back
+  `.mjs` → `legacy/build/pdf.js` and normalizes `mod.default || mod`;
+  `tests/electron-hardening-static.test.js` accepts Electron 22 or 43.
+- package.json deltas: artifactName suffix `-win7-${arch}`, `win.target` = nsis only
+  (no appx — Store is Win10+).
+- Verified: `npm test` 48/48, node --check all modules, win-unpacked launches with
+  engines resolved; PE header OS requirement 5.2 (Win7 6.1 OK) vs 10.0 on mainline.
+- Rebuild steps: copy mainline source + `bin/` (exclude node_modules/dist/.git),
+  apply the deltas above, `npm install` with the mirror env vars (see below;
+  electron 22 binary may need manual download to `%LOCALAPPDATA%\electron\Cache` if
+  install.js silently skips), then `npm run dist`.
+- Release asset: `FlyingMouse Format-Setup-0.2.1-win7-x64.exe` on the v0.2.1 release.
 
 Store package: `npm run dist` also targets `appx` (MSIX, for Microsoft Store). The store package currently in certification is still **v0.1.0** (`dist\FlyingMouse Format-Setup-0.1.0-x64.appx` / copy `上传商店用这个.appx`); the 0.2.x builds did not emit an appx locally — verify appx build before the next store submission. `signExecutable:false` is intentional (electron-builder's bundled signtool cannot sign .appx — the appx is either signed manually with the Windows SDK signtool or left unsigned for the Store to sign at submission). Do NOT reintroduce `signAndEditExecutable:false` — it also skips icon embedding (v0.2.0 shipped without the app icon because of it). The `appx` block in package.json holds the Partner Center identity (`identityName`, `publisher` CN, `displayName`). Full flow: docs/微软商店上架清单.md.
 
