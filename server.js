@@ -17,6 +17,7 @@ const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const TurndownService = require("turndown");
 const { decryptNcm } = require("./ncm-decrypt");
+const { decryptKgg } = require("./kgg-decrypt");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -118,7 +119,7 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov"];
@@ -1494,8 +1495,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && inputExt === "ncm") {
-        const decrypted = await decryptNcm(file.path);
+      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg")) {
+        const decrypted = inputExt === "ncm"
+          ? await decryptNcm(file.path)
+          : await decryptKgg(file.path);
         try {
           await convertMedia(decrypted.nativePath, outputPath, requestedTarget, "audio");
         } finally {

@@ -25,6 +25,7 @@
     "pdfjs-dist": "^6.2.108",
     "sanitize-filename": "^1.6.3",
     "sharp": "^0.35.3",
+    "sql.js": "^1.14.1",
     "tesseract.js": "^7.0.0",
     "turndown": "^7.2.4",
     "yazl": "^3.3.1"
@@ -78,7 +79,8 @@
       "node_modules/sharp/**/*",
       "node_modules/@img/**/*",
       "node_modules/tesseract.js/**/*",
-      "node_modules/tesseract.js-core/**/*"
+      "node_modules/tesseract.js-core/**/*",
+      "node_modules/sql.js/**/*"
     ],
     "win": {
       "signAndEditExecutable": false,

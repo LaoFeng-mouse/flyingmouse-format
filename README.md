@@ -41,9 +41,17 @@
 | 📊 Excel/WPS | xls xlsx xlsm ods csv tsv et ett | pdf xlsx ods csv html |
 | 📽️ PPT/WPS | ppt pptx odp dps dpt | pdf pptx odp html |
 | 📑 PDF | pdf | xlsx(表格提取) txt html png jpg(页面) pdf(拆分为单页；多选合并) |
-| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma | mp3 wav flac m4a ogg aac opus wma |
+| 🎵 音频 | mp3 wav flac m4a aac ogg opus wma ncm kgg | mp3 wav flac m4a ogg aac opus wma |
 | 🎬 视频 | mp4 mov mkv webm avi m4v wmv flv | mp4 webm mkv mov mp3 wav flac m4a ogg aac opus wma |
 | 📦 任意文件 | * | zip（可选压缩级别 0-9） |
+
+---
+
+## 🔐 加密音频解密（ncm / kgg）
+
+- **ncm（网易云音乐专属格式）**：支持**官方网易云音乐客户端**下载的标准 ncm 文件（`CTENFDAM` 头），已用真实文件验证。第三方下载器/网上下载的「假 ncm」（自定义加密）无法解密——它们没有公开算法。
+- **kgg（酷狗音乐专属格式）**：支持酷狗客户端下载的新版 kgg（v5），已用真实文件验证。解密需要读取本机酷狗客户端的密钥库 `%APPDATA%\KuGou8\KGMusicV3.db`，因此**只有在本机酷狗客户端里下载过的 kgg 才能解密**；换电脑/删了酷狗会导致密钥库缺失。
+- 解密后默认按所选目标格式输出（mp3 / flac / wav 等），与普通音频转换一致。
 
 ---
 
