@@ -18,6 +18,7 @@
     "@tesseract.js-data/eng": "^1.0.0",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
+    "mammoth": "^1.12.0",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
     "pdf-lib": "^1.17.1",
@@ -25,6 +26,7 @@
     "sanitize-filename": "^1.6.3",
     "sharp": "^0.35.3",
     "tesseract.js": "^7.0.0",
+    "turndown": "^7.2.4",
     "yazl": "^3.3.1"
   },
   "overrides": {

@@ -14,6 +14,8 @@ const sharp = require("sharp");
 const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
+const mammoth = require("mammoth");
+const TurndownService = require("turndown");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -106,7 +108,7 @@ const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTa
 const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml"]);
 const textTargets = ["txt", "md", "html", "json", "csv"];
 const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd"]);
-const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html"];
+const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html", "md"];
 const spreadsheetInput = new Set(["xls", "xlsx", "xlsm", "ods", "csv", "tsv", "et", "ett"]);
 const spreadsheetTargets = ["pdf", "xlsx", "ods", "csv", "html"];
 const presentationInput = new Set(["ppt", "pptx", "odp", "dps", "dpt"]);
@@ -220,6 +222,9 @@ function targetsForExt(rawExt, tools) {
     textTargets.forEach((target) => targets.add(target));
     if (tools.libreoffice) {
       targets.add("pdf");
+    }
+    if (["txt", "md", "markdown", "html", "htm"].includes(normalizeExt(rawExt))) {
+      targets.add("docx");
     }
   }
 
@@ -675,6 +680,102 @@ endobj
   await fsp.writeFile(outputPath, Buffer.concat([body, pdfAscii(xref + trailer)]));
 }
 
+function escapeXml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function mdInlineRuns(text) {
+  const runs = [];
+  const pattern = /(\*\*.+?\*\*|\*[^*]+?\*|`[^`]+?`)/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) runs.push({ t: text.slice(lastIndex, match.index) });
+    const token = match[0];
+    if (token.startsWith("**")) runs.push({ t: token.slice(2, -2), bold: true });
+    else if (token.startsWith("`")) runs.push({ t: token.slice(1, -1), code: true });
+    else runs.push({ t: token.slice(1, -1), italic: true });
+    lastIndex = match.index + token.length;
+  }
+  if (lastIndex < text.length) runs.push({ t: text.slice(lastIndex) });
+  return runs.length ? runs : [{ t: text }];
+}
+
+function docxRunXml(runs, base = {}) {
+  return runs.map((run) => {
+    const props = [];
+    if (run.bold || base.bold) props.push("<w:b/>");
+    if (run.italic || base.italic) props.push("<w:i/>");
+    if (run.code) {
+      props.push('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>');
+      props.push('<w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/>');
+    }
+    if (base.size) props.push(`<w:sz w:val="${base.size}"/><w:szCs w:val="${base.size}"/>`);
+    const rPr = props.length ? `<w:rPr>${props.join("")}</w:rPr>` : "";
+    return `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(run.t)}</w:t></w:r>`;
+  }).join("");
+}
+
+function docxParagraphXml(runs, options = {}) {
+  const pPr = [];
+  if (options.indent) pPr.push(`<w:ind w:left="${options.indent}"/>`);
+  if (options.after) pPr.push(`<w:spacing w:after="${options.after}"/>`);
+  const pPrXml = pPr.length ? `<w:pPr>${pPr.join("")}</w:pPr>` : "";
+  return `<w:p>${pPrXml}${docxRunXml(runs, options)}</w:p>`;
+}
+
+async function convertTextToDocx(raw, source, outputPath) {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const paragraphs = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      paragraphs.push(docxParagraphXml([{ t: "" }]));
+      continue;
+    }
+    if (source === "md") {
+      const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+      if (heading) {
+        const level = Number(heading[1].length);
+        const size = [36, 32, 28, 26, 24, 24][level - 1];
+        paragraphs.push(docxParagraphXml(mdInlineRuns(heading[2]), { size, bold: true, after: 120 }));
+        continue;
+      }
+      const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
+      if (bullet) {
+        paragraphs.push(docxParagraphXml([{ t: "• " }, ...mdInlineRuns(bullet[1])], { indent: 360 }));
+        continue;
+      }
+      paragraphs.push(docxParagraphXml(mdInlineRuns(trimmed)));
+      continue;
+    }
+    paragraphs.push(docxParagraphXml([{ t: source === "html" || source === "htm" ? htmlToText(trimmed) : trimmed }]));
+  }
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.join("")}<w:sectPr/></w:body></w:document>`;
+
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(contentTypes), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(rels), "_rels/.rels");
+  zip.addBuffer(Buffer.from(documentXml), "word/document.xml");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(outputPath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
 async function convertText(inputPath, outputPath, inputExt, target, originalName = `converted.${normalizeExt(inputExt) || "txt"}`) {
   const raw = await fsp.readFile(inputPath, "utf8");
   const source = normalizeExt(inputExt);
@@ -693,6 +794,11 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
     } else {
       await convertWithLibreOffice(inputPath, outputPath, originalName, "pdf");
     }
+    return;
+  }
+
+  if (target === "docx") {
+    await convertTextToDocx(raw, source, outputPath);
     return;
   }
 
@@ -787,6 +893,30 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, originalName) {
+  const ext = normalizeExt(inputExt);
+  let html;
+  if (ext === "docx") {
+    const result = await mammoth.convertToHtml({ path: inputPath });
+    html = result.value || "";
+  } else {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-docmd-"));
+    const htmlPath = path.join(tempDir, "converted.html");
+    try {
+      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html");
+      html = await fsp.readFile(htmlPath, "utf8");
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+  const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
+  const markdown = turndown.turndown(html).trim();
+  if (!markdown) {
+    throw new Error("文档转 Markdown 失败，未提取到任何内容。");
+  }
+  await fsp.writeFile(outputPath, `${markdown}\n`, "utf8");
 }
 
 function groupPdfItemsIntoRows(items) {
@@ -1174,7 +1304,7 @@ app.get("/api/capabilities", async (_req, res) => {
     maxUploadBytes: MAX_UPLOAD_BYTES,
     groups: {
       image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])] },
-      text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : [])] },
+      text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
       document: { inputs: [...documentInput].sort(), targets: documentTargets },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets },
@@ -1326,7 +1456,11 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
-      await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
+      if (category === "document" && requestedTarget === "md") {
+        await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
+      } else {
+        await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
+      }
     } else if (category === "audio" || category === "video") {
       await convertMedia(file.path, outputPath, requestedTarget, category);
     } else {
