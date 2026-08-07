@@ -20,6 +20,7 @@
     "express": "^4.19.2",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.2.108",
     "sanitize-filename": "^1.6.3",
     "sharp": "^0.35.3",
@@ -80,10 +81,15 @@
     "win": {
       "signAndEditExecutable": false,
       "signExecutable": false,
-      "target": ["nsis", "appx"],
+      "target": [
+        "nsis",
+        "appx"
+      ],
       "signtoolOptions": {
         "certificateSha1": "0EEEFD57DA202C56D95A63437C385F6FFB772527",
-        "signingHashAlgorithms": ["sha256"]
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
       }
     },
     "appx": {
@@ -92,7 +98,10 @@
       "publisher": "CN=56D7A4A1-B653-4162-A5E2-7D9B3F3754AD",
       "publisherDisplayName": "牢蜂喜欢开飞机",
       "displayName": "FlyingMouse Format",
-      "languages": ["zh-CN", "en-US"]
+      "languages": [
+        "zh-CN",
+        "en-US"
+      ]
     },
     "nsis": {
       "oneClick": false,

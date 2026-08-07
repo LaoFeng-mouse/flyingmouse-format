@@ -10,6 +10,7 @@ const sharp = require("sharp");
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
+const FFMPEG_BIN = path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
 let server;
 let baseUrl;
 
@@ -377,5 +378,176 @@ test("local-origin conversion requests are allowed", async () => {
   const outputPath = await downloadResult(body, "local-origin.jpg");
   const metadata = await sharp(outputPath).metadata();
   assert.strictEqual(metadata.format, "jpeg");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("audio files offer the new AAC/OPUS/WMA outputs", async () => {
+  const response = await fetch(`${baseUrl}/api/targets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extension: "mp3" })
+  });
+  const body = await parseBody(response);
+  assert.strictEqual(response.status, 200, body.error);
+  assert.ok(body.targets.includes("aac"), `mp3 must offer aac, got ${body.targets.join(",")}`);
+  assert.ok(body.targets.includes("opus"), `mp3 must offer opus, got ${body.targets.join(",")}`);
+  assert.ok(body.targets.includes("wma"), `mp3 must offer wma, got ${body.targets.join(",")}`);
+});
+
+test("image files offer MP4/WebM video outputs when ffmpeg is available", async () => {
+  const response = await fetch(`${baseUrl}/api/targets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extension: "gif" })
+  });
+  const body = await parseBody(response);
+  assert.strictEqual(response.status, 200, body.error);
+  assert.ok(body.targets.includes("mp4"), `gif must offer mp4, got ${body.targets.join(",")}`);
+  assert.ok(body.targets.includes("webm"), `gif must offer webm, got ${body.targets.join(",")}`);
+});
+
+test("text files offer PDF output when LibreOffice is available", async () => {
+  const response = await fetch(`${baseUrl}/api/targets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ extension: "txt" })
+  });
+  const body = await parseBody(response);
+  assert.strictEqual(response.status, 200, body.error);
+  assert.ok(body.targets.includes("pdf"), `txt must offer pdf, got ${body.targets.join(",")}`);
+});
+
+test("converts a TXT file to PDF without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "notes.txt");
+  await fsp.writeFile(sourcePath, "line one\nline two", "utf8");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "notes.txt", "pdf", "text/plain");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "notes.pdf");
+  const outputPath = await downloadResult(body, "notes.pdf");
+  assertPdf(outputPath);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts a Markdown file to PDF without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "readme.md");
+  await fsp.writeFile(sourcePath, "# Title\n\nSome **bold** text.", "utf8");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "readme.md", "pdf", "text/markdown");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "readme.pdf");
+  const outputPath = await downloadResult(body, "readme.pdf");
+  assertPdf(outputPath);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("merges multiple PDFs into one PDF without changing the sources", async () => {
+  const firstPath = path.join(scratchRoot, "合并一.pdf");
+  const secondPath = path.join(scratchRoot, "合并二.pdf");
+  await createTextPdf(firstPath);
+  await createTextPdf(secondPath);
+  const hashes = [hashFile(firstPath), hashFile(secondPath)];
+
+  const form = new FormData();
+  form.append("files", new Blob([await fsp.readFile(firstPath)], { type: "application/pdf" }), "合并一.pdf");
+  form.append("files", new Blob([await fsp.readFile(secondPath)], { type: "application/pdf" }), "合并二.pdf");
+
+  const response = await fetch(`${baseUrl}/api/merge-pdfs`, { method: "POST", body: form });
+  const body = await parseBody(response);
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.match(body.fileName, /\.pdf$/);
+  const outputPath = await downloadResult(body, "merged.pdf");
+  assertPdf(outputPath);
+  const { PDFDocument } = require("pdf-lib");
+  const merged = await PDFDocument.load(await fsp.readFile(outputPath));
+  assert.strictEqual(merged.getPageCount(), 2, "merged PDF must contain both pages");
+  assert.deepStrictEqual([hashFile(firstPath), hashFile(secondPath)], hashes);
+});
+
+test("splits a PDF into a per-page PDF zip without changing the source", async () => {
+  const firstPath = path.join(scratchRoot, "页一.pdf");
+  const secondPath = path.join(scratchRoot, "页二.pdf");
+  await createTextPdf(firstPath);
+  await createTextPdf(secondPath);
+
+  const form = new FormData();
+  form.append("files", new Blob([await fsp.readFile(firstPath)], { type: "application/pdf" }), "页一.pdf");
+  form.append("files", new Blob([await fsp.readFile(secondPath)], { type: "application/pdf" }), "页二.pdf");
+  const mergedResponse = await fetch(`${baseUrl}/api/merge-pdfs`, { method: "POST", body: form });
+  const mergedBody = await parseBody(mergedResponse);
+  assert.strictEqual(mergedResponse.status, 200, mergedBody.error);
+  const twoPagePdf = await downloadResult(mergedBody, "two-pages.pdf");
+  const beforeHash = hashFile(twoPagePdf);
+
+  const { response, body } = await uploadConvert(twoPagePdf, "two-pages.pdf", "pdf", "application/pdf");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "two-pages.pdf.zip");
+  const zipPath = await downloadResult(body, "split.zip");
+  assertZipWithEntry(zipPath, /page-001\.pdf/);
+  assertZipWithEntry(zipPath, /page-002\.pdf/);
+
+  const extractDir = path.join(scratchRoot, "split-out");
+  await fsp.rm(extractDir, { recursive: true, force: true });
+  await fsp.mkdir(extractDir, { recursive: true });
+  execFileSync("tar", ["-xf", zipPath, "-C", extractDir]);
+  const { PDFDocument } = require("pdf-lib");
+  const page1 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-001.pdf")));
+  const page2 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-002.pdf")));
+  assert.strictEqual(page1.getPageCount(), 1, "page-001 must be a single page");
+  assert.strictEqual(page2.getPageCount(), 1, "page-002 must be a single page");
+  assert.strictEqual(hashFile(twoPagePdf), beforeHash);
+});
+
+test("converts an animated GIF to MP4 without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "anim.gif");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "anim.gif", "mp4", "image/gif");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "anim.mp4");
+  const outputPath = await downloadResult(body, "anim.mp4");
+  const fd = fs.openSync(outputPath, "r");
+  try {
+    const magic = Buffer.alloc(4);
+    fs.readSync(fd, magic, 0, 4, 4);
+    assert.strictEqual(magic.toString("latin1"), "ftyp", "mp4 must start with ftyp box");
+  } finally {
+    fs.closeSync(fd);
+  }
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts audio to AAC, OPUS and WMA outputs without changing the source", async () => {
+  const sourcePath = path.join(scratchRoot, "tone.wav");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", sourcePath]);
+  const beforeHash = hashFile(sourcePath);
+
+  const aac = await uploadConvert(sourcePath, "tone.wav", "aac", "audio/wav");
+  assert.strictEqual(aac.response.status, 200, aac.body.error);
+  assert.strictEqual(aac.body.fileName, "tone.aac");
+  const aacPath = await downloadResult(aac.body, "tone.aac");
+  const aacHeader = fs.readFileSync(aacPath);
+  assert.strictEqual(aacHeader[0], 0xff, "aac must start with ADTS syncword");
+  assert.strictEqual(aacHeader[1] & 0xf0, 0xf0, "aac must start with ADTS syncword");
+
+  const opus = await uploadConvert(sourcePath, "tone.wav", "opus", "audio/wav");
+  assert.strictEqual(opus.response.status, 200, opus.body.error);
+  const opusPath = await downloadResult(opus.body, "tone.opus");
+  assert.strictEqual(fs.readFileSync(opusPath).subarray(0, 4).toString("latin1"), "OggS", "opus must be in Ogg container");
+
+  const wma = await uploadConvert(sourcePath, "tone.wav", "wma", "audio/wav");
+  assert.strictEqual(wma.response.status, 200, wma.body.error);
+  const wmaPath = await downloadResult(wma.body, "tone.wma");
+  const wmaMagic = fs.readFileSync(wmaPath).subarray(0, 4);
+  assert.deepStrictEqual([...wmaMagic], [0x30, 0x26, 0xb2, 0x75], "wma must start with ASF magic");
+
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });

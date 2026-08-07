@@ -342,7 +342,11 @@ async function acceptFiles(fileList) {
     for (const target of targets) {
       const option = document.createElement("option");
       option.value = target;
-      option.textContent = target.toUpperCase();
+      let label = target.toUpperCase();
+      if (target === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
+        label = state.files.length > 1 ? "PDF（合并）" : "PDF（拆分为单页）";
+      }
+      option.textContent = label;
       targetSelect.append(option);
     }
 
@@ -455,6 +459,78 @@ async function convertMergedImagesToPdf() {
   }
 }
 
+function isMergedPdfConversion(targetFormat) {
+  return targetFormat === "pdf"
+    && state.files.length > 1
+    && state.fileInfos.length === state.files.length
+    && state.fileInfos.every((info) => info.category === "pdf");
+}
+
+function isSplitPdfConversion(targetFormat) {
+  return targetFormat === "pdf"
+    && state.files.length === 1
+    && state.fileInfos.length === 1
+    && state.fileInfos[0].category === "pdf";
+}
+
+async function convertPdfsToMerged(files) {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file);
+  }
+
+  const response = await fetch("/api/merge-pdfs", {
+    method: "POST",
+    body: form
+  });
+  const result = await parseResponse(response);
+
+  if (!response.ok) {
+    throw new Error(result.error || `服务器返回 ${response.status}`);
+  }
+  return result;
+}
+
+async function convertMergedPdfs() {
+  state.files.forEach((_file, index) => {
+    setBatchResult(index, { status: "converting", detail: "正在合并到 PDF" });
+  });
+  setProgress(35, "正在合并 PDF");
+
+  try {
+    const result = await convertPdfsToMerged(state.files);
+    state.batchResults = state.files.map((_file, index) => ({
+      status: "success",
+      detail: index === 0 ? result.fileName : `已合并到 ${result.fileName}`,
+      result: index === 0 ? result : null
+    }));
+    renderBatchList();
+    state.converted = result;
+    downloadButton.href = result.downloadUrl;
+    downloadButton.download = result.fileName;
+    downloadButton.textContent = `保存 ${result.fileName}`;
+    downloadButton.hidden = false;
+    batchSaveButton.hidden = true;
+    setProgress(100, "合并完成", "success");
+    setStatus(`PDF 已合并为：${result.fileName}。`, "success");
+    setMouseState("success");
+    setWorkflowStep("save");
+  } catch (error) {
+    state.batchResults = state.files.map(() => ({
+      status: "error",
+      detail: error.message || "合并 PDF 失败"
+    }));
+    renderBatchList();
+    setProgress(100, "合并失败", "error");
+    setStatus(`合并 PDF 失败：${error.message || "未知错误"}`, "error");
+    setMouseState("error");
+  } finally {
+    state.isConverting = false;
+    convertButton.disabled = !state.files.length;
+    targetSelect.disabled = !state.files.length;
+  }
+}
+
 async function convertCurrentFiles() {
   if (!state.files.length || !targetSelect.value || state.isConverting) return;
 
@@ -479,6 +555,15 @@ async function convertCurrentFiles() {
   if (isMergedImagePdfConversion(targetFormat)) {
     await convertMergedImagesToPdf();
     return;
+  }
+
+  if (isMergedPdfConversion(targetFormat)) {
+    await convertMergedPdfs();
+    return;
+  }
+
+  if (isSplitPdfConversion(targetFormat)) {
+    setStatus("正在把 PDF 拆分为单页文件...");
   }
 
   let successCount = 0;
