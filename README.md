@@ -47,11 +47,13 @@
 
 ---
 
-## 🔐 加密音频解密（ncm / kgg）
+## 🎧 音频专属格式兼容（ncm / kgg）
 
-- **ncm（网易云音乐专属格式）**：支持**官方网易云音乐客户端**下载的标准 ncm 文件（`CTENFDAM` 头），已用真实文件验证。第三方下载器/网上下载的「假 ncm」（自定义加密）无法解密——它们没有公开算法。
-- **kgg（酷狗音乐专属格式）**：支持酷狗客户端下载的新版 kgg（v5），已用真实文件验证。解密需要读取本机酷狗客户端的密钥库 `%APPDATA%\KuGou8\KGMusicV3.db`，因此**只有在本机酷狗客户端里下载过的 kgg 才能解密**；换电脑/删了酷狗会导致密钥库缺失。
-- 解密后默认按所选目标格式输出（mp3 / flac / wav 等），与普通音频转换一致。
+- **ncm**：支持网易云音乐客户端下载的标准 ncm 文件（`CTENFDAM` 头），已用真实文件验证。第三方下载器/网上下载的「假 ncm」（自定义加密）无法处理——它们没有公开算法。
+- **kgg**：支持酷狗客户端下载的新版 kgg（v5），已用真实文件验证。需要读取本机酷狗客户端的密钥库 `%APPDATA%\KuGou8\KGMusicV3.db`，因此**只有在本机酷狗客户端里下载过的 kgg 才能转换**；换电脑/删了酷狗会导致密钥库缺失。
+- 转换后默认按所选目标格式输出（mp3 / flac / wav 等），与普通音频转换一致。
+
+> ⚠️ **使用须知**：以上兼容能力仅面向**个人合法取得、可自由使用的音乐文件**（例如自己购买并下载、有权转换的曲目），用于在不同设备/播放器间正常播放。请勿用于任何未经授权的用途，包括但不限于破解会员服务、绕开付费墙、传播受版权保护的音频。使用者须自行确保对所用文件拥有相应权利并遵守当地法律。
 
 ---
 
@@ -113,7 +115,7 @@ npm run desktop
 ├─ server.js              # Express 转换服务（格式识别、转换分发）
 ├─ public/                # 前端界面
 ├─ bin/                   # 内置转换引擎（不入库，需单独备份）
-├─ tests/                 # 自动化测试（25 个用例）
+├─ tests/                 # 自动化测试（41 个用例，全量本地跑）
 └─ docs/HANDOFF.md        # 交接与交付说明
 ```
 
@@ -121,9 +123,17 @@ npm run desktop
 
 ## 📜 版权与许可证
 
-软件代码版权归作者所有。内置开源组件分别遵循其各自许可证：
-FFmpeg（含 GPL 组件）、LibreOffice（MPL/LGPL）、Poppler（GPL-2.0）、Tesseract（Apache-2.0）。
-分发二进制时请遵守对应开源许可证的声明与源码提供义务。
+软件代码版权归作者所有，以 [MIT License](LICENSE) 发布。内置开源组件分别遵循其各自许可证：
+
+| 组件 | 许可证 | 源码 |
+|---|---|---|
+| FFmpeg（含 GPL 组件） | GPL-2.0+（构建时含 GPL 库） | https://ffmpeg.org/download.html |
+| LibreOffice Portable | MPL-2.0 / LGPL-3.0 | https://www.libreoffice.org/download/source/ |
+| Poppler | GPL-2.0 | https://poppler.freedesktop.org/ |
+| Tesseract / Tesseract.js | Apache-2.0 | https://github.com/tesseract-ocr/tesseract |
+| sharp / pdfjs-dist / exceljs 等 npm 依赖 | 见各包 LICENSE | 随 `npm install` 分发于 node_modules |
+
+按 GPL/LGPL 的要求，以上引擎的源码可从对应链接获取；如需本发行版所用具体构建的源码索取渠道，可通过 [Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues) 联系作者。
 
 ---
 
