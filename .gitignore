@@ -6,3 +6,6 @@ output/
 .playwright-cli/
 bin/
 tests/fixtures/
+
+# 一次性验证脚本（保留供日志冒烟检查，不入库）
+scripts/tmp-e2e-log-check.js

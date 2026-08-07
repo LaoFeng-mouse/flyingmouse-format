@@ -18,6 +18,13 @@ const mammoth = require("mammoth");
 const TurndownService = require("turndown");
 const { convertNcm } = require("./ncm-format");
 const { convertKgg } = require("./kgg-format");
+const logger = require("./logger");
+
+// Prefer the Electron main process's debug.log (set via FLYINGMOUSE_LOG_FILE
+// or setLogFile); standalone `node server.js` falls back to a temp file.
+if (process.env.FLYINGMOUSE_LOG_FILE) {
+  logger.setLogFile(process.env.FLYINGMOUSE_LOG_FILE);
+}
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -152,6 +159,10 @@ function run(command, args, options = {}) {
     execFile(command, args, { timeout: options.timeout || 1000 * 60 * 15 }, (error, stdout, stderr) => {
       if (error) {
         const detail = stderr || stdout || error.message;
+        logger.warn(`Command failed: ${command} ${(args || []).join(" ")}`, {
+          message: detail.trim() || error.message,
+          stack: error.stack
+        });
         reject(new Error(detail.trim()));
         return;
       }
@@ -1375,6 +1386,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   });
 
   if (imageFiles.some((file) => file.category !== "image")) {
+    logger.warn(`Rejected images-to-pdf: non-image file included (${imageFiles.map((f) => f.originalName).join(", ")})`);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     res.status(400).json({ error: "批量合并 PDF 只支持图片文件。请先移除非图片文件。" });
     return;
@@ -1384,11 +1396,13 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   const combinedName = imageFiles.length > 1 ? `${firstBaseName}等${imageFiles.length}个文件.pdf` : `${firstBaseName}.pdf`;
   const outputPath = outputPathFor(combinedName, "pdf");
   const downloadName = outputNameFor(combinedName, "pdf");
+  logger.info(`Images-to-PDF request: ${imageFiles.length} image(s) -> "${downloadName}"`);
 
   try {
     await convertImagesToPdf(imageFiles, outputPath);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     const mimeType = "application/pdf";
+    logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
     res.json({
       ok: true,
       fileName: downloadName,
@@ -1397,6 +1411,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
       downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
     });
   } catch (error) {
+    logger.error(`Images-to-PDF failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
     res.status(500).json({ error: error.message || "图片合并 PDF 失败。" });
@@ -1426,10 +1441,12 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
   const combinedName = pdfFiles.length > 1 ? `${firstBaseName}等${pdfFiles.length}个文件.pdf` : `${firstBaseName}.pdf`;
   const outputPath = outputPathFor(combinedName, "pdf");
   const downloadName = outputNameFor(combinedName, "pdf");
+  logger.info(`Merge-PDFs request: ${pdfFiles.length} PDF(s) -> "${downloadName}"`);
 
   try {
     await mergePdfFiles(pdfFiles, outputPath);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
     res.json({
       ok: true,
       fileName: downloadName,
@@ -1438,6 +1455,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
       downloadUrl: downloadUrlFor(outputPath, downloadName, "application/pdf")
     });
   } catch (error) {
+    logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
     res.status(500).json({ error: error.message || "合并 PDF 失败。" });
@@ -1456,6 +1474,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   }
 
   if (!allTargets.has(requestedTarget)) {
+    logger.warn(`Rejected convert request: unsupported target "${requestedTarget}" for "${originalName}"`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     res.status(400).json({ error: "目标格式暂不支持。" });
     return;
@@ -1464,8 +1483,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   const inputExt = normalizeExt(extFromName(originalName));
   const category = categoryForExt(inputExt);
   const allowedTargets = targetsForExt(inputExt, tools);
+  logger.info(`Convert request: "${originalName}" (${inputExt}/${category}) -> ${requestedTarget} (${file.size} bytes)`);
 
   if (!allowedTargets.includes(requestedTarget)) {
+    logger.warn(`Rejected convert request: ${category} file "${originalName}" cannot target ${requestedTarget}`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     res.status(400).json({ error: "这个源文件暂时不能转换成所选格式。" });
     return;
@@ -1529,8 +1550,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         ? 0
         : Math.round((1 - compressedBytes / originalBytes) * 100);
     }
+    logger.info(`Convert succeeded: "${originalName}" -> ${downloadName} (${requestedTarget})`);
     res.json(payload);
   } catch (error) {
+    logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});
     res.status(500).json({ error: error.message || "转换失败。" });
@@ -1552,9 +1575,11 @@ app.get("/downloads/:id", (req, res) => {
 
 app.use((error, _req, res, _next) => {
   if (error?.code === "LIMIT_FILE_SIZE") {
+    logger.warn(`Rejected upload: file too large (max ${MAX_UPLOAD_BYTES} bytes)`);
     res.status(413).json({ error: "文件太大，当前原型最大支持 1GB。" });
     return;
   }
+  logger.error("Unhandled server error", error);
   res.status(500).json({ error: error.message || "服务器出错。" });
 });
 
@@ -1562,6 +1587,7 @@ let cleanupTimer = null;
 
 function startServer(port = DEFAULT_PORT) {
   ensureDirs();
+  logger.info(`Server starting (runtime dir: ${RUNTIME_DIR}, engines: ffmpeg=${FFMPEG_PATH}, libreoffice=${LIBREOFFICE_PATH}, poppler=${PDFTOPPM_PATH}, tessdata=${TESSDATA_PATH})`);
   if (!cleanupTimer) {
     cleanupTimer = setInterval(cleanupOldFiles, 1000 * 60 * 20);
     cleanupTimer.unref();
@@ -1571,13 +1597,17 @@ function startServer(port = DEFAULT_PORT) {
     const server = app.listen(port, "127.0.0.1", () => {
       const address = server.address();
       const actualPort = typeof address === "object" && address ? address.port : port;
+      logger.info(`Server listening on http://127.0.0.1:${actualPort}`);
       resolve({
         server,
         port: actualPort,
         url: `http://127.0.0.1:${actualPort}`
       });
     });
-    server.on("error", reject);
+    server.on("error", (error) => {
+      logger.error(`Server failed to start on port ${port}`, error);
+      reject(error);
+    });
   });
 }
 

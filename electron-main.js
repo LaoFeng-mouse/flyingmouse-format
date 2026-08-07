@@ -9,18 +9,22 @@ const {
   resolveTrustedDownloadUrl,
   isAllowedExternalUrl
 } = require("./electron-security");
+const logger = require("./logger");
 
 let mainWindow = null;
 let server = null;
 let serverUrl = "";
 
+// Route all logging (including from server.js and renderer-forwarded IPC
+// messages) to a single debug.log in the Electron userData directory.
+logger.setLogFile(path.join(app.getPath("userData"), "debug.log"));
+process.env.FLYINGMOUSE_LOG_FILE = logger.getLogFile();
+
 function log(message, error) {
-  try {
-    const logPath = path.join(app.getPath("userData"), "debug.log");
-    const suffix = error ? `\n${error.stack || error.message || error}` : "";
-    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${message}${suffix}\n`, "utf8");
-  } catch {
-    // Logging must never be allowed to crash the desktop shell.
+  if (error) {
+    logger.error(message, error);
+  } else {
+    logger.info(message);
   }
 }
 
@@ -191,6 +195,22 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
   }
 
   return { canceled: false, directory, savedCount: saved.length, files: saved };
+});
+
+// Renderer forwards uncaught errors / console diagnostics here so they land
+// in the same debug.log as server and main-process events.
+ipcMain.handle("log-event", (event, payload) => {
+  assertTrustedIpc(event);
+  const level = String(payload?.level || "info").toLowerCase();
+  const message = String(payload?.message || "");
+  if (!message) return;
+  if (level === "error") {
+    logger.error(`[renderer] ${message}`);
+  } else if (level === "warn") {
+    logger.warn(`[renderer] ${message}`);
+  } else {
+    logger.info(`[renderer] ${message}`);
+  }
 });
 
 if (process.platform === "win32") {
