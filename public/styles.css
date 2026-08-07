@@ -675,3 +675,98 @@ select {
     text-align: left;
   }
 }
+
+/* --- 打赏伸缩窗（右下角） --- */
+.sponsor-widget {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.sponsor-toggle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: var(--brand, #f59e0b);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  opacity: 0.85;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sponsor-toggle:hover {
+  opacity: 1;
+  transform: scale(1.06);
+}
+
+.sponsor-mouse {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.sponsor-panel {
+  position: relative;
+  width: 240px;
+  background: #fffdf6;
+  border: 1px solid #f0e3c8;
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  padding: 14px 14px 16px;
+  text-align: center;
+  animation: sponsor-pop 0.18s ease-out;
+}
+
+@keyframes sponsor-pop {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sponsor-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: #b08d4f;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.sponsor-close:hover {
+  color: #7a5a22;
+  background: #f5ead2;
+}
+
+.sponsor-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #5b4318;
+}
+
+.sponsor-sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a7248;
+}
+
+.sponsor-qr {
+  width: 190px;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #eee2c8;
+}

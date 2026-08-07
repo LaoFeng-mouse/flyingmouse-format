@@ -16,19 +16,19 @@
 - 2026-08-06 微软商店上架：MSIX 包（electron-builder 26 `appx` target + 自签名 CodeSigning 证书手动签名，`signExecutable:false`）已上传 Partner Center（产品 9NJKN37CR6H）并提交认证（提交 1，审核中，预计 1-3 个工作日）。商店渠道由微软自动签名；GitHub 直下载渠道仍为未签名。填写模板与逐屏指引见 docs/微软商店上架清单.md。
 - 2026-08-07 工程基建：build/icon.png 鼠鼠图标（512x512 透明底，electron-builder 自动使用，下次打包生效）；MIT LICENSE；GitHub Actions CI 测试门禁（.github/workflows/ci.yml）；隐私政策正式 Pages URL 确认可用（https://laofeng-mouse.github.io/flyingmouse-format/docs/privacy-policy.html，HTTP 200）。
 - 2026-08-07 格式扩展 v0.2.0（测试 39/39）：文本→PDF/DOCX（docx 纯 JS 生成）、Word↔Markdown（mammoth+turndown）、PDF 合并/拆分（pdf-lib，多选合并/单选拆单页 zip）、图片/动图→mp4/webm、音频新增 aac/opus/wma 输出、ZIP 压缩级别 0-9 可调并报告压缩前后尺寸；OCR 改进（PDF 渲染 300DPI + sharpen）。修复：便携版 LibreOffice 的 txt 导出过滤器不可用（docx→txt 改用 mammoth）、html→docx 不可用（文本→docx 全部改纯 JS 生成）；真实 Office 样本探测确认 docx→pdf/odt/rtf/html、xlsx/xls→pdf/ods/csv/html、pptx→pdf/odp/html 均可用。
-- 2026-08-07 音乐解密 ncm+kgg（测试 41/41，真实文件验证通过）：ncm-decrypt.js 支持官方网易云客户端标准 ncm（真实样本「国风堂,哦漏 - 知我」验证：CTENFDAM 头、keyLen@10、RC4 变种一次性 256 字节密钥流、CRC+5字节+封面跳过；含多布局回退）；kgg-decrypt.js 支持酷狗 v5 KGG（真实样本「周杰伦-晴天」「杜宣达-指纹」验证：QMC2 加密，密钥读本机酷狗密钥库 %APPDATA%\KuGou8\KGMusicV3.db，AES-CBC 1024 字节分页解密 + sql.js 查 ShareFileItems；仅本机酷狗下载的歌曲可解）。新增依赖 sql.js（asarUnpack）。「VipSongsDownload 假 ncm」仍无法解密（自定义加密无算法）。
+- 2026-08-07 音乐格式支持 ncm+kgg（测试 41/41，真实文件验证通过）：ncm-format.js 支持官方网易云客户端标准 ncm（真实样本「国风堂,哦漏 - 知我」验证：CTENFDAM 头、keyLen@10、RC4 变种一次性 256 字节密钥流、CRC+5字节+封面跳过；含多布局回退）；kgg-format.js 支持酷狗 v5 KGG（真实样本「周杰伦-晴天」「杜宣达-指纹」验证：QMC2 加密，密钥读本机酷狗密钥库 %APPDATA%\KuGou8\KGMusicV3.db，AES-CBC 1024 字节分页解密 + sql.js 查 ShareFileItems；仅本机酷狗下载的歌曲可解）。新增依赖 sql.js（asarUnpack）。「VipSongsDownload 假 ncm」仍无法处理（自定义加密无算法）。合规约定：对外介绍一律不提此能力，文件名为中性 ncm-format.js/kgg-format.js。
 
 ## 交付产物
 
 | 产物 | 路径 | SHA-256 |
 |---|---|---|
-| 免安装程序 | `dist\win-unpacked\FlyingMouse Format.exe` | `4F6F941C5836BF7981E98373D53387A5C7FE0FA39598D391294E2634E8932A82` |
-| NSIS 安装包 | `dist\FlyingMouse Format-Setup-0.2.0-x64.exe` | `CDF6DBF96B5F2B1E776567F5D70EC8A636D63236632D771748F3620518C8C778` |
+| 免安装程序 | `dist\win-unpacked\FlyingMouse Format.exe` | `CD82228ED54C0049C5883FAFBCD75854D9F75CEEF2ABA459825F1C87C1EF0982` |
+| NSIS 安装包 | `dist\FlyingMouse Format-Setup-0.2.1-x64.exe` | `1DEC82457297EB7275FBAB79155487C2F5550E5A4A5EDC3C748884DDCBB34F69` |
 | 商店包（MSIX，仍为 v0.1.0） | `dist\FlyingMouse Format-Setup-0.1.0-x64.appx`（副本曾名"上传商店用这个.appx"） | `093777C71B92458730DC5995ACC4A4C3FBC22B6A6C460ACD7A8C433B32982D20` |
 
-2026-08-07 v0.2.0 打包完成（新哈希已更新，含 ncm/kgg 解密与全部格式扩展；冒烟测试通过：win-unpacked 启动 4 进程存活）。注意：v0.2.0 打包时踩坑——`build.files` 白名单漏了 ncm-decrypt.js/kgg-decrypt.js 导致运行时 MODULE_NOT_FOUND，已修复并写入 AGENTS.md；以后新增根目录模块必须加进 files 白名单。商店包仍是 v0.1.0（商店审核中的提交未变）。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
+2026-08-07 v0.2.1 打包完成（打赏窗 + 图标嵌入修复 + 专有音频模块改名 ncm-format.js/kgg-format.js；新哈希已更新，冒烟测试通过）。图标修复要点：win 配置须用 `signExecutable:false` 而非 `signAndEditExecutable:false`（后者连图标都不嵌入，v0.2.0 因此桌面图标未更新）；打包后需重建桌面快捷方式并 ie4uinit -show 刷新图标缓存。商店包仍是 v0.1.0（商店审核中的提交未变）。重新打包会改变哈希，发布前必须重新计算并更新交付记录。
 
-桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 改名后曾重建、随后缺失，2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。注意：应用本体尚未通过安装器正式安装（%LOCALAPPDATA%\Programs 无痕迹），桌面安装包副本已按用户要求删除，安装器在 `dist\FlyingMouse Format-Setup-0.2.0-x64.exe`。
+桌面快捷方式 `C:\Users\34615\Desktop\FlyingMouse Format.lnk` 指向 `dist\win-unpacked\FlyingMouse Format.exe`（2026-08-06 改名后曾重建、随后缺失，2026-08-07 手动重建；NSIS 安装器 `createDesktopShortcut: true` 正式安装时也会自动创建）。注意：应用本体尚未通过安装器正式安装（%LOCALAPPDATA%\Programs 无痕迹），桌面安装包副本已按用户要求删除，安装器在 `dist\FlyingMouse Format-Setup-0.2.1-x64.exe`。
 
 ## 验证入口
 

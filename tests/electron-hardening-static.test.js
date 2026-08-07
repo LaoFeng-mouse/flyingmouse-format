@@ -30,5 +30,5 @@ test("package uses Electron 43 and includes the security module", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   assert.match(packageJson.devDependencies.electron, /^\^?43\./);
   assert.ok(packageJson.build.files.includes("electron-security.js"));
-  assert.strictEqual(packageJson.build.win.signAndEditExecutable, false);
+  assert.strictEqual(packageJson.build.win.signExecutable, false);
 });

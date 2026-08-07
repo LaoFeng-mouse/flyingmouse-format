@@ -52,7 +52,7 @@
 **方式一：下载安装包（推荐）**
 
 1. 打开 [Release 页面](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest)
-2. 下载 `FlyingMouse Format-Setup-0.2.0-x64.exe`
+2. 下载 `FlyingMouse Format-Setup-0.2.1-x64.exe`
 3. 双击安装，桌面上会出现"FlyingMouse Format"快捷方式
 4. 把文件拖进窗口，选择目标格式，点击转换
 
@@ -124,6 +124,14 @@ npm run desktop
 | sharp / pdfjs-dist / exceljs 等 npm 依赖 | 见各包 LICENSE | 随 `npm install` 分发于 node_modules |
 
 按 GPL/LGPL 的要求，以上引擎的源码可从对应链接获取；如需本发行版所用具体构建的源码索取渠道，可通过 [Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues) 联系作者。
+
+---
+
+## 🐭 请鼠鼠吃小鱼干
+
+如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干 🐟（纯自愿，软件永远免费）
+
+<img src="public/assets/sponsor-qr.jpg" alt="微信收款码" width="220">
 
 ---
 

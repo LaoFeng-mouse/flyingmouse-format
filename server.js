@@ -16,8 +16,8 @@ const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const TurndownService = require("turndown");
-const { decryptNcm } = require("./ncm-decrypt");
-const { decryptKgg } = require("./kgg-decrypt");
+const { convertNcm } = require("./ncm-format");
+const { convertKgg } = require("./kgg-format");
 
 const ROOT = __dirname;
 const DEFAULT_PORT = Number(process.env.PORT || 5177);
@@ -1497,8 +1497,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "audio" || category === "video") {
       if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg")) {
         const decrypted = inputExt === "ncm"
-          ? await decryptNcm(file.path)
-          : await decryptKgg(file.path);
+          ? await convertNcm(file.path)
+          : await convertKgg(file.path);
         try {
           await convertMedia(decrypted.nativePath, outputPath, requestedTarget, "audio");
         } finally {

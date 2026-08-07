@@ -742,3 +742,26 @@ fetchCapabilities().catch((error) => {
 
 setMouseState("upload");
 setWorkflowStep("select");
+
+/* --- 打赏伸缩窗 --- */
+const sponsorToggle = document.querySelector("#sponsorToggle");
+const sponsorPanel = document.querySelector("#sponsorPanel");
+const sponsorClose = document.querySelector("#sponsorClose");
+const sponsorWidget = document.querySelector("#sponsorWidget");
+
+function setSponsorOpen(open) {
+  sponsorPanel.hidden = !open;
+  sponsorToggle.setAttribute("aria-expanded", String(open));
+}
+
+sponsorToggle.addEventListener("click", () => {
+  setSponsorOpen(sponsorPanel.hidden);
+});
+
+sponsorClose.addEventListener("click", () => setSponsorOpen(false));
+
+document.addEventListener("click", (event) => {
+  if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) {
+    setSponsorOpen(false);
+  }
+});
