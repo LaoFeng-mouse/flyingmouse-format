@@ -28,7 +28,7 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 `FlyingMouse Format-Setup-0.3.2-x64.exe`。
+1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.3.2 x64 安装包。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -66,7 +66,7 @@ npm run dist
 
 ### Quick start
 
-1. Download `FlyingMouse Format-Setup-0.3.2-x64.exe` from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+1. Download the v0.3.2 x64 installer from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -92,6 +92,7 @@ npm run dist
 - Files are processed locally and are not uploaded to a cloud conversion service. / 文件在本地处理，不上传到云端转换服务。
 - Electron uses context isolation, sandboxing, restricted navigation, and a local-only random port. / Electron 使用上下文隔离、沙箱、导航限制和仅本机可访问的随机端口。
 - The Windows installer is currently unsigned, so SmartScreen may show a warning. / 当前 Windows 安装包尚未签名，SmartScreen 可能显示提示。
+- [Privacy policy / 隐私政策](docs/privacy-policy.html)
 
 ## License / 许可证
 

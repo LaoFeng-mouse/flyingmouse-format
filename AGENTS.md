@@ -96,4 +96,5 @@ npm run dist
 - `docs/ARCHITECTURE.md`：运行架构、状态和数据边界。
 - `docs/RELEASE.md`：本机测试、打包、桌面同步与 GitHub 发布清单。
 - `docs/HANDOFF.md`：当前可交接状态和剩余风险。
+- `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
