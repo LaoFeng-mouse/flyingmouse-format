@@ -353,8 +353,17 @@ function isMissingPdfjsEntry(error, specifier) {
   return Boolean(missingTarget && matchesExpected(missingTarget[1]));
 }
 
-function resolvePdfjsEntrySpecifiers(packageJsonResolver = require.resolve) {
-  const packageRoot = path.dirname(packageJsonResolver("pdfjs-dist/package.json"));
+function resolvePdfjsEntrySpecifiers(packageJsonResolver = require.resolve, appRoot = __dirname) {
+  const packageJsonPath = path.resolve(packageJsonResolver("pdfjs-dist/package.json"));
+  const expectedPackageJsonPath = path.resolve(appRoot, "node_modules", "pdfjs-dist", "package.json");
+  const comparablePath = (filePath) => process.platform === "win32" ? filePath.toLowerCase() : filePath;
+  if (comparablePath(packageJsonPath) !== comparablePath(expectedPackageJsonPath)) {
+    throw new Error(
+      `PDF.js package must resolve inside the app root at ${expectedPackageJsonPath}; got ${packageJsonPath}`
+    );
+  }
+
+  const packageRoot = path.dirname(packageJsonPath);
   return {
     modernSpecifier: pathToFileURL(path.join(packageRoot, "legacy", "build", "pdf.mjs")).href,
     legacySpecifier: pathToFileURL(path.join(packageRoot, "legacy", "build", "pdf.js")).href
@@ -362,13 +371,14 @@ function resolvePdfjsEntrySpecifiers(packageJsonResolver = require.resolve) {
 }
 
 async function loadPdfjsModule({
+  appRoot = __dirname,
   importer = (specifier) => import(specifier),
   packageJsonResolver = require.resolve,
   modernSpecifier,
   legacySpecifier
 } = {}) {
   if (!modernSpecifier || !legacySpecifier) {
-    ({ modernSpecifier, legacySpecifier } = resolvePdfjsEntrySpecifiers(packageJsonResolver));
+    ({ modernSpecifier, legacySpecifier } = resolvePdfjsEntrySpecifiers(packageJsonResolver, appRoot));
   }
   let mod;
   try {

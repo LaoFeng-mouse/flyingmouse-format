@@ -73,6 +73,7 @@ test("PDF.js loader falls back to the legacy layout only when the modern entry i
   );
   const imports = [];
   const result = await loadPdfjsModule({
+    appRoot: "D:\\APP",
     packageJsonResolver(specifier) {
       assert.strictEqual(specifier, "pdfjs-dist/package.json");
       return path.join(packageRoot, "package.json");
@@ -86,6 +87,21 @@ test("PDF.js loader falls back to the legacy layout only when the modern entry i
 
   assert.strictEqual(result, pdfjs);
   assert.deepStrictEqual(imports, [modernUrl, legacyUrl]);
+});
+
+test("PDF.js loader rejects a package resolved outside the app root before importing", async () => {
+  const imports = [];
+  const promise = loadPdfjsModule({
+    appRoot: "D:\\repo\\output\\win7-stage",
+    packageJsonResolver: () => "D:\\repo\\node_modules\\pdfjs-dist\\package.json",
+    async importer(specifier) {
+      imports.push(specifier);
+      return {};
+    }
+  });
+
+  await assert.rejects(promise, /PDF\.js package must resolve inside the app root/);
+  assert.deepStrictEqual(imports, []);
 });
 
 test("PDF.js loader unwraps a CommonJS default export", async () => {
