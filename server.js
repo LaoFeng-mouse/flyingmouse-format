@@ -1100,7 +1100,8 @@ async function extractPdfRowsByPage(inputPath) {
   const loadingTask = pdfjsLib.getDocument({
     data,
     disableFontFace: true,
-    useSystemFonts: true
+    useSystemFonts: true,
+    isEvalSupported: false
   });
   const pdf = await loadingTask.promise;
   const pages = [];
