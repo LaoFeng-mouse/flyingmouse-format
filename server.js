@@ -320,7 +320,9 @@ let cachedPdfjsPromise = null;
 
 function loadPdfjs() {
   if (!cachedPdfjsPromise) {
-    cachedPdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+    cachedPdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs")
+      .catch(() => import("pdfjs-dist/legacy/build/pdf.js"))
+      .then((mod) => mod.default || mod);
   }
   return cachedPdfjsPromise;
 }
