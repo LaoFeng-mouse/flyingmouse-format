@@ -70,12 +70,16 @@ function assertSafeStagePath(stagePath, projectRoot = PROJECT_ROOT) {
   const { resolvedRoot } = projectPaths;
   const resolvedOutput = path.resolve(resolvedRoot, "output");
   const resolvedStage = path.resolve(stagePath);
+  const expectedStage = path.join(resolvedOutput, STAGE_BASENAME);
 
   if (!pathIsStrictlyInside(resolvedStage, resolvedOutput)) {
     throw new Error(`Win7 stage must be strictly inside ${resolvedOutput}: ${resolvedStage}`);
   }
   if (path.basename(resolvedStage) !== STAGE_BASENAME) {
     throw new Error(`Win7 stage basename must be ${STAGE_BASENAME}: ${resolvedStage}`);
+  }
+  if (!pathsEqual(resolvedStage, expectedStage)) {
+    throw new Error(`Win7 stage must exactly match ${expectedStage}: ${resolvedStage}`);
   }
   assertNotReparsePoint(resolvedOutput, projectPaths, "Win7 output directory");
   assertExistingAncestorInsideRoot(resolvedOutput, projectPaths, "Win7 output directory");
