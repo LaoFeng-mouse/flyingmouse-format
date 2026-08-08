@@ -4,7 +4,11 @@ dist/
 test-results/
 output/
 .playwright-cli/
-bin/
+bin/*
+!bin/avs3/
+!bin/avs3/avs3RM0Decoder.exe
+!bin/avs3/model.bin
+!bin/avs3/THIRD_PARTY_NOTICE.txt
 tests/fixtures/
 
 # 一次性验证脚本（保留供日志冒烟检查，不入库）

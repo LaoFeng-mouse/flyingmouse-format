@@ -50,6 +50,7 @@ function detectAudioFormat(buf) {
   if (buf.length > 3 && buf.subarray(0, 4).toString("latin1") === "fLaC") return "flac";
   if (buf.length > 2 && buf.subarray(0, 3).toString("latin1") === "ID3") return "mp3";
   if (buf.length > 3 && buf.subarray(0, 4).toString("latin1") === "OggS") return "ogg";
+  if (buf.length > 11 && buf.subarray(4, 8).toString("latin1") === "ftyp") return "m4a";
   if (buf.length > 1 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return "mp3";
   return "unknown";
 }
@@ -146,4 +147,4 @@ async function convertNcm(inputPath) {
   throw new Error("NCM 解密失败：文件可能不是官方网易云客户端下载的标准 NCM。");
 }
 
-module.exports = { convertNcm };
+module.exports = { convertNcm, detectAudioFormat };

@@ -1,0 +1,46 @@
+Audio Vivid / AVS3-P3 Reference Decoder
+========================================
+
+Source archive:
+https://github.com/6hzzz/AVS3stream/blob/master/TS/AudioVivid%E6%BA%90%E7%A0%81.7z
+
+Local build notes:
+- Visual Studio 2022 Build Tools, v143, Win32 Release
+- The dispatcher was limited to AVS3-P3 because the public archive did not
+  include the referenced AVS2-P3 decoder project.
+- avs3RM0Decoder.exe SHA256:
+  A38546B45EF82219533C0E18478764A334F8287395B0D590DCD6C876976EDB84
+- model.bin SHA256:
+  55D56A17DBFA22DA21F2FA945EBE13824D246FE8B2669A63E0440316282AE068
+
+Upstream license notice (reproduced verbatim):
+
+The copyright in this software is being made available under the License included below.
+No express or implied licenses to any party's patent rights are granted by this license.
+
+Copyright (c) 2022, HUAWEI TECHNOLOGIES CO., LTD. All rights reserved.
+Copyright (c) 2022, XIAOMI COMMUNICATIONS CO., LTD. All rights reserved.
+Copyright (c) 2022, BEIJING ZITIAO NETWORK TECHNOLOGY CO., LTD. All rights reserved.
+Copyright (c) 2022, BEIJING SINECORE MICROSEMI TECHNOLOGY CO., LTD. All rights reserved.
+Copyright (c) 2022, WAVARTS TECHNOLOGIES CO., LTD. All rights reserved.
+Copyright (c) 2022, PEKING UNIVERSITY. All rights reserved.
+Copyright (c) 2022, TSINGHUA UNIVERSITY. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted only for
+the purpose of developing standards within Audio and Video Coding Standard Workgroup of China (AVS) and for testing and
+promoting such standards. The following conditions are required to be met:
+
+  * Redistributions of source code must retain the above copyright notice, this list of conditions and
+    the following disclaimer.
+  * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
+    the following disclaimer in the documentation and/or other materials provided with the distribution.
+  * The name of the above copyright owners may not be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

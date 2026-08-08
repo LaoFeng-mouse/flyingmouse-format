@@ -10,10 +10,12 @@ const {
   isAllowedExternalUrl
 } = require("./electron-security");
 const logger = require("./logger");
+const { readLastSaveDirectory, writeLastSaveDirectory } = require("./settings-store");
 
 let mainWindow = null;
 let server = null;
 let serverUrl = "";
+const settingsPath = path.join(app.getPath("userData"), "settings.json");
 
 // Route all logging (including from server.js and renderer-forwarded IPC
 // messages) to a single debug.log in the Electron userData directory.
@@ -31,6 +33,11 @@ function log(message, error) {
 function bundledFfmpegPath() {
   const resourcesPath = process.resourcesPath || "";
   return path.join(resourcesPath, "ffmpeg", "ffmpeg.exe");
+}
+
+function bundledAvs3DecoderPath() {
+  const resourcesPath = process.resourcesPath || "";
+  return path.join(resourcesPath, "avs3", "avs3RM0Decoder.exe");
 }
 
 function bundledLibreOfficePath() {
@@ -74,9 +81,11 @@ async function boot() {
   log("Boot started");
   process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
   process.env.FLYINGMOUSE_FFMPEG_PATH = bundledFfmpegPath();
+  process.env.FLYINGMOUSE_AVS3_DECODER_PATH = bundledAvs3DecoderPath();
   process.env.FLYINGMOUSE_LIBREOFFICE_PATH = bundledLibreOfficePath();
   log(`Runtime dir: ${process.env.FLYINGMOUSE_RUNTIME_DIR}`);
   log(`FFmpeg path: ${process.env.FLYINGMOUSE_FFMPEG_PATH}`);
+  log(`AV3A decoder path: ${process.env.FLYINGMOUSE_AVS3_DECODER_PATH}`);
   log(`LibreOffice path: ${process.env.FLYINGMOUSE_LIBREOFFICE_PATH}`);
   const { startServer } = require("./server");
 
@@ -148,9 +157,10 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   assertTrustedIpc(event);
   const fileName = path.basename(String(payload?.fileName || "converted-file"));
   const absoluteUrl = trustedDownloadUrl(payload?.downloadUrl);
+  const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "保存转换后的文件",
-    defaultPath: path.join(app.getPath("downloads"), fileName),
+    defaultPath: path.join(lastSaveDirectory, fileName),
     buttonLabel: "保存"
   });
 
@@ -159,6 +169,8 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   }
 
   await downloadToFile(absoluteUrl, result.filePath);
+  await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
+    .catch((error) => log("Failed to remember save directory", error));
   return { canceled: false, filePath: result.filePath };
 });
 
@@ -174,9 +186,11 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
     downloadUrl: trustedDownloadUrl(item?.downloadUrl)
   }));
 
+  const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
+
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "选择保存转换文件的文件夹",
-    defaultPath: app.getPath("downloads"),
+    defaultPath: lastSaveDirectory,
     buttonLabel: "保存到这里",
     properties: ["openDirectory", "createDirectory"]
   });
@@ -193,6 +207,9 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
     await downloadToFile(item.downloadUrl, destination);
     saved.push(destination);
   }
+
+  await writeLastSaveDirectory(settingsPath, directory)
+    .catch((error) => log("Failed to remember save directory", error));
 
   return { canceled: false, directory, savedCount: saved.length, files: saved };
 });
