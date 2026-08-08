@@ -17,7 +17,36 @@ function runPrepareOnly() {
   });
 }
 
-test("prepare-only creates a clean, current Win7 staging tree without changing the root manifest", () => {
+function createTemporaryRoot(t, prefix) {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  return temporaryRoot;
+}
+
+function createJunctionOrSkip(t, target, junction) {
+  try {
+    fs.symlinkSync(target, junction, "junction");
+    t.after(() => {
+      if (fs.lstatSync(junction, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(junction);
+      }
+    });
+    return true;
+  } catch (error) {
+    if (error.code === "EPERM") {
+      t.skip("junction creation is not permitted in this environment");
+      return false;
+    }
+    throw error;
+  }
+}
+
+test("prepare-only creates a clean, current Win7 staging tree without changing the root manifest", (t) => {
+  const { removeWin7Stage } = require("../scripts/build-win7");
+  t.after(() => {
+    removeWin7Stage(stagePath, projectRoot);
+    assert.ok(!fs.existsSync(stagePath), "shared Win7 stage survived test cleanup");
+  });
   const beforePackage = fs.readFileSync(rootPackagePath);
   const rootNodeModules = path.join(projectRoot, "node_modules");
   const nodeModulesMtime = fs.statSync(rootNodeModules).mtimeMs;
@@ -94,34 +123,85 @@ test("safe stage removal rejects paths outside output and paths with the wrong b
   assert.doesNotThrow(() => assertSafeStagePath(stagePath, projectRoot));
 });
 
-test("build commands run only inside staging and stop after a failed command", () => {
+test("build commands use only the installed local builder and stop after a failed command", (t) => {
   const { runBuildCommands } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-commands-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const npmCliPath = path.join(temporaryRoot, "tools", "npm-cli.js");
+  fs.mkdirSync(temporaryStage, { recursive: true });
+  fs.mkdirSync(path.dirname(npmCliPath), { recursive: true });
+  fs.writeFileSync(npmCliPath, "local npm CLI");
   const calls = [];
   const runner = (command, args, options) => {
     calls.push({ command, args, options });
     return { status: calls.length === 1 ? 7 : 0 };
   };
 
-  assert.throws(() => runBuildCommands(stagePath, runner), /npm install failed with exit code 7/i);
+  assert.throws(
+    () => runBuildCommands(temporaryStage, runner, { npmCliPath }),
+    /npm install failed with exit code 7/i
+  );
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, process.platform === "win32" ? "npm.cmd" : "npm");
-  assert.deepEqual(calls[0].args, ["install", "--no-audit", "--no-fund"]);
-  assert.equal(calls[0].options.cwd, stagePath);
+  assert.equal(calls[0].command, process.execPath);
+  assert.deepEqual(calls[0].args, [npmCliPath, "install", "--no-audit", "--no-fund"]);
+  assert.equal(calls[0].options.cwd, temporaryStage);
   assert.equal(calls[0].options.stdio, "inherit");
 
   calls.length = 0;
-  runBuildCommands(stagePath, (command, args, options) => {
-    calls.push({ command, args, options });
-    return { status: 0 };
-  });
-  assert.deepEqual(
-    calls.map(({ args }) => args),
-    [
-      ["install", "--no-audit", "--no-fund"],
-      ["exec", "electron-builder", "--", "--win", "nsis", "--x64"]
-    ]
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (command, args, options) => {
+          calls.push({ command, args, options });
+          return { status: 0 };
+        },
+        { npmCliPath }
+      ),
+    /local electron-builder executable was not installed/i
   );
-  assert.ok(calls.every(({ options }) => options.cwd === stagePath));
+  assert.equal(calls.length, 1, "builder ran despite a missing local executable");
+
+  calls.length = 0;
+  runBuildCommands(temporaryStage, (command, args, options) => {
+    calls.push({ command, args, options });
+    if (calls.length === 1) {
+      const localBuilder = path.join(
+        temporaryStage,
+        "node_modules",
+        ".bin",
+        process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
+      );
+      fs.mkdirSync(path.dirname(localBuilder), { recursive: true });
+      fs.writeFileSync(localBuilder, "local builder");
+      const localBuilderCli = path.join(
+        temporaryStage,
+        "node_modules",
+        "electron-builder",
+        "out",
+        "cli",
+        "cli.js"
+      );
+      fs.mkdirSync(path.dirname(localBuilderCli), { recursive: true });
+      fs.writeFileSync(localBuilderCli, "local builder CLI");
+    }
+    return { status: 0 };
+  }, { npmCliPath });
+  const expectedLocalBuilder = path.join(
+    temporaryStage,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
+  );
+  assert.ok(fs.statSync(expectedLocalBuilder).isFile());
+  assert.equal(calls[1].command, process.execPath);
+  assert.deepEqual(calls[1].args, [
+    path.join(temporaryStage, "node_modules", "electron-builder", "out", "cli", "cli.js"),
+    "--win",
+    "nsis",
+    "--x64"
+  ]);
+  assert.ok(calls.every(({ options }) => options.cwd === temporaryStage));
 });
 
 test("artifact copying rejects a staging directory outside the project output", () => {
@@ -138,8 +218,7 @@ test("artifact copying rejects a staging directory outside the project output", 
 
 test("artifact copying replaces only the exact Win7 installer in the root dist", (t) => {
   const { copyWin7Artifact } = require("../scripts/build-win7");
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "flyingmouse-win7-copy-"));
-  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-copy-");
 
   const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
   const stageDist = path.join(temporaryStage, "dist");
@@ -168,4 +247,127 @@ test("artifact copying replaces only the exact Win7 installer in the root dist",
   assert.deepEqual(fs.readFileSync(copiedPath), stagedInstaller);
   assert.notDeepEqual(fs.readFileSync(copiedPath), oldWin7Before);
   assert.deepEqual(fs.readFileSync(path.join(rootDist, regularName)), regularBefore);
+  assert.ok(!fs.readdirSync(rootDist).some((name) => name.includes(".win7-build-")));
+});
+
+test("artifact copying restores the previous Win7 installer when promotion fails", (t) => {
+  const { copyWin7Artifact } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-rollback-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const stageDist = path.join(temporaryStage, "dist");
+  const rootDist = path.join(temporaryRoot, "dist");
+  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
+  const regularName = "FlyingMouse Format-Setup-0.3.2.exe";
+  const oldWin7 = Buffer.from("recover this installer", "utf8");
+  const regularBefore = Buffer.from("ordinary installer stays", "utf8");
+
+  fs.mkdirSync(stageDist, { recursive: true });
+  fs.mkdirSync(rootDist, { recursive: true });
+  fs.writeFileSync(path.join(stageDist, win7Name), "new installer");
+  fs.writeFileSync(path.join(rootDist, win7Name), oldWin7);
+  fs.writeFileSync(path.join(rootDist, regularName), regularBefore);
+
+  let renameCalls = 0;
+  assert.throws(
+    () =>
+      copyWin7Artifact(
+        temporaryStage,
+        temporaryRoot,
+        { productName: "FlyingMouse Format", version: "0.3.2" },
+        {
+          renameSync(source, destination) {
+            renameCalls += 1;
+            if (renameCalls === 2) throw new Error("simulated promote failure");
+            fs.renameSync(source, destination);
+          }
+        }
+      ),
+    /simulated promote failure/
+  );
+
+  assert.deepEqual(fs.readFileSync(path.join(rootDist, win7Name)), oldWin7);
+  assert.deepEqual(fs.readFileSync(path.join(rootDist, regularName)), regularBefore);
+  assert.ok(!fs.readdirSync(rootDist).some((name) => name.includes(".win7-build-")));
+});
+
+test("stage cleanup rejects output and stage junctions without touching their targets", (t) => {
+  const { removeWin7Stage } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-junction-root-");
+  const externalRoot = createTemporaryRoot(t, "flyingmouse-win7-junction-target-");
+  const externalStage = path.join(externalRoot, "win7-stage");
+  const sentinel = path.join(externalStage, "do-not-delete.txt");
+  fs.mkdirSync(externalStage, { recursive: true });
+  fs.writeFileSync(sentinel, "external content");
+
+  const outputJunction = path.join(temporaryRoot, "output");
+  if (!createJunctionOrSkip(t, externalRoot, outputJunction)) return;
+  assert.throws(
+    () => removeWin7Stage(path.join(outputJunction, "win7-stage"), temporaryRoot),
+    /output.*reparse|reparse.*output/i
+  );
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
+  fs.unlinkSync(outputJunction);
+
+  const output = path.join(temporaryRoot, "output");
+  fs.mkdirSync(output);
+  const stageJunction = path.join(output, "win7-stage");
+  if (!createJunctionOrSkip(t, externalStage, stageJunction)) return;
+  assert.throws(() => removeWin7Stage(stageJunction, temporaryRoot), /stage.*reparse|reparse.*stage/i);
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
+  fs.unlinkSync(stageJunction);
+});
+
+test("staging rejects a recursive source junction without copying external content", (t) => {
+  const { copyStagingEntry } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-source-root-");
+  const externalRoot = createTemporaryRoot(t, "flyingmouse-win7-source-target-");
+  const source = path.join(temporaryRoot, "public");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  fs.mkdirSync(source);
+  fs.mkdirSync(temporaryStage, { recursive: true });
+  fs.writeFileSync(path.join(externalRoot, "do-not-copy.txt"), "external content");
+  const sourceJunction = path.join(source, "outside");
+  if (!createJunctionOrSkip(t, externalRoot, sourceJunction)) return;
+
+  assert.throws(
+    () => copyStagingEntry("public", temporaryRoot, temporaryStage),
+    /reparse point.*public|public.*reparse point/i
+  );
+  assert.ok(!fs.existsSync(path.join(temporaryStage, "public")));
+  fs.unlinkSync(sourceJunction);
+});
+
+test("artifact copying rejects a root dist junction without touching external files", (t) => {
+  const { copyWin7Artifact } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-dist-root-");
+  const externalRoot = createTemporaryRoot(t, "flyingmouse-win7-dist-target-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
+  const sentinel = path.join(externalRoot, "do-not-overwrite.txt");
+  fs.mkdirSync(path.join(temporaryStage, "dist"), { recursive: true });
+  fs.mkdirSync(path.join(temporaryRoot, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(temporaryStage, "dist", win7Name), "new installer");
+  fs.writeFileSync(sentinel, "external content");
+  fs.rmdirSync(path.join(temporaryRoot, "dist"));
+  const distJunction = path.join(temporaryRoot, "dist");
+  if (!createJunctionOrSkip(t, externalRoot, distJunction)) return;
+
+  assert.throws(
+    () =>
+      copyWin7Artifact(temporaryStage, temporaryRoot, {
+        productName: "FlyingMouse Format",
+        version: "0.3.2"
+      }),
+    /root dist.*reparse|reparse.*root dist/i
+  );
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
+  fs.unlinkSync(distJunction);
+});
+
+test("root test scripts include both Win7 builder-only test files", () => {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
+  for (const scriptName of ["test", "test:ci"]) {
+    assert.match(packageJson.scripts[scriptName], /tests\/win7-build-profile\.test\.js/);
+    assert.match(packageJson.scripts[scriptName], /tests\/win7-build-script\.test\.js/);
+  }
 });
