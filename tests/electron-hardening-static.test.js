@@ -48,6 +48,20 @@ test("PDF.js loader supports modern and Win7 legacy layouts", () => {
   assert.match(source, /createPdfjsLoader/);
 });
 
+test("PDF extraction disables PDF.js eval support", () => {
+  const source = readRoot("server.js");
+  const functionStart = source.indexOf("async function extractPdfRowsByPage");
+  const functionEnd = source.indexOf("\nasync function ", functionStart + 1);
+  const extractSource = source.slice(functionStart, functionEnd);
+
+  assert.notStrictEqual(functionStart, -1);
+  assert.notStrictEqual(functionEnd, -1);
+  assert.match(
+    extractSource,
+    /pdfjsLib\.getDocument\(\{\s*data,\s*disableFontFace:\s*true,\s*useSystemFonts:\s*true,\s*isEvalSupported:\s*false\s*\}\)/s
+  );
+});
+
 test("PDF.js loader imports the modern layout when it resolves", async () => {
   const pdfjs = { getDocument() {} };
   const imports = [];
