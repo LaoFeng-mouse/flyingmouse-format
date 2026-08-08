@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { execFileSync, spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
@@ -133,4 +134,38 @@ test("artifact copying rejects a staging directory outside the project output", 
       }),
     /must be strictly inside.*output/i
   );
+});
+
+test("artifact copying replaces only the exact Win7 installer in the root dist", (t) => {
+  const { copyWin7Artifact } = require("../scripts/build-win7");
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "flyingmouse-win7-copy-"));
+  t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const stageDist = path.join(temporaryStage, "dist");
+  const rootDist = path.join(temporaryRoot, "dist");
+  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
+  const regularName = "FlyingMouse Format-Setup-0.3.2.exe";
+  const stagedInstaller = Buffer.from([0x4d, 0x5a, 0x57, 0x49, 0x4e, 0x37]);
+  const oldWin7Installer = Buffer.from("old Win7 installer", "utf8");
+  const regularInstaller = Buffer.from([0x4d, 0x5a, 0x52, 0x45, 0x47, 0x55, 0x4c, 0x41, 0x52]);
+
+  fs.mkdirSync(stageDist, { recursive: true });
+  fs.mkdirSync(rootDist, { recursive: true });
+  fs.writeFileSync(path.join(stageDist, win7Name), stagedInstaller);
+  fs.writeFileSync(path.join(rootDist, win7Name), oldWin7Installer);
+  fs.writeFileSync(path.join(rootDist, regularName), regularInstaller);
+  const oldWin7Before = fs.readFileSync(path.join(rootDist, win7Name));
+  const regularBefore = fs.readFileSync(path.join(rootDist, regularName));
+
+  const copiedPath = copyWin7Artifact(temporaryStage, temporaryRoot, {
+    productName: "FlyingMouse Format",
+    version: "0.3.2"
+  });
+
+  assert.equal(copiedPath, path.join(rootDist, win7Name));
+  assert.equal(path.basename(copiedPath), win7Name);
+  assert.deepEqual(fs.readFileSync(copiedPath), stagedInstaller);
+  assert.notDeepEqual(fs.readFileSync(copiedPath), oldWin7Before);
+  assert.deepEqual(fs.readFileSync(path.join(rootDist, regularName)), regularBefore);
 });
