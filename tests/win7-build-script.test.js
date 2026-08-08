@@ -109,7 +109,7 @@ test("CLI rejects unknown arguments before preparing staging", () => {
   assert.match(`${result.stdout}\n${result.stderr}`, /Unknown argument: --surprise/);
 });
 
-test("safe stage removal rejects paths outside output and paths with the wrong basename", () => {
+test("safe stage removal requires the exact project output Win7 stage path", () => {
   const { assertSafeStagePath } = require("../scripts/build-win7");
 
   assert.throws(
@@ -119,6 +119,14 @@ test("safe stage removal rejects paths outside output and paths with the wrong b
   assert.throws(
     () => assertSafeStagePath(path.join(projectRoot, "output", "other-stage"), projectRoot),
     /basename must be win7-stage/i
+  );
+  assert.throws(
+    () =>
+      assertSafeStagePath(
+        path.join(projectRoot, "output", "nested", "win7-stage"),
+        projectRoot
+      ),
+    /must exactly match.*output.*win7-stage/i
   );
   assert.doesNotThrow(() => assertSafeStagePath(stagePath, projectRoot));
 });
