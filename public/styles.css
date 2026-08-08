@@ -1,21 +1,21 @@
 :root {
   color-scheme: light;
-  --bg: #f7f8fa;
-  --panel: #ffffff;
+  --bg: #f5f4f1;
+  --panel: #fffdf8;
   --card: #ffffff;
-  --ink: #2b2f36;
-  --muted: #7a8190;
-  --line: #eceef3;
-  --accent: #ff7a45;
-  --accent-strong: #e8642e;
-  --accent-soft: #fff1e8;
-  --blue-soft: #eef4ff;
-  --green-soft: #eafaf2;
-  --yellow-soft: #fff8e6;
-  --success: #2bb673;
+  --ink: #111111;
+  --muted: #555555;
+  --line: #111111;
+  --accent: #e95f6d;
+  --accent-strong: #d94d5d;
+  --accent-soft: #ffe0e4;
+  --blue-soft: #dcecff;
+  --green-soft: #dff5ee;
+  --yellow-soft: #fff2bc;
+  --success: #219653;
   --warning: #8a6d00;
-  --error: #e5484d;
-  --shadow: 0 10px 30px rgba(43, 47, 54, 0.08);
+  --error: #d93025;
+  --shadow: 6px 6px 0 #111111;
   --radius: 16px;
 }
 
@@ -32,8 +32,8 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(1200px 600px at 15% -10%, #fff6ef 0%, transparent 60%),
-    radial-gradient(1000px 500px at 110% 10%, #eef4ff 0%, transparent 55%),
+    radial-gradient(900px 520px at 10% -10%, #ffe0e4 0%, transparent 60%),
+    radial-gradient(900px 500px at 105% 5%, #dcecff 0%, transparent 58%),
     var(--bg);
   color: var(--ink);
   font-family: "Microsoft YaHei UI", "Segoe UI", Arial, sans-serif;
@@ -65,10 +65,10 @@ button {
 
 .topbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .topbar > * {
@@ -78,21 +78,41 @@ button {
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
-.brand-mark {
-  width: 46px;
-  height: 46px;
+.brand-mouse {
+  width: 90px;
+  height: 76px;
   flex: none;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #ff9a5a, #ff7a45);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 24px;
-  box-shadow: 0 6px 14px rgba(255, 122, 69, 0.3);
+  object-fit: contain;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.language-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.language-field select {
+  width: auto;
+  height: 38px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 0 28px 0 10px;
 }
 
 .eyebrow {
@@ -125,7 +145,7 @@ h1 {
   font-size: 13px;
   font-weight: 700;
   text-align: right;
-  border: 1px solid #cdeedd;
+  border: 2px solid var(--line);
 }
 
 .workflow-steps {
@@ -161,7 +181,7 @@ h1 {
 
 .drop-panel,
 .controls {
-  border: 1px solid var(--line);
+  border: 2px solid var(--line);
   border-radius: var(--radius);
   background: var(--card);
 }
@@ -183,34 +203,35 @@ h1 {
   border-radius: 0;
   padding: 26px 24px 30px;
   color: var(--ink);
-  background: linear-gradient(170deg, #fff8f3, #fffdfb);
+  background: linear-gradient(170deg, #fff6d8, #fffdf8);
   text-align: center;
 }
 
 .drop-zone.dragging {
   outline: 3px dashed var(--accent);
   outline-offset: -10px;
-  background: #fff3ec;
+  background: #ffe9ec;
 }
 
-.drop-icon {
-  width: 96px;
-  height: 96px;
-  border-radius: 28px;
-  background: #fff;
-  border: 1px solid #ffe3d3;
-  box-shadow: 0 8px 20px rgba(255, 122, 69, 0.14);
+.mouse-stage {
   display: grid;
   place-items: center;
-  margin-bottom: 18px;
-  font-size: 44px;
+  min-height: 224px;
+  margin-bottom: 8px;
+}
+
+.mouse-mascot {
+  width: min(340px, 72vw);
+  height: 242px;
+  object-fit: contain;
+  filter: drop-shadow(5px 5px 0 rgba(17, 17, 17, 0.22));
 }
 
 .drop-main {
   display: block;
   max-width: 520px;
-  font-size: clamp(20px, 2.6vw, 28px);
-  font-weight: 800;
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 900;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -394,7 +415,7 @@ select {
   place-items: center;
   background: var(--accent);
   color: #ffffff;
-  box-shadow: 0 6px 16px rgba(255, 122, 69, 0.3);
+  box-shadow: 3px 3px 0 #111111;
 }
 
 .primary-button:hover,
@@ -573,6 +594,92 @@ select {
   border: 0;
 }
 
+.sponsor-widget {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.sponsor-toggle {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: #f59e0b;
+  box-shadow: 3px 3px 0 #111111;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  opacity: 0.88;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sponsor-toggle:hover {
+  opacity: 1;
+  transform: scale(1.06);
+}
+
+.sponsor-mouse {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.sponsor-panel {
+  position: relative;
+  width: 240px;
+  background: #fffdf6;
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 5px 5px 0 #111111;
+  padding: 14px 14px 16px;
+  text-align: center;
+  animation: sponsor-pop 0.18s ease-out;
+}
+
+@keyframes sponsor-pop {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.sponsor-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  color: #b08d4f;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.sponsor-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #5b4318;
+}
+
+.sponsor-sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a7248;
+}
+
+.sponsor-qr {
+  width: 190px;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #eee2c8;
+}
+
 @media (max-width: 860px) {
   .workspace {
     padding: 18px;
@@ -603,6 +710,10 @@ select {
     width: 100%;
     text-align: left;
   }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 520px) {
@@ -618,7 +729,12 @@ select {
 
   .brand-lockup {
     display: grid;
-    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .brand-mouse {
+    width: 70px;
+    height: 62px;
   }
 
   .workflow-steps {
@@ -628,6 +744,11 @@ select {
   .drop-zone {
     min-height: 330px;
     padding: 20px 14px 24px;
+  }
+
+  .mouse-mascot {
+    width: min(280px, 78vw);
+    height: 205px;
   }
 
   .format-table {

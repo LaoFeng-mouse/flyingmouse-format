@@ -15,10 +15,18 @@ test("app icon asset exists and is a real SVG", () => {
   assert.match(content, /viewBox/, "app-icon.svg must declare a viewBox");
 });
 
-test("renderer no longer references mouse action assets", () => {
+test("renderer uses the original mouse action assets", () => {
   const html = fs.readFileSync(path.join(assetRoot, "..", "index.html"), "utf8");
   const app = fs.readFileSync(path.join(assetRoot, "..", "app.js"), "utf8");
 
-  assert.doesNotMatch(html, /mouse-format/, "index.html must not reference mouse assets");
-  assert.doesNotMatch(app, /mouse-format/, "app.js must not reference mouse assets");
+  assert.match(html, /id="mouseMascot"/, "mouse mascot is missing");
+  assert.match(html, /mouse-format\/mouse-upload\.png/, "upload mouse is missing");
+  assert.match(app, /const mouseAssets/, "mouse state assets are missing");
+  assert.match(app, /function setMouseState/, "mouse state controller is missing");
+
+  for (const name of ["idle", "upload", "analyzing", "converting", "pdf-pages", "ocr", "batch", "success", "error"]) {
+    const filePath = path.join(assetRoot, "mouse-format", `mouse-${name}.png`);
+    assert.ok(fs.existsSync(filePath), `${name} mouse asset is missing`);
+    assert.ok(fs.statSync(filePath).size > 100, `${name} mouse asset looks like a placeholder`);
+  }
 });

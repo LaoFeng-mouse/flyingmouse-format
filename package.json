@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -10,8 +10,8 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
-    "test": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
-    "test:ci": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
+    "test": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
+    "test:ci": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
