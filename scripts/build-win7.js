@@ -291,25 +291,55 @@ function validateExtraResources(extraResources, projectRoot, stagePath) {
   });
 }
 
+function readStagePackageJson(stagePath, stagePaths) {
+  const packagePath = path.join(stagePath, "package.json");
+  if (!pathIsStrictlyInside(packagePath, stagePath)) {
+    throw new Error(`Staged Win7 package path escapes staging: ${packagePath}`);
+  }
+  const packageStat = fs.lstatSync(packagePath, { throwIfNoEntry: false });
+  if (!packageStat) throw new Error(`Staged Win7 package is missing: ${packagePath}`);
+  if (!packageStat.isFile() || packageStat.isSymbolicLink()) {
+    throw new Error(`Staged Win7 package must be a regular file, not a reparse point: ${packagePath}`);
+  }
+  assertNotReparsePoint(packagePath, stagePaths, "Staged Win7 package");
+  assertExistingAncestorInsideRoot(packagePath, stagePaths, "Staged Win7 package");
+  try {
+    return JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  } catch (error) {
+    throw new Error(`Staged Win7 package contains invalid JSON: ${error.message}`);
+  }
+}
+
 function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
-  const packageJson = options.packageJson || JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
   const projectRoot = path.resolve(options.projectRoot || path.join(stagePath, "..", ".."));
+  const safeStagePath = assertSafeStagePath(stagePath, projectRoot);
+  const stagePaths = {
+    resolvedRoot: safeStagePath,
+    canonicalRoot: fs.realpathSync.native(safeStagePath)
+  };
+  const stagedPackageJson = readStagePackageJson(safeStagePath, stagePaths);
+  const packageJson = options.packageJson || stagedPackageJson;
+  const stageLockPath = path.join(safeStagePath, "package-lock.json");
+  if (!pathIsStrictlyInside(stageLockPath, safeStagePath)) {
+    throw new Error(`Staged Win7 package lock path escapes staging: ${stageLockPath}`);
+  }
   readAndValidateWin7Lockfile(
-    path.join(stagePath, "package-lock.json"),
+    stageLockPath,
     packageJson,
-    "Staged Win7 package lock"
+    "Staged Win7 package lock",
+    stagePaths
   );
   const npmCliPath = resolveNpmCliPath(options.npmCliPath);
   runChecked(
     process.execPath,
     [npmCliPath, "ci", "--no-audit", "--no-fund"],
     "npm ci",
-    stagePath,
+    safeStagePath,
     runner
   );
-  validateExtraResources(packageJson.build?.extraResources, projectRoot, stagePath);
+  validateExtraResources(packageJson.build?.extraResources, projectRoot, safeStagePath);
   const localBuilder = path.join(
-    stagePath,
+    safeStagePath,
     "node_modules",
     ".bin",
     process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
@@ -318,7 +348,7 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
     throw new Error(`Local electron-builder executable was not installed: ${localBuilder}`);
   }
   const localBuilderCli = path.join(
-    stagePath,
+    safeStagePath,
     "node_modules",
     "electron-builder",
     "out",
@@ -332,7 +362,7 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
     process.execPath,
     [localBuilderCli, "--win", "nsis", "--x64"],
     "electron-builder",
-    stagePath,
+    safeStagePath,
     runner
   );
 }
