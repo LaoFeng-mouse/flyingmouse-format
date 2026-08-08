@@ -32,3 +32,23 @@ test("package uses Electron 43 and includes the security module", () => {
   assert.ok(packageJson.build.files.includes("electron-security.js"));
   assert.strictEqual(packageJson.build.win.signExecutable, false);
 });
+
+test("package bundles the AV3A helper and configures its runtime path", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  assert.ok(packageJson.build.extraResources.some((item) => item.from === "bin/avs3" && item.to === "avs3"));
+  assert.match(main, /FLYINGMOUSE_AVS3_DECODER_PATH/);
+  assert.match(main, /avs3RM0Decoder\.exe/);
+});
+
+test("save dialogs restore and update the last successful directory", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  assert.ok(packageJson.build.files.includes("settings-store.js"));
+  assert.match(main, /readLastSaveDirectory/);
+  assert.match(main, /writeLastSaveDirectory/);
+  assert.match(main, /path\.join\(lastSaveDirectory, fileName\)/);
+  assert.match(main, /defaultPath: lastSaveDirectory/);
+  assert.match(main, /writeLastSaveDirectory\(settingsPath, path\.dirname\(result\.filePath\)\)/);
+  assert.match(main, /writeLastSaveDirectory\(settingsPath, directory\)/);
+});

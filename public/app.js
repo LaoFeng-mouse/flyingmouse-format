@@ -58,6 +58,7 @@ const progressPercent = document.querySelector("#progressPercent");
 const progressTrack = document.querySelector(".progress-track");
 const progressFill = document.querySelector("#progressFill");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
+const { rememberTarget, preferredTarget } = window.FlyingMouseConversionPreferences;
 
 const labels = {
   image: "图片",
@@ -347,6 +348,9 @@ async function acceptFiles(fileList) {
       option.textContent = label;
       targetSelect.append(option);
     }
+
+    const rememberedTarget = preferredTarget(localStorage, files.map((file) => extensionOf(file.name)), targets);
+    if (rememberedTarget) targetSelect.value = rememberedTarget;
 
     targetSelect.disabled = false;
     convertButton.disabled = false;
@@ -707,7 +711,10 @@ batchList.addEventListener("click", async (event) => {
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
-targetSelect.addEventListener("change", syncZipCompressionField);
+targetSelect.addEventListener("change", () => {
+  syncZipCompressionField();
+  rememberTarget(localStorage, state.files.map((file) => extensionOf(file.name)), targetSelect.value);
+});
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
 

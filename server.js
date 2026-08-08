@@ -17,6 +17,7 @@ const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const TurndownService = require("turndown");
 const { convertNcm } = require("./ncm-format");
+const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
 const logger = require("./logger");
 
@@ -1521,7 +1522,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           ? await convertNcm(file.path)
           : await convertKgg(file.path);
         try {
-          await convertMedia(decrypted.nativePath, outputPath, requestedTarget, "audio");
+          const conversionInput = inputExt === "ncm"
+            ? await prepareDecryptedAudio(decrypted)
+            : decrypted.nativePath;
+          await convertMedia(conversionInput, outputPath, requestedTarget, "audio");
         } finally {
           await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
         }

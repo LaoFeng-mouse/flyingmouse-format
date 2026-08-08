@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -10,8 +10,8 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
-    "test": "node --test tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
-    "test:ci": "node --test tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
+    "test": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js",
+    "test:ci": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
@@ -50,7 +50,9 @@
       "preload.js",
       "server.js",
       "logger.js",
+      "settings-store.js",
       "ncm-format.js",
+      "av3a-format.js",
       "kgg-format.js",
       "public/**/*",
       "package.json",
@@ -60,6 +62,10 @@
       {
         "from": "bin/ffmpeg/ffmpeg.exe",
         "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+        "from": "bin/avs3",
+        "to": "avs3"
       },
       {
         "from": "bin/libreoffice",

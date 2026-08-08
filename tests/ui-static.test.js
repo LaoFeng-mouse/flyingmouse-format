@@ -55,3 +55,11 @@ test("renderer does not inject dynamic HTML", () => {
   assert.doesNotMatch(app, /\.innerHTML\s*=/, "renderer must build dynamic content with DOM APIs");
   assert.match(app, /\.textContent\s*=/, "renderer should render untrusted text with textContent");
 });
+
+test("renderer restores and updates target preferences by source extension", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /conversion-preferences\.js/);
+  assert.match(app, /preferredTarget\(localStorage/);
+  assert.match(app, /rememberTarget\(localStorage/);
+});
