@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const { execFile } = require("child_process");
-const { pathToFileURL } = require("url");
+const { fileURLToPath, pathToFileURL } = require("url");
 const express = require("express");
 const mime = require("mime-types");
 const multer = require("multer");
@@ -316,21 +316,70 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-async function loadPdfjsModule({
-  resolver = require.resolve,
-  importer = (specifier) => import(specifier)
-} = {}) {
-  let specifier = "pdfjs-dist/legacy/build/pdf.mjs";
-  try {
-    resolver(specifier);
-  } catch (error) {
-    if (!error || error.code !== "MODULE_NOT_FOUND") {
-      throw error;
+function normalizePdfjsEntry(value) {
+  let normalized = String(value || "");
+  if (normalized.startsWith("file:")) {
+    try {
+      normalized = fileURLToPath(normalized);
+    } catch {
+      // Fall through to text normalization for malformed file URLs.
     }
-    specifier = "pdfjs-dist/legacy/build/pdf.js";
+  }
+  normalized = normalized.replaceAll("\\", "/");
+  try {
+    normalized = decodeURIComponent(normalized);
+  } catch {
+    // Keep the original text when an error URL contains malformed escapes.
+  }
+  return normalized;
+}
+
+function isMissingPdfjsEntry(error, specifier) {
+  if (!error || !["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND"].includes(error.code)) {
+    return false;
   }
 
-  const mod = await importer(specifier);
+  const expected = normalizePdfjsEntry(specifier);
+  const matchesExpected = (value) => {
+    const target = normalizePdfjsEntry(value);
+    return target === expected || target.endsWith(`/${expected}`);
+  };
+
+  if (error.url && matchesExpected(error.url)) {
+    return true;
+  }
+
+  const missingTarget = String(error.message || "").match(/Cannot find (?:module|package)\s+['"]([^'"]+)['"]/i);
+  return Boolean(missingTarget && matchesExpected(missingTarget[1]));
+}
+
+function resolvePdfjsEntrySpecifiers(packageJsonResolver = require.resolve) {
+  const packageRoot = path.dirname(packageJsonResolver("pdfjs-dist/package.json"));
+  return {
+    modernSpecifier: pathToFileURL(path.join(packageRoot, "legacy", "build", "pdf.mjs")).href,
+    legacySpecifier: pathToFileURL(path.join(packageRoot, "legacy", "build", "pdf.js")).href
+  };
+}
+
+async function loadPdfjsModule({
+  importer = (specifier) => import(specifier),
+  packageJsonResolver = require.resolve,
+  modernSpecifier,
+  legacySpecifier
+} = {}) {
+  if (!modernSpecifier || !legacySpecifier) {
+    ({ modernSpecifier, legacySpecifier } = resolvePdfjsEntrySpecifiers(packageJsonResolver));
+  }
+  let mod;
+  try {
+    mod = await importer(modernSpecifier);
+  } catch (error) {
+    if (!isMissingPdfjsEntry(error, modernSpecifier)) {
+      throw error;
+    }
+    mod = await importer(legacySpecifier);
+  }
+
   return mod.default || mod;
 }
 
@@ -1645,4 +1694,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, loadPdfjsModule };
+module.exports = { app, startServer, createPdfjsLoader, isMissingPdfjsEntry, loadPdfjsModule };
