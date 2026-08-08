@@ -22,17 +22,61 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function removeBuilderOnlyTests(command) {
-  return command
-    .split(/\s+/)
-    .filter((part) => !BUILDER_ONLY_TESTS.has(part))
-    .join(" ");
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateBasePackage(basePackage, projectRoot) {
+  if (!isObject(basePackage)) throw new Error("basePackage must be an object.");
+  if (!isObject(basePackage.dependencies)) throw new Error("dependencies must be an object.");
+  if (!isObject(basePackage.devDependencies)) throw new Error("devDependencies must be an object.");
+  if (!isObject(basePackage.scripts)) throw new Error("scripts must be an object.");
+  for (const scriptName of ["test", "test:ci"]) {
+    if (typeof basePackage.scripts[scriptName] !== "string") {
+      throw new Error(`scripts.${scriptName} must be a string.`);
+    }
+  }
+  if (!isObject(basePackage.build)) throw new Error("build must be an object.");
+  if (!Array.isArray(basePackage.build.files) || !basePackage.build.files.every((item) => typeof item === "string")) {
+    throw new Error("build.files must be an array of strings.");
+  }
+  if (!isObject(basePackage.build.win)) throw new Error("build.win must be an object.");
+  if (!Array.isArray(basePackage.build.extraResources)) {
+    throw new Error("build.extraResources must be an array.");
+  }
+  basePackage.build.extraResources.forEach((item, index) => {
+    if (!isObject(item) || typeof item.from !== "string") {
+      throw new Error(`build.extraResources[${index}].from must be a string.`);
+    }
+  });
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
+    throw new Error("projectRoot must be an absolute path.");
+  }
+}
+
+function removeBuilderOnlyTests(command, scriptName) {
+  const invalidMessage = `${scriptName} must use the form node --test <test files>.`;
+  if (/[&|;<>`"']|[\r\n\t]/.test(command)) throw new Error(invalidMessage);
+
+  const parts = command.trim().split(/ +/);
+  if (
+    parts.length < 3 ||
+    parts[0] !== "node" ||
+    parts[1] !== "--test" ||
+    parts.slice(2).some(
+      (part) => !/^tests\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_.-]+\.test\.js$/.test(part)
+    )
+  ) {
+    throw new Error(invalidMessage);
+  }
+
+  const testFiles = parts.slice(2).filter((part) => !BUILDER_ONLY_TESTS.has(part));
+  if (testFiles.length === 0) throw new Error(`${scriptName} has no runtime tests after filtering.`);
+  return ["node", "--test", ...testFiles].join(" ");
 }
 
 function createWin7Package(basePackage, projectRoot) {
-  if (!basePackage?.build?.files || !basePackage?.build?.extraResources) {
-    throw new Error("Base package is missing electron-builder files or resources.");
-  }
+  validateBasePackage(basePackage, projectRoot);
 
   const profile = cloneJson(basePackage);
   profile.name = "flyingmouse-format-win7";
@@ -41,14 +85,17 @@ function createWin7Package(basePackage, projectRoot) {
   profile.devDependencies.electron = "22.3.27";
 
   for (const scriptName of ["test", "test:ci"]) {
-    profile.scripts[scriptName] = removeBuilderOnlyTests(profile.scripts[scriptName]);
+    profile.scripts[scriptName] = removeBuilderOnlyTests(
+      profile.scripts[scriptName],
+      `scripts.${scriptName}`
+    );
   }
   delete profile.scripts["dist:win7"];
 
   for (const file of REQUIRED_RUNTIME_FILES) {
     if (!profile.build.files.includes(file)) profile.build.files.push(file);
   }
-  profile.build.artifactName = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
+  profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
   profile.build.extraResources = profile.build.extraResources.map((item) => ({
@@ -66,7 +113,7 @@ function stageSourceEntries(basePackage) {
     throw new Error("Base package is missing electron-builder files.");
   }
 
-  const entries = new Set(["build", "tests"]);
+  const entries = new Set(["build", "tests", ...REQUIRED_RUNTIME_FILES]);
   for (const pattern of basePackage.build.files) {
     if (pattern === "node_modules" || pattern.startsWith("node_modules/")) continue;
     if (pattern.endsWith("/**/*")) {
@@ -80,9 +127,10 @@ function stageSourceEntries(basePackage) {
 }
 
 function createWin7BuildProfile(basePackage, projectRoot) {
+  const packageJson = createWin7Package(basePackage, projectRoot);
   return {
-    packageJson: createWin7Package(basePackage, projectRoot),
-    stagingEntries: stageSourceEntries(basePackage)
+    packageJson,
+    stagingEntries: stageSourceEntries(packageJson)
   };
 }
 

@@ -4,6 +4,14 @@ const test = require("node:test");
 
 const rootPackage = require("../package.json");
 
+function resolveArtifactName(profile) {
+  return profile.build.artifactName
+    .replace("${productName}", profile.productName)
+    .replace("${version}", profile.version)
+    .replace("${arch}", "x64")
+    .replace("${ext}", "exe");
+}
+
 test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its input", () => {
   const { createWin7BuildProfile } = require("../win7-build-profile");
   const input = structuredClone(rootPackage);
@@ -22,7 +30,8 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
   assert.equal(profile.devDependencies.electron, "22.3.27");
   assert.equal(profile.dependencies.sharp, "0.32.6");
   assert.equal(profile.dependencies["pdfjs-dist"], "2.16.105");
-  assert.equal(profile.build.artifactName, "FlyingMouse Format-Setup-0.3.2-win7-x64.exe");
+  assert.equal(profile.build.artifactName, "${productName}-Setup-${version}-win7-${arch}.${ext}");
+  assert.equal(resolveArtifactName(profile), "FlyingMouse Format-Setup-0.3.2-win7-x64.exe");
   assert.deepEqual(profile.build.win.target, ["nsis"]);
   assert.equal(profile.build.appx, undefined);
   assert.doesNotMatch(profile.scripts.test, /win7-build-profile|win7-build-script|pe-metadata/);
@@ -30,6 +39,18 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
   assert.equal(profile.scripts["dist:win7"], undefined);
   assert.ok(stagingEntries.includes("public"));
   assert.equal(JSON.stringify(input), original);
+});
+
+test("Win7 artifact name follows a non-current input version", () => {
+  const { createWin7Package } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.version = "9.8.7";
+
+  const profile = createWin7Package(input, path.resolve(__dirname, ".."));
+
+  assert.equal(profile.build.artifactName, "${productName}-Setup-${version}-win7-${arch}.${ext}");
+  assert.equal(resolveArtifactName(profile), "FlyingMouse Format-Setup-9.8.7-win7-x64.exe");
+  assert.doesNotMatch(profile.build.artifactName, /0\.3\.2/);
 });
 
 test("Win7 profile includes every current runtime module and absolute binary resources", () => {
@@ -81,4 +102,65 @@ test("stage source entries contain runtime source and assets but exclude node_mo
   }
   assert.ok(!entries.includes("node_modules"));
   assert.ok(!entries.some((entry) => entry.startsWith("node_modules/")));
+});
+
+test("derived package and staging entries restore a missing required runtime module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "logger.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("logger.js"));
+  assert.ok(stagingEntries.includes("logger.js"));
+});
+
+test("test script filtering rejects shell syntax and unknown command forms", () => {
+  const { createWin7Package } = require("../win7-build-profile");
+  const unsafeCommands = [
+    "node --test tests/i18n.test.js && echo unsafe",
+    "node --test tests/i18n.test.js || exit 1",
+    "node --test tests/i18n.test.js; echo unsafe",
+    "node --test tests/i18n.test.js | more",
+    "node --test tests/i18n.test.js > result.txt",
+    "node --test \"tests/i18n.test.js\"",
+    "node --test tests/../outside.test.js",
+    "npm exec node --test tests/i18n.test.js"
+  ];
+
+  for (const command of unsafeCommands) {
+    const input = structuredClone(rootPackage);
+    input.scripts.test = command;
+    assert.throws(
+      () => createWin7Package(input, path.resolve(__dirname, "..")),
+      /scripts\.test must use the form node --test <test files>/
+    );
+  }
+});
+
+test("profile validation reports missing required manifest fields", () => {
+  const { createWin7Package } = require("../win7-build-profile");
+  const projectRoot = path.resolve(__dirname, "..");
+  const invalidInputs = [
+    [(input) => delete input.dependencies, /dependencies must be an object/],
+    [(input) => delete input.devDependencies, /devDependencies must be an object/],
+    [(input) => delete input.scripts, /scripts must be an object/],
+    [(input) => delete input.scripts.test, /scripts\.test must be a string/],
+    [(input) => delete input.scripts["test:ci"], /scripts\.test:ci must be a string/],
+    [(input) => delete input.build.win, /build\.win must be an object/],
+    [
+      (input) => delete input.build.extraResources[0].from,
+      /build\.extraResources\[0\]\.from must be a string/
+    ]
+  ];
+
+  for (const [invalidate, expected] of invalidInputs) {
+    const input = structuredClone(rootPackage);
+    invalidate(input);
+
+    assert.throws(() => createWin7Package(input, projectRoot), expected);
+  }
 });
