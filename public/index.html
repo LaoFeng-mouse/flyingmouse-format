@@ -4,37 +4,48 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FlyingMouse Format</title>
-    <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml">
+    <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <main class="shell">
-      <section class="workspace" aria-label="文件转换工作台">
+      <section class="workspace" data-i18n-aria="workspace.aria" aria-label="文件转换工作台">
         <div class="topbar">
           <div class="brand-lockup">
-            <div class="brand-mark" aria-hidden="true">⚡</div>
+            <img class="brand-mouse" src="/assets/mouse-format/mouse-idle.png" alt="" aria-hidden="true">
             <div>
               <p class="eyebrow">FlyingMouse Format</p>
-              <h1>格式转换，一步到位</h1>
+              <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
             </div>
           </div>
-          <div class="health" id="toolHealth">正在检测转换引擎</div>
+          <div class="topbar-actions">
+            <label class="language-field">
+              <span data-i18n="language.label">语言</span>
+              <select id="languageSelect" aria-label="语言 / Language">
+                <option value="zh-CN">中文</option>
+                <option value="en-US">English</option>
+              </select>
+            </label>
+            <div class="health" id="toolHealth" data-i18n="health.checking">正在检测转换引擎</div>
+          </div>
         </div>
 
-        <nav class="workflow-steps" id="workflowSteps" aria-label="转换流程">
-          <span class="workflow-step active" data-step="select">选择文件</span>
-          <span class="workflow-step" data-step="analyze">识别格式</span>
-          <span class="workflow-step" data-step="convert">开始转换</span>
-          <span class="workflow-step" data-step="save">保存结果</span>
+        <nav class="workflow-steps" id="workflowSteps" data-i18n-aria="workflow.aria" aria-label="转换流程">
+          <span class="workflow-step active" data-step="select" data-i18n="workflow.select">选择文件</span>
+          <span class="workflow-step" data-step="analyze" data-i18n="workflow.analyze">识别格式</span>
+          <span class="workflow-step" data-step="convert" data-i18n="workflow.convert">开始转换</span>
+          <span class="workflow-step" data-step="save" data-i18n="workflow.save">保存结果</span>
         </nav>
 
         <div class="converter-grid">
-          <section class="drop-panel" aria-label="上传文件">
+          <section class="drop-panel" data-i18n-aria="upload.aria" aria-label="上传文件">
             <input id="fileInput" type="file" class="sr-only" multiple>
             <button class="drop-zone" id="dropZone" type="button">
-              <span class="drop-icon" aria-hidden="true">📁</span>
-              <span class="drop-main">把文件拖到这里，或点击选择</span>
-              <span class="drop-sub" id="dropHint">图片、文档、PDF、WPS、音视频都可以转</span>
+              <span class="mouse-stage" aria-hidden="true">
+                <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
+              </span>
+              <span class="drop-main" data-i18n="upload.title">把文件丢给鼠鼠</span>
+              <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
             </button>
 
             <div class="file-strip" id="fileStrip" hidden>
@@ -42,63 +53,70 @@
                 <p class="file-name" id="fileName"></p>
                 <p class="file-meta" id="fileMeta"></p>
               </div>
-              <button class="ghost-button" id="clearButton" type="button">清空</button>
+              <button class="ghost-button" id="clearButton" type="button" data-i18n="action.clear">清空</button>
             </div>
-
             <div class="batch-list" id="batchList" hidden></div>
           </section>
 
-          <aside class="controls" aria-label="转换设置">
+          <aside class="controls" data-i18n-aria="settings.aria" aria-label="转换设置">
             <label class="field">
-              <span>目标格式</span>
+              <span data-i18n="target.label">目标格式</span>
               <select id="targetSelect" disabled>
-                <option value="">先选择文件</option>
+                <option value="" data-i18n="target.placeholder">先选择文件</option>
               </select>
             </label>
 
             <label class="field" id="zipCompressionField" hidden>
-              <span>ZIP 压缩级别（0=不压缩，9=最大）</span>
+              <span data-i18n="zip.label">ZIP 压缩级别（0=不压缩，9=最大）</span>
               <select id="zipCompression">
-                <option value="0">0 不压缩（最快）</option>
-                <option value="1">1 最快</option>
-                <option value="6" selected>6 标准（默认）</option>
-                <option value="9">9 最大压缩（最慢）</option>
+                <option value="0" data-i18n="zip.0">0 不压缩（最快）</option>
+                <option value="1" data-i18n="zip.1">1 最快</option>
+                <option value="6" selected data-i18n="zip.6">6 标准（默认）</option>
+                <option value="9" data-i18n="zip.9">9 最大压缩（最慢）</option>
               </select>
             </label>
 
-            <button class="primary-button" id="convertButton" type="button" disabled>
-              开始转换
-            </button>
+            <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
 
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">
-                <span id="progressLabel">转换进度</span>
+                <span id="progressLabel" data-i18n="progress.label">转换进度</span>
                 <span id="progressPercent">0%</span>
               </div>
-              <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="转换进度">
+              <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="progress.label" aria-label="转换进度">
                 <div class="progress-fill" id="progressFill"></div>
               </div>
             </div>
 
-            <div class="status-box" id="statusBox" role="status">
-              选择文件后会显示可用的转换格式。
-            </div>
-
-            <a class="download-button" id="downloadButton" hidden>下载转换后的文件</a>
-            <button class="download-button" id="batchSaveButton" type="button" hidden>保存全部</button>
+            <div class="status-box" id="statusBox" role="status" data-i18n="status.ready">选择文件后会显示可用的转换格式。</div>
+            <a class="download-button" id="downloadButton" hidden data-i18n="action.download">下载转换后的文件</a>
+            <button class="download-button" id="batchSaveButton" type="button" hidden data-i18n="action.saveAll">保存全部</button>
           </aside>
         </div>
 
-        <section class="matrix" aria-label="支持格式">
+        <section class="matrix" data-i18n-aria="formats.aria" aria-label="支持格式">
           <div class="matrix-header">
-            <h2>当前支持</h2>
-            <p>文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。</p>
+            <h2 data-i18n="formats.title">当前支持</h2>
+            <p data-i18n="formats.description">文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。</p>
           </div>
           <div class="format-table" id="formatTable"></div>
         </section>
       </section>
     </main>
 
+    <aside class="sponsor-widget" id="sponsorWidget" data-i18n-aria="sponsor.aria" aria-label="支持鼠鼠">
+      <button class="sponsor-toggle" id="sponsorToggle" type="button" data-i18n-title="sponsor.aria" title="支持鼠鼠" aria-expanded="false">
+        <img class="sponsor-mouse" src="/assets/mouse-format/mouse-idle.png" alt="🐭">
+      </button>
+      <div class="sponsor-panel" id="sponsorPanel" hidden>
+        <button class="sponsor-close" id="sponsorClose" type="button" data-i18n-aria="sponsor.close" aria-label="收起">×</button>
+        <p class="sponsor-title" data-i18n="sponsor.title">请鼠鼠吃小鱼干 🐟</p>
+        <p class="sponsor-sub" data-i18n="sponsor.description">如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费</p>
+        <img class="sponsor-qr" src="/assets/sponsor-qr.jpg" data-i18n-alt="sponsor.qrAlt" alt="微信收款码">
+      </div>
+    </aside>
+
+    <script src="/i18n.js"></script>
     <script src="/conversion-preferences.js"></script>
     <script src="/app.js"></script>
   </body>
