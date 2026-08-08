@@ -13,6 +13,7 @@
 
 - 版本：`0.3.2`
 - 安装包：`dist\FlyingMouse Format-Setup-0.3.2-x64.exe`
+- GitHub 现有资产：`FlyingMouse.Format-Setup-0.3.2-x64.exe`
 - 安装包大小：548,510,595 字节
 - SHA-256：`5df0eb6b8223333a7c2198906dd6171207f1693c34584a037106d696473284e6`
 - 解包 EXE ProductVersion：`0.3.2.0`
@@ -20,7 +21,7 @@
 - GitHub main：`c896a58311a3550ecea3668eeb1a758f465be45c`
 - 签名：未签名，SmartScreen 可能提示
 
-### Windows 7 SP1 x64 兼容包
+## Windows 7 SP1 x64 兼容包
 
 - 安装包：`dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe`
 - 安装包大小：517,755,320 字节
@@ -45,16 +46,21 @@
 
 ## 验证证据
 
+### 标准版既有发布验证（2026-08-08）
+
 - 自动化测试：72/72 通过。
 - NSIS 构建：成功。
 - 成品 EXE 内嵌图标：已提取并目视确认是鼠鼠。
 - 桌面快捷方式：已刷新并通过真实桌面截图确认显示鼠鼠图标。
 - 标准版 GitHub 资产：既有上传已完成，远端大小与 SHA-256 和本地标准安装包一致。
+
+### Win7 分支验证（2026-08-09）
+
 - Win7 主线自动化：119 项，117 通过、2 个真实 fixture 条件跳过、0 失败。
 - Win7 staging：83 项，81 通过、2 个真实 fixture 条件跳过、0 失败。
 - 真实 NCM：用户提供的 3 个样本均端到端转换为可播放 MP3，源文件 SHA-256 均未改变。
 - 最终 ASAR：`server.js` 与源码 SHA-256 一致，包含 PDF.js 本地依赖边界和 `isEvalSupported: false`；AV3A、FFmpeg、LibreOffice、Poppler、Tessdata 资源齐全。
-- 当前 Windows 冒烟：解包 EXE 连续运行 12 秒，4 个精确同路径 Electron 进程均响应；测试后只结束本次启动的进程。
+- 当前 Windows 冒烟：Microsoft Windows 11 家庭版 中文版，x64，Version `10.0.26200` / Build `26200`；解包 EXE 连续运行 12 秒，4 个精确同路径 Electron 进程均响应，测试后只结束本次启动的进程。
 - Win7 设备验收：尚未在真实 Windows 7 SP1 x64 机器运行，仍为待验收，不得写成已完成。
 - staging 生命周期：完整测试中的安全性用例会按设计清理 `output/win7-stage/`；需要复核内层 EXE 时先重新准备或构建，不影响根 `dist` 中的 Win7 安装包。
 

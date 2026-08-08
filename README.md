@@ -51,17 +51,18 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（推荐）**：下载标准安装包 `FlyingMouse Format-Setup-0.3.2-x64.exe`。它使用当前 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
+- **Windows 10 / 11 x64（推荐）**：下载 GitHub 现有标准资产 `FlyingMouse.Format-Setup-0.3.2-x64.exe`。它使用当前 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
 - **Windows 7 SP1 x64（兼容版）**：资产发布后选择 `FlyingMouse Format-Setup-0.3.2-win7-x64.exe`。它保留同一套鼠鼠 UI、NCM/AV3A、格式记忆、保存路径记忆和中英文功能，但使用 Electron 22.3.27 的独立构建环境。
 
-Windows 7 兼容版是遗留系统构建，不会降低标准版依赖。自动化测试、PE 5.2 检查、当前 Windows 冒烟启动和 3 个真实 NCM 样本已经通过；真实 Windows 7 设备运行验收仍待完成。旧运行时包含无法在 Windows 7 上直接升级的已知依赖风险，PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍建议只离线处理可信文件。安装包未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。自动化测试、PE 5.2 检查、当前 Windows 冒烟启动和 3 个真实 NCM 样本已经通过；真实 Windows 7 设备运行验收仍待完成。安装包未签名，SmartScreen 可能提示。
 
-构建 Windows 7 兼容版：
+完整构建只需：
 
 ```powershell
-node scripts/build-win7.js --prepare-only
 npm run dist:win7
 ```
+
+仅需检查 staging 时可运行 `node scripts/build-win7.js --prepare-only`；它不会打包。完整构建会重新准备 staging。
 
 ## English
 
@@ -89,17 +90,18 @@ npm run dist:win7
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse Format-Setup-0.3.2-x64.exe`. It keeps the current Electron 43, Sharp 0.35, and PDF.js 6 runtime.
+- **Windows 10 / 11 x64 (recommended):** use the existing GitHub standard asset `FlyingMouse.Format-Setup-0.3.2-x64.exe`. It keeps the current Electron 43, Sharp 0.35, and PDF.js 6 runtime.
 - **Windows 7 SP1 x64 (compatibility build):** once published, choose `FlyingMouse Format-Setup-0.3.2-win7-x64.exe`. It contains the same mouse UI, NCM/AV3A support, per-source target memory, save-folder memory, and Chinese/English UI, built separately with Electron 22.3.27.
 
-The Windows 7 build does not downgrade the standard build. Automated tests, a PE 5.2 check, a current-Windows smoke launch, and three real NCM conversions passed; acceptance on a physical Windows 7 system is still pending. Its legacy runtime has known dependency risks that cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. The installer is unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. Automated tests, a PE 5.2 check, a current-Windows smoke launch, and three real NCM conversions passed; acceptance on a physical Windows 7 system is still pending. The installer is unsigned and may trigger SmartScreen.
 
-Build the Windows 7 compatibility package:
+The complete build requires only:
 
 ```powershell
-node scripts/build-win7.js --prepare-only
 npm run dist:win7
 ```
+
+Use `node scripts/build-win7.js --prepare-only` only to inspect staging without packaging. A complete build prepares staging again.
 
 ## Supported formats / 支持格式
 
