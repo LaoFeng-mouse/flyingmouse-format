@@ -64,6 +64,16 @@ Electron 保存对话框 → 用户选择的目录
 
 只保证兼容 `music.163.com` 对应网易云音乐客户端生成的常规 NCM 与 AV3A NCM。其他来源即使扩展名相同，也可能采用不同封装或密钥方案，不视为本项目缺陷。
 
+## 双运行时构建
+
+- 标准版直接使用根 `package.json`：Electron 43，面向 Windows 10 / 11 x64。
+- Windows 7 兼容版由 `win7-build-profile.js` 派生独立 profile/manifest，在可重建的 `output/win7-stage/` 安装 Electron 22.3.27、Sharp 0.32.6 和 PDF.js 2.16.105；根 manifest、根 `node_modules` 与标准版依赖不被改写或降级。
+- `scripts/build-win7.js` 只允许清理项目内精确的 `output/win7-stage`，拒绝 junction、符号链接和越界资源；最终只复制精确命名的 Win7 安装包到根 `dist/`。
+- PDF.js 加载器把入口固定在当前应用自己的 `node_modules/pdfjs-dist`，现代版优先 `.mjs`，旧版仅在该入口确实缺失时回退 `.js`，禁止借用父目录依赖。
+- 所有 PDF.js 文本提取调用都设置 `isEvalSupported: false`，用于缓解旧 PDF.js 的动态代码执行风险。
+
+Windows 7 构建是兼容 profile，不改变标准版运行时。PE 元数据由 `pe-metadata.js` / `scripts/inspect-pe.js` 检查；兼容性判断必须读取 `win-unpacked/FlyingMouse Format.exe` 这一内层应用，而不是 OS 字段不同的 NSIS 外壳。
+
 ## 产品边界
 
 本仓库是“鼠鼠 UI 的飞鼠格式”。`鼠鼠打印` 是独立项目，不共享发布产物、桌面快捷方式或功能改动。

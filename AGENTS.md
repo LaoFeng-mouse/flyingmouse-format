@@ -4,7 +4,7 @@
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、普通 NCM 与 Audio Vivid（AV3A）NCM。
+当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、普通 NCM 与 Audio Vivid（AV3A）NCM。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
@@ -18,6 +18,8 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `settings-store.js`：在 Electron `userData/settings.json` 中原子保存最近目录。
 - `ncm-format.js`、`av3a-format.js`、`kgg-format.js`：专有音频容器处理。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
+- `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
+- `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
 - `build/icon.png`：NSIS、EXE、任务栏和快捷方式的 512×512 鼠鼠图标；必须由 `public/assets/mouse-format/mouse-idle.png` 生成。
 - `bin/`：本地转换引擎。除 `bin/avs3/` 外被 Git 忽略，换机时必须单独准备。
 
@@ -50,6 +52,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 下载只允许同源 `/downloads/<id>`；外部打开只允许无凭证 HTTPS。
 - 文件名进入路径前继续使用 `path.basename` 收敛。
 - 本地安装包当前未签名；不得把证书、密码、令牌或私钥写入仓库。
+- PDF.js 必须只从当前应用自己的 `node_modules/pdfjs-dist` 加载；旧版入口回退不得借用父目录依赖，所有 `getDocument` 调用保持 `isEvalSupported: false`。
 
 ## Runtime paths and diagnostics
 
@@ -74,6 +77,10 @@ npm test
 npm run test:ci
 npm audit --omit=dev
 npm run dist
+node scripts/build-win7.js --prepare-only
+npm run dist:win7
+node scripts/inspect-pe.js "output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe"
+npm audit --omit=dev --prefix output\win7-stage
 ```
 
 沙箱限制 Node 子进程时可能出现 `spawn EPERM`；这不是转换代码失败。真实转换测试和打包应在普通 Windows PowerShell、cmd 或 CI 中运行。
@@ -88,6 +95,8 @@ npm run dist
 - `npm run dist` 当前生成 NSIS 安装包和 `dist/win-unpacked`；不要假设 APPX 已同步生成。
 - 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
+- Win7 构建只允许使用可重建的 `output/win7-stage/`，并写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
+- Windows 7 发布证据必须同时记录：主线测试、staging 测试、真实 NCM/AV3A、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
 - GitHub remote：`https://github.com/LaoFeng-mouse/flyingmouse-format.git`。
 
 ## Documentation map
