@@ -302,6 +302,7 @@ test("Win7 lock validation fails closed before npm when the lock is missing or m
   };
   fs.mkdirSync(temporaryStage, { recursive: true });
   fs.writeFileSync(npmCliPath, "npm CLI");
+  fs.writeFileSync(path.join(temporaryStage, "package.json"), JSON.stringify(packageJson));
 
   assert.doesNotThrow(() => validateWin7Lockfile(validLock, packageJson, "synthetic lock"));
   const mismatchedLock = structuredClone(validLock);
@@ -340,6 +341,76 @@ test("Win7 lock validation fails closed before npm when the lock is missing or m
     /dependencies.*sharp|sharp.*mismatch/i
   );
   assert.equal(calls.length, 0, "npm ran before the mismatched lock was rejected");
+});
+
+test("build commands reject junction and nested staging paths before npm", (t) => {
+  const { runBuildCommands } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-build-stage-root-");
+  const externalStage = createTemporaryRoot(t, "flyingmouse-win7-build-stage-target-");
+  const output = path.join(temporaryRoot, "output");
+  const npmCliPath = path.join(temporaryRoot, "npm-cli.js");
+  const packageJson = {
+    name: "flyingmouse-format-win7",
+    version: "0.3.2",
+    dependencies: { sharp: "0.32.6" },
+    devDependencies: { electron: "22.3.27" },
+    build: { extraResources: [] }
+  };
+  const lockfile = {
+    name: packageJson.name,
+    version: packageJson.version,
+    lockfileVersion: 3,
+    packages: {
+      "": {
+        name: packageJson.name,
+        version: packageJson.version,
+        dependencies: packageJson.dependencies,
+        devDependencies: packageJson.devDependencies
+      }
+    }
+  };
+  fs.mkdirSync(output);
+  fs.writeFileSync(npmCliPath, "npm CLI");
+  fs.writeFileSync(path.join(externalStage, "package.json"), JSON.stringify(packageJson));
+  fs.writeFileSync(path.join(externalStage, "package-lock.json"), JSON.stringify(lockfile));
+  const sentinel = path.join(externalStage, "do-not-touch.txt");
+  fs.writeFileSync(sentinel, "external content");
+  const calls = [];
+  const runner = (...args) => {
+    calls.push(args);
+    return { status: 0 };
+  };
+
+  const junctionStage = path.join(output, "win7-stage");
+  if (!createJunctionOrSkip(t, externalStage, junctionStage)) return;
+  assert.throws(
+    () =>
+      runBuildCommands(junctionStage, runner, {
+        npmCliPath,
+        projectRoot: temporaryRoot,
+        packageJson
+      }),
+    /stage.*reparse|reparse.*stage/i
+  );
+  assert.equal(calls.length, 0, "npm ran through a junction staging path");
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
+  fs.unlinkSync(junctionStage);
+
+  const nestedStage = path.join(output, "nested", "win7-stage");
+  fs.mkdirSync(nestedStage, { recursive: true });
+  fs.writeFileSync(path.join(nestedStage, "package.json"), JSON.stringify(packageJson));
+  fs.writeFileSync(path.join(nestedStage, "package-lock.json"), JSON.stringify(lockfile));
+  assert.throws(
+    () =>
+      runBuildCommands(nestedStage, runner, {
+        npmCliPath,
+        projectRoot: temporaryRoot,
+        packageJson
+      }),
+    /must exactly match.*output.*win7-stage/i
+  );
+  assert.equal(calls.length, 0, "npm ran from a nested staging path");
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
 });
 
 test("extraResources validation accepts controlled paths and rejects external junctions", (t) => {
