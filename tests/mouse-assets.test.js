@@ -2,6 +2,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { test } = require("node:test");
+const sharp = require("sharp");
 
 const assetRoot = path.join(__dirname, "..", "public", "assets");
 
@@ -13,6 +14,18 @@ test("app icon asset exists and is a real SVG", () => {
   const content = fs.readFileSync(filePath, "utf8");
   assert.match(content, /<svg/, "app-icon.svg must be an SVG document");
   assert.match(content, /viewBox/, "app-icon.svg must declare a viewBox");
+});
+
+test("packaging icon is generated from the original mouse identity", async () => {
+  const mousePath = path.join(assetRoot, "mouse-format", "mouse-idle.png");
+  const iconPath = path.join(__dirname, "..", "build", "icon.png");
+  const expected = await sharp(mousePath)
+    .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const actual = fs.readFileSync(iconPath);
+
+  assert.deepEqual(actual, expected, "build/icon.png must be the 512px mouse icon used by packaging");
 });
 
 test("renderer uses the original mouse action assets", () => {

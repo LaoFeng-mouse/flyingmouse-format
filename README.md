@@ -28,12 +28,14 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 `FlyingMouse Format-Setup-0.3.1-x64.exe`。
+1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 `FlyingMouse Format-Setup-0.3.2-x64.exe`。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
 
 从源码运行：
+
+> 源码仓库不包含体积较大的 FFmpeg、LibreOffice、Poppler 和 Tesseract 资源；普通用户请直接下载 Release 安装包。开发者从源码运行完整转换功能前，需要自行准备 `bin/` 下的引擎资源。
 
 ```powershell
 npm install
@@ -64,10 +66,12 @@ npm run dist
 
 ### Quick start
 
-1. Download `FlyingMouse Format-Setup-0.3.1-x64.exe` from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+1. Download `FlyingMouse Format-Setup-0.3.2-x64.exe` from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
+
+> The source repository excludes the large FFmpeg, LibreOffice, Poppler, and Tesseract bundles. Regular users should install the Release build. Developers need to provide the corresponding resources under `bin/` for the complete conversion feature set.
 
 ## Supported formats / 支持格式
 
