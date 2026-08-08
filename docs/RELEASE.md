@@ -25,11 +25,16 @@ NSIS 安装包输出为 `dist/FlyingMouse Format-Setup-<version>-x64.exe`，解�
 
 ### Windows 7 SP1 x64 兼容包
 
-Win7 构建从当前源码派生独立 staging，不修改根 `package.json`、根 `node_modules` 或标准安装包：
+Win7 构建从当前源码派生独立 staging，不修改根 `package.json`、根 `node_modules` 或标准安装包。完整构建只需：
+
+```powershell
+npm run dist:win7
+```
+
+若只需生成 staging 进行依赖或文件检查，可单独运行下列命令；它不会打包，后续完整构建仍会重新准备 staging：
 
 ```powershell
 node scripts/build-win7.js --prepare-only
-npm run dist:win7
 ```
 
 输出：
