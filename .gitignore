@@ -1,4 +1,5 @@
 node_modules/
+.worktrees/
 runtime/
 dist/
 test-results/
