@@ -15,14 +15,18 @@ function createPeBuffer({
   major = 5,
   minor = 2,
   peOffset = 0x80,
-  optionalHeaderSize = 44,
+  optionalHeaderSize,
   bufferSize = 0x200,
 } = {}) {
+  if (format !== 'PE32' && format !== 'PE32+') {
+    throw new Error(`Unsupported test PE format: ${format}`);
+  }
+  const declaredOptionalHeaderSize = optionalHeaderSize ?? (format === 'PE32' ? 0xe0 : 0xf0);
   const buffer = Buffer.alloc(bufferSize);
   buffer.write('MZ', 0, 'ascii');
   buffer.writeUInt32LE(peOffset, 0x3c);
   buffer.write('PE\0\0', peOffset, 'binary');
-  buffer.writeUInt16LE(optionalHeaderSize, peOffset + 20);
+  buffer.writeUInt16LE(declaredOptionalHeaderSize, peOffset + 20);
 
   const optionalHeaderOffset = peOffset + 24;
   buffer.writeUInt16LE(format === 'PE32' ? 0x10b : 0x20b, optionalHeaderOffset);
@@ -30,6 +34,12 @@ function createPeBuffer({
   buffer.writeUInt16LE(minor, optionalHeaderOffset + 42);
   return buffer;
 }
+
+test('synthetic PE fixtures use real optional-header sizes and reject unknown formats', () => {
+  assert.equal(createPeBuffer().readUInt16LE(0x80 + 20), 0xe0);
+  assert.equal(createPeBuffer({ format: 'PE32+' }).readUInt16LE(0x80 + 20), 0xf0);
+  assert.throws(() => createPeBuffer({ format: 'PE64' }), /Unsupported test PE format: PE64/);
+});
 
 test('inspectPeBuffer reads PE32 operating-system version metadata', () => {
   assert.deepEqual(inspectPeBuffer(createPeBuffer()), {
@@ -69,6 +79,11 @@ test('inspectPeBuffer rejects malformed and truncated input with domain errors',
     assert.throws(() => inspectPeBuffer(buffer), /e_lfanew.*outside the buffer/i);
   });
 
+  await t.test('e_lfanew overlaps the DOS header', () => {
+    const buffer = createPeBuffer({ peOffset: 0x20 });
+    assert.throws(() => inspectPeBuffer(buffer), /e_lfanew.*DOS header/i);
+  });
+
   await t.test('invalid PE signature', () => {
     const buffer = createPeBuffer();
     buffer.write('PX\0\0', 0x80, 'binary');
@@ -85,6 +100,11 @@ test('inspectPeBuffer rejects malformed and truncated input with domain errors',
     assert.throws(() => inspectPeBuffer(buffer), /optional header.*truncated/i);
   });
 
+  await t.test('declared optional header extends beyond the file boundary', () => {
+    const buffer = createPeBuffer({ optionalHeaderSize: 0xffff }).subarray(0, 0x80 + 24 + 44);
+    assert.throws(() => inspectPeBuffer(buffer), /declared optional header.*truncated/i);
+  });
+
   await t.test('unknown optional-header magic', () => {
     const buffer = createPeBuffer();
     buffer.writeUInt16LE(0x999, 0x80 + 24);
@@ -92,12 +112,19 @@ test('inspectPeBuffer rejects malformed and truncated input with domain errors',
   });
 });
 
-test('inspectPeFile reads a PE file from disk', () => {
+test('inspectPeFile reads a valid PE and rejects a truncated declared header', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flyingmouse-pe-file-'));
-  const filePath = path.join(tempDir, 'sample.exe');
+  const validPath = path.join(tempDir, 'valid.exe');
+  const truncatedPath = path.join(tempDir, 'truncated.exe');
   try {
-    fs.writeFileSync(filePath, createPeBuffer());
-    assert.equal(inspectPeFile(filePath).operatingSystemVersion, '5.2');
+    fs.writeFileSync(validPath, createPeBuffer());
+    fs.writeFileSync(
+      truncatedPath,
+      createPeBuffer({ optionalHeaderSize: 0xffff }).subarray(0, 0x80 + 24 + 44),
+    );
+
+    assert.equal(inspectPeFile(validPath).operatingSystemVersion, '5.2');
+    assert.throws(() => inspectPeFile(truncatedPath), /declared optional header.*truncated/i);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

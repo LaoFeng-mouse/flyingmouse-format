@@ -17,7 +17,10 @@ function inspectPeBuffer(buffer) {
   }
 
   const peOffset = buffer.readUInt32LE(0x3c);
-  if (!Number.isSafeInteger(peOffset) || peOffset > buffer.length - PE_SIGNATURE_SIZE) {
+  if (!Number.isSafeInteger(peOffset) || peOffset < DOS_HEADER_MINIMUM_SIZE) {
+    throw new Error('Invalid e_lfanew: PE header overlaps the DOS header');
+  }
+  if (peOffset > buffer.length - PE_SIGNATURE_SIZE) {
     throw new Error('Invalid e_lfanew: PE header offset is outside the buffer');
   }
   if (!buffer.subarray(peOffset, peOffset + PE_SIGNATURE_SIZE).equals(Buffer.from('PE\0\0', 'binary'))) {
@@ -35,6 +38,9 @@ function inspectPeBuffer(buffer) {
   }
   if (optionalHeaderOffset > buffer.length - OPTIONAL_HEADER_MINIMUM_SIZE) {
     throw new Error('PE optional header is truncated');
+  }
+  if (sizeOfOptionalHeader > buffer.length - optionalHeaderOffset) {
+    throw new Error('PE declared optional header is truncated');
   }
 
   const magic = buffer.readUInt16LE(optionalHeaderOffset);
@@ -57,8 +63,83 @@ function inspectPeBuffer(buffer) {
   };
 }
 
+function readExactly(fileDescriptor, length, position, label) {
+  const buffer = Buffer.alloc(length);
+  let bytesRead = 0;
+  while (bytesRead < length) {
+    const count = fs.readSync(
+      fileDescriptor,
+      buffer,
+      bytesRead,
+      length - bytesRead,
+      position + bytesRead,
+    );
+    if (count === 0) {
+      throw new Error(`PE ${label} is truncated`);
+    }
+    bytesRead += count;
+  }
+  return buffer;
+}
+
 function inspectPeFile(filePath) {
-  return inspectPeBuffer(fs.readFileSync(filePath));
+  const fileDescriptor = fs.openSync(filePath, 'r');
+  try {
+    const fileSize = fs.fstatSync(fileDescriptor).size;
+    if (!Number.isSafeInteger(fileSize) || fileSize < DOS_HEADER_MINIMUM_SIZE) {
+      throw new Error('PE file is too short to contain a DOS header');
+    }
+
+    const dosHeader = readExactly(fileDescriptor, DOS_HEADER_MINIMUM_SIZE, 0, 'DOS header');
+    if (dosHeader.toString('ascii', 0, 2) !== 'MZ') {
+      throw new Error('Invalid DOS signature: expected MZ');
+    }
+
+    const peOffset = dosHeader.readUInt32LE(0x3c);
+    if (!Number.isSafeInteger(peOffset) || peOffset < DOS_HEADER_MINIMUM_SIZE) {
+      throw new Error('Invalid e_lfanew: PE header overlaps the DOS header');
+    }
+    const peAndCoffHeaderSize = PE_SIGNATURE_SIZE + COFF_HEADER_SIZE;
+    if (peOffset > fileSize - peAndCoffHeaderSize) {
+      throw new Error('Invalid e_lfanew: PE/COFF header is outside the file');
+    }
+
+    const peAndCoffHeader = readExactly(
+      fileDescriptor,
+      peAndCoffHeaderSize,
+      peOffset,
+      'PE/COFF header',
+    );
+    if (!peAndCoffHeader.subarray(0, PE_SIGNATURE_SIZE).equals(Buffer.from('PE\0\0', 'binary'))) {
+      throw new Error('Invalid PE signature: expected PE\\0\\0');
+    }
+
+    const sizeOfOptionalHeader = peAndCoffHeader.readUInt16LE(PE_SIGNATURE_SIZE + 16);
+    if (sizeOfOptionalHeader < OPTIONAL_HEADER_MINIMUM_SIZE) {
+      throw new Error('PE optional header must be at least 44 bytes');
+    }
+    const optionalHeaderOffset = peOffset + peAndCoffHeaderSize;
+    if (sizeOfOptionalHeader > fileSize - optionalHeaderOffset) {
+      throw new Error('PE declared optional header is truncated');
+    }
+
+    const optionalHeader = readExactly(
+      fileDescriptor,
+      sizeOfOptionalHeader,
+      optionalHeaderOffset,
+      'declared optional header',
+    );
+    const normalizedBuffer = Buffer.alloc(
+      DOS_HEADER_MINIMUM_SIZE + peAndCoffHeaderSize + sizeOfOptionalHeader,
+    );
+    dosHeader.copy(normalizedBuffer);
+    normalizedBuffer.writeUInt32LE(DOS_HEADER_MINIMUM_SIZE, 0x3c);
+    peAndCoffHeader.copy(normalizedBuffer, DOS_HEADER_MINIMUM_SIZE);
+    optionalHeader.copy(normalizedBuffer, DOS_HEADER_MINIMUM_SIZE + peAndCoffHeaderSize);
+    return inspectPeBuffer(normalizedBuffer);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
 }
 
 module.exports = {
