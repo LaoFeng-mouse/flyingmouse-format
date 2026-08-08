@@ -9,6 +9,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const scriptPath = path.join(projectRoot, "scripts", "build-win7.js");
 const stagePath = path.join(projectRoot, "output", "win7-stage");
 const rootPackagePath = path.join(projectRoot, "package.json");
+const rootWin7LockPath = path.join(projectRoot, "win7-package-lock.json");
 
 function runPrepareOnly() {
   return execFileSync(process.execPath, [scriptPath, "--prepare-only"], {
@@ -48,6 +49,7 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
     assert.ok(!fs.existsSync(stagePath), "shared Win7 stage survived test cleanup");
   });
   const beforePackage = fs.readFileSync(rootPackagePath);
+  const beforeWin7Lock = fs.readFileSync(rootWin7LockPath);
   const rootNodeModules = path.join(projectRoot, "node_modules");
   const nodeModulesMtime = fs.statSync(rootNodeModules).mtimeMs;
 
@@ -61,6 +63,12 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   assert.match(output, new RegExp(stagePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
   assert.ok(!fs.existsSync(path.join(stagePath, "stale.txt")), "old staging content survived");
   assert.deepEqual(fs.readFileSync(rootPackagePath), beforePackage, "root package.json changed");
+  assert.deepEqual(fs.readFileSync(rootWin7LockPath), beforeWin7Lock, "root Win7 lock changed");
+  assert.deepEqual(
+    fs.readFileSync(path.join(stagePath, "package-lock.json")),
+    beforeWin7Lock,
+    "staged package-lock.json is not the validated dedicated Win7 lock"
+  );
   assert.equal(fs.statSync(rootNodeModules).mtimeMs, nodeModulesMtime, "root node_modules was written");
   assert.ok(!fs.existsSync(path.join(stagePath, "node_modules")), "node_modules was staged");
 
@@ -88,11 +96,18 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
 
   const rootPackage = JSON.parse(beforePackage.toString("utf8"));
   const stagedPackage = JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
+  const stagedLock = JSON.parse(fs.readFileSync(path.join(stagePath, "package-lock.json"), "utf8"));
   assert.equal(rootPackage.name, "flyingmouse-format");
   assert.notEqual(stagedPackage.name, rootPackage.name);
   assert.equal(stagedPackage.dependencies.sharp, "0.32.6");
   assert.equal(stagedPackage.dependencies["pdfjs-dist"], "2.16.105");
   assert.equal(stagedPackage.devDependencies.electron, "22.3.27");
+  assert.equal(stagedLock.name, "flyingmouse-format-win7");
+  assert.equal(stagedLock.version, "0.3.2");
+  assert.equal(stagedLock.packages[""].devDependencies.electron, "22.3.27");
+  assert.equal(stagedLock.packages[""].dependencies.sharp, "0.32.6");
+  assert.equal(stagedLock.packages[""].dependencies["pdfjs-dist"], "2.16.105");
+  assert.ok(stagedLock.packages["node_modules/electron-builder"]);
   assert.deepEqual(stagedPackage.build.win.target, ["nsis"]);
   assert.equal(stagedPackage.build.appx, undefined);
   assert.doesNotMatch(stagedPackage.scripts.test, /win7-build-script/);
@@ -139,6 +154,33 @@ test("build commands use only the installed local builder and stop after a faile
   fs.mkdirSync(temporaryStage, { recursive: true });
   fs.mkdirSync(path.dirname(npmCliPath), { recursive: true });
   fs.writeFileSync(npmCliPath, "local npm CLI");
+  const stagedPackage = {
+    name: "flyingmouse-format-win7",
+    version: "0.3.2",
+    dependencies: { sharp: "0.32.6" },
+    devDependencies: { electron: "22.3.27" },
+    build: { extraResources: [] }
+  };
+  const stagedLock = {
+    name: stagedPackage.name,
+    version: stagedPackage.version,
+    lockfileVersion: 3,
+    packages: {
+      "": {
+        name: stagedPackage.name,
+        version: stagedPackage.version,
+        dependencies: stagedPackage.dependencies,
+        devDependencies: stagedPackage.devDependencies
+      }
+    }
+  };
+  fs.writeFileSync(path.join(temporaryStage, "package.json"), JSON.stringify(stagedPackage));
+  fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(stagedLock));
+  const buildOptions = {
+    npmCliPath,
+    projectRoot: temporaryRoot,
+    packageJson: stagedPackage
+  };
   const calls = [];
   const runner = (command, args, options) => {
     calls.push({ command, args, options });
@@ -146,12 +188,12 @@ test("build commands use only the installed local builder and stop after a faile
   };
 
   assert.throws(
-    () => runBuildCommands(temporaryStage, runner, { npmCliPath }),
-    /npm install failed with exit code 7/i
+    () => runBuildCommands(temporaryStage, runner, buildOptions),
+    /npm ci failed with exit code 7/i
   );
   assert.equal(calls.length, 1);
   assert.equal(calls[0].command, process.execPath);
-  assert.deepEqual(calls[0].args, [npmCliPath, "install", "--no-audit", "--no-fund"]);
+  assert.deepEqual(calls[0].args, [npmCliPath, "ci", "--no-audit", "--no-fund"]);
   assert.equal(calls[0].options.cwd, temporaryStage);
   assert.equal(calls[0].options.stdio, "inherit");
 
@@ -164,7 +206,7 @@ test("build commands use only the installed local builder and stop after a faile
           calls.push({ command, args, options });
           return { status: 0 };
         },
-        { npmCliPath }
+        buildOptions
       ),
     /local electron-builder executable was not installed/i
   );
@@ -194,7 +236,7 @@ test("build commands use only the installed local builder and stop after a faile
       fs.writeFileSync(localBuilderCli, "local builder CLI");
     }
     return { status: 0 };
-  }, { npmCliPath });
+  }, buildOptions);
   const expectedLocalBuilder = path.join(
     temporaryStage,
     "node_modules",
@@ -210,6 +252,144 @@ test("build commands use only the installed local builder and stop after a faile
     "--x64"
   ]);
   assert.ok(calls.every(({ options }) => options.cwd === temporaryStage));
+
+  calls.length = 0;
+  const missingResourcePackage = {
+    ...stagedPackage,
+    build: {
+      extraResources: [{ from: path.join(temporaryRoot, "bin", "missing.exe"), to: "missing.exe" }]
+    }
+  };
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (command, args, options) => {
+          calls.push({ command, args, options });
+          return { status: 0 };
+        },
+        { ...buildOptions, packageJson: missingResourcePackage }
+      ),
+    /extraResources\[0\].*does not exist/i
+  );
+  assert.equal(calls.length, 1, "electron-builder ran before extraResources validation");
+});
+
+test("Win7 lock validation fails closed before npm when the lock is missing or mismatched", (t) => {
+  const { runBuildCommands, validateWin7Lockfile } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-lock-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const npmCliPath = path.join(temporaryRoot, "npm-cli.js");
+  const packageJson = {
+    name: "flyingmouse-format-win7",
+    version: "0.3.2",
+    dependencies: { sharp: "0.32.6", "pdfjs-dist": "2.16.105" },
+    devDependencies: { electron: "22.3.27", "electron-builder": "^26.15.3" },
+    build: { extraResources: [] }
+  };
+  const validLock = {
+    name: packageJson.name,
+    version: packageJson.version,
+    lockfileVersion: 3,
+    packages: {
+      "": {
+        name: packageJson.name,
+        version: packageJson.version,
+        dependencies: structuredClone(packageJson.dependencies),
+        devDependencies: structuredClone(packageJson.devDependencies)
+      }
+    }
+  };
+  fs.mkdirSync(temporaryStage, { recursive: true });
+  fs.writeFileSync(npmCliPath, "npm CLI");
+
+  assert.doesNotThrow(() => validateWin7Lockfile(validLock, packageJson, "synthetic lock"));
+  const mismatchedLock = structuredClone(validLock);
+  mismatchedLock.packages[""].dependencies.sharp = "0.31.0";
+  assert.throws(
+    () => validateWin7Lockfile(mismatchedLock, packageJson, "synthetic lock"),
+    /dependencies.*sharp|sharp.*mismatch/i
+  );
+
+  const calls = [];
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (...args) => {
+          calls.push(args);
+          return { status: 0 };
+        },
+        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+      ),
+    /Win7 package lock.*missing/i
+  );
+  assert.equal(calls.length, 0, "npm ran before the missing lock was rejected");
+
+  fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(mismatchedLock));
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (...args) => {
+          calls.push(args);
+          return { status: 0 };
+        },
+        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+      ),
+    /dependencies.*sharp|sharp.*mismatch/i
+  );
+  assert.equal(calls.length, 0, "npm ran before the mismatched lock was rejected");
+});
+
+test("extraResources validation accepts controlled paths and rejects external junctions", (t) => {
+  const { validateExtraResources } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-resources-root-");
+  const externalRoot = createTemporaryRoot(t, "flyingmouse-win7-resources-target-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const binRoot = path.join(temporaryRoot, "bin");
+  const safeFile = path.join(binRoot, "safe-tool.exe");
+  const safeDirectory = path.join(binRoot, "safe-directory");
+  const relativeResource = path.join(temporaryStage, "node_modules", "safe-package", "asset.dat");
+  fs.mkdirSync(safeDirectory, { recursive: true });
+  fs.mkdirSync(path.dirname(relativeResource), { recursive: true });
+  fs.writeFileSync(safeFile, "safe tool");
+  fs.writeFileSync(path.join(safeDirectory, "asset.dat"), "safe asset");
+  fs.writeFileSync(relativeResource, "safe staged asset");
+
+  assert.doesNotThrow(() =>
+    validateExtraResources(
+      [
+        { from: safeFile, to: "safe-tool.exe" },
+        { from: safeDirectory, to: "safe-directory" },
+        { from: "node_modules/safe-package/asset.dat", to: "relative-asset.dat" }
+      ],
+      temporaryRoot,
+      temporaryStage
+    )
+  );
+
+  const externalSentinel = path.join(externalRoot, "do-not-touch.txt");
+  fs.writeFileSync(externalSentinel, "external content");
+  const directJunction = path.join(binRoot, "direct-junction");
+  if (!createJunctionOrSkip(t, externalRoot, directJunction)) return;
+  assert.throws(
+    () => validateExtraResources([{ from: directJunction, to: "unsafe" }], temporaryRoot, temporaryStage),
+    /extraResources.*reparse|reparse.*extraResources/i
+  );
+  assert.equal(fs.readFileSync(externalSentinel, "utf8"), "external content");
+  fs.unlinkSync(directJunction);
+
+  const nestedParent = path.join(binRoot, "nested-parent");
+  fs.mkdirSync(nestedParent);
+  const nestedJunction = path.join(nestedParent, "nested-junction");
+  if (!createJunctionOrSkip(t, externalRoot, nestedJunction)) return;
+  assert.throws(
+    () => validateExtraResources([{ from: nestedParent, to: "unsafe-nested" }], temporaryRoot, temporaryStage),
+    /extraResources.*reparse|reparse.*extraResources/i
+  );
+  assert.equal(fs.readFileSync(externalSentinel, "utf8"), "external content");
+  fs.unlinkSync(nestedJunction);
 });
 
 test("artifact copying rejects a staging directory outside the project output", () => {
