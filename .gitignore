@@ -4,6 +4,8 @@ runtime/
 dist/
 test-results/
 output/
+# Dedicated Win7 build staging (also covered by output/ above).
+output/win7-stage/
 .playwright-cli/
 bin/*
 !bin/avs3/

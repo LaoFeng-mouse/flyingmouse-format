@@ -108,21 +108,21 @@ function assertSafeStagingEntry(entry) {
   }
 }
 
-function assertNoReparsePoints(sourcePath, projectPaths, entry) {
+function assertNoReparsePoints(sourcePath, projectPaths, label) {
   const sourceStat = fs.lstatSync(sourcePath);
   if (sourceStat.isSymbolicLink()) {
-    throw new Error(`Staging source contains a reparse point in ${entry}: ${sourcePath}`);
+    throw new Error(`${label} contains a reparse point: ${sourcePath}`);
   }
   const canonicalSource = fs.realpathSync.native(sourcePath);
   if (
     !pathsEqual(canonicalSource, projectPaths.canonicalRoot) &&
     !pathIsStrictlyInside(canonicalSource, projectPaths.canonicalRoot)
   ) {
-    throw new Error(`Staging source escapes the canonical project root in ${entry}: ${sourcePath}`);
+    throw new Error(`${label} escapes its canonical root: ${sourcePath}`);
   }
   if (sourceStat.isDirectory()) {
     for (const child of fs.readdirSync(sourcePath)) {
-      assertNoReparsePoints(path.join(sourcePath, child), projectPaths, entry);
+      assertNoReparsePoints(path.join(sourcePath, child), projectPaths, label);
     }
   }
 }
@@ -142,7 +142,7 @@ function copyStagingEntry(entry, projectRoot, stagePath) {
   if (!fs.existsSync(source)) throw new Error(`Staging source does not exist: ${source}`);
 
   assertExistingAncestorInsideRoot(source, projectPaths, `Staging source ${entry}`);
-  assertNoReparsePoints(source, projectPaths, entry);
+  assertNoReparsePoints(source, projectPaths, `Staging source ${entry}`);
   const sourceStat = fs.lstatSync(source);
   if (sourceStat.isDirectory()) {
     fs.cpSync(source, destination, { recursive: true, dereference: false });
@@ -155,16 +155,25 @@ function copyStagingEntry(entry, projectRoot, stagePath) {
 }
 
 function prepareWin7Stage(projectRoot = PROJECT_ROOT) {
-  const { resolvedRoot } = getProjectPaths(projectRoot);
+  const projectPaths = getProjectPaths(projectRoot);
+  const { resolvedRoot } = projectPaths;
   const packagePath = path.join(resolvedRoot, "package.json");
+  const win7LockPath = path.join(resolvedRoot, "win7-package-lock.json");
   const stagePath = assertSafeStagePath(path.join(resolvedRoot, "output", STAGE_BASENAME), resolvedRoot);
   const basePackage = JSON.parse(fs.readFileSync(packagePath, "utf8"));
   const { packageJson, stagingEntries } = createWin7BuildProfile(basePackage, resolvedRoot);
+  const lockfile = readAndValidateWin7Lockfile(
+    win7LockPath,
+    packageJson,
+    "Root Win7 package lock",
+    projectPaths
+  );
 
   removeWin7Stage(stagePath, resolvedRoot);
   fs.mkdirSync(stagePath, { recursive: true });
   for (const entry of stagingEntries) copyStagingEntry(entry, resolvedRoot, stagePath);
   fs.writeFileSync(path.join(stagePath, "package.json"), `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+  fs.writeFileSync(path.join(stagePath, "package-lock.json"), lockfile.bytes);
 
   console.log(`Win7 staging prepared: ${stagePath}`);
   return { stagePath, packageJson };
@@ -196,15 +205,109 @@ function resolveNpmCliPath(explicitPath) {
   return path.resolve(npmCliPath);
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateDependencySpecs(lockRoot, packageJson, field, label) {
+  const expected = packageJson[field];
+  const actual = lockRoot[field];
+  if (!isPlainObject(expected) || !isPlainObject(actual)) {
+    throw new Error(`${label} ${field} must match the derived Win7 manifest.`);
+  }
+  const names = new Set([...Object.keys(expected), ...Object.keys(actual)]);
+  for (const name of [...names].sort()) {
+    if (expected[name] !== actual[name]) {
+      throw new Error(
+        `${label} ${field}.${name} mismatch: expected ${expected[name]}, received ${actual[name]}.`
+      );
+    }
+  }
+}
+
+function validateWin7Lockfile(lockfile, packageJson, label = "Win7 package lock") {
+  if (!isPlainObject(lockfile)) throw new Error(`${label} must be a JSON object.`);
+  if (lockfile.lockfileVersion !== 3) throw new Error(`${label} must use lockfileVersion 3.`);
+  if (lockfile.name !== packageJson.name || lockfile.version !== packageJson.version) {
+    throw new Error(
+      `${label} name/version mismatch: expected ${packageJson.name}@${packageJson.version}.`
+    );
+  }
+  const lockRoot = lockfile.packages?.[""];
+  if (!isPlainObject(lockRoot)) throw new Error(`${label} is missing packages[""].`);
+  if (lockRoot.name !== packageJson.name || lockRoot.version !== packageJson.version) {
+    throw new Error(`${label} packages[""] name/version mismatch.`);
+  }
+  validateDependencySpecs(lockRoot, packageJson, "dependencies", label);
+  validateDependencySpecs(lockRoot, packageJson, "devDependencies", label);
+  return lockfile;
+}
+
+function readAndValidateWin7Lockfile(lockPath, packageJson, label, projectPaths) {
+  const lockStat = fs.lstatSync(lockPath, { throwIfNoEntry: false });
+  if (!lockStat) throw new Error(`${label} is missing: ${lockPath}`);
+  if (!lockStat.isFile() || lockStat.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file, not a reparse point: ${lockPath}`);
+  }
+  if (projectPaths) {
+    assertNotReparsePoint(lockPath, projectPaths, label);
+    assertExistingAncestorInsideRoot(lockPath, projectPaths, label);
+  }
+  const bytes = fs.readFileSync(lockPath);
+  let lockfile;
+  try {
+    lockfile = JSON.parse(bytes.toString("utf8"));
+  } catch (error) {
+    throw new Error(`${label} contains invalid JSON: ${error.message}`);
+  }
+  validateWin7Lockfile(lockfile, packageJson, label);
+  return { bytes, lockfile };
+}
+
+function validateExtraResources(extraResources, projectRoot, stagePath) {
+  if (!Array.isArray(extraResources)) throw new Error("build.extraResources must be an array.");
+  const projectPaths = getProjectPaths(projectRoot);
+  const safeStagePath = assertSafeStagePath(stagePath, projectPaths.resolvedRoot);
+  const stagePaths = {
+    resolvedRoot: safeStagePath,
+    canonicalRoot: fs.realpathSync.native(safeStagePath)
+  };
+
+  extraResources.forEach((resource, index) => {
+    const label = `extraResources[${index}]`;
+    if (!isPlainObject(resource) || typeof resource.from !== "string" || resource.from.length === 0) {
+      throw new Error(`${label}.from must be a non-empty string.`);
+    }
+    const absoluteSource = path.isAbsolute(resource.from);
+    const allowedPaths = absoluteSource ? projectPaths : stagePaths;
+    const source = path.resolve(allowedPaths.resolvedRoot, resource.from);
+    if (!pathIsStrictlyInside(source, allowedPaths.resolvedRoot)) {
+      throw new Error(`${label}.from must be strictly inside its allowed root: ${source}`);
+    }
+    const sourceStat = fs.lstatSync(source, { throwIfNoEntry: false });
+    if (!sourceStat) throw new Error(`${label}.from does not exist: ${source}`);
+    assertNoReparsePoints(source, allowedPaths, label);
+    assertExistingAncestorInsideRoot(source, allowedPaths, label);
+  });
+}
+
 function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
+  const packageJson = options.packageJson || JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
+  const projectRoot = path.resolve(options.projectRoot || path.join(stagePath, "..", ".."));
+  readAndValidateWin7Lockfile(
+    path.join(stagePath, "package-lock.json"),
+    packageJson,
+    "Staged Win7 package lock"
+  );
   const npmCliPath = resolveNpmCliPath(options.npmCliPath);
   runChecked(
     process.execPath,
-    [npmCliPath, "install", "--no-audit", "--no-fund"],
-    "npm install",
+    [npmCliPath, "ci", "--no-audit", "--no-fund"],
+    "npm ci",
     stagePath,
     runner
   );
+  validateExtraResources(packageJson.build?.extraResources, projectRoot, stagePath);
   const localBuilder = path.join(
     stagePath,
     "node_modules",
@@ -351,7 +454,7 @@ function copyWin7Artifact(stagePath, projectRoot, packageJson, operations = {}) 
 
 function buildWin7(projectRoot = PROJECT_ROOT, runner = spawnSync) {
   const { stagePath, packageJson } = prepareWin7Stage(projectRoot);
-  runBuildCommands(stagePath, runner);
+  runBuildCommands(stagePath, runner, { projectRoot, packageJson });
   return copyWin7Artifact(stagePath, path.resolve(projectRoot), packageJson);
 }
 
@@ -389,5 +492,7 @@ module.exports = {
   parseArgs,
   prepareWin7Stage,
   removeWin7Stage,
-  runBuildCommands
+  runBuildCommands,
+  validateExtraResources,
+  validateWin7Lockfile
 };
