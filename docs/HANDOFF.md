@@ -16,6 +16,8 @@
 - 安装包大小：548,510,595 字节
 - SHA-256：`5df0eb6b8223333a7c2198906dd6171207f1693c34584a037106d696473284e6`
 - 解包 EXE ProductVersion：`0.3.2.0`
+- GitHub Release：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.2`（Latest）
+- GitHub main：`c896a58311a3550ecea3668eeb1a758f465be45c`
 - 签名：未签名，SmartScreen 可能提示
 
 ## 本次结果
@@ -34,6 +36,7 @@
 - NSIS 构建：成功。
 - 成品 EXE 内嵌图标：已提取并目视确认是鼠鼠。
 - 桌面快捷方式：已刷新并通过真实桌面截图确认显示鼠鼠图标。
+- GitHub 资产：上传完成，远端大小与 SHA-256 和本地安装包一致。
 
 ## 仍需注意
 

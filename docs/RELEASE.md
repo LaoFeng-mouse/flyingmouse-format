@@ -9,10 +9,9 @@
 
 ```powershell
 $env:FLYINGMOUSE_FFMPEG_PATH = 'D:\34615\飞鼠格式\bin\ffmpeg\ffmpeg.exe'
-$env:FLYINGMOUSE_AVS3_DECODER_PATH = 'D:\34615\飞鼠格式\bin\avs3\avs3AudioDec.exe'
-$env:FLYINGMOUSE_SOFFICE_PATH = 'D:\34615\飞鼠格式\bin\libreoffice\program\soffice.exe'
+$env:FLYINGMOUSE_AVS3_DECODER_PATH = 'D:\34615\飞鼠格式\bin\avs3\avs3RM0Decoder.exe'
+$env:FLYINGMOUSE_LIBREOFFICE_PATH = 'D:\34615\飞鼠格式\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
 $env:FLYINGMOUSE_PDFTOPPM_PATH = 'D:\34615\飞鼠格式\bin\poppler\Library\bin\pdftoppm.exe'
-$env:FLYINGMOUSE_PDFTOTEXT_PATH = 'D:\34615\飞鼠格式\bin\poppler\Library\bin\pdftotext.exe'
 npm test
 ```
 
@@ -49,7 +48,7 @@ NSIS 安装包输出为 `dist/FlyingMouse Format-Setup-<version>-x64.exe`，解�
 1. 提交范围只包含 FlyingMouse Format。
 2. 推送 `main` 和对应 `v<version>` 标签。
 3. 创建 GitHub Release 并上传 NSIS 安装包。
-4. 回读远端 Release，核对标签、文件名、文件大小和下载链接。
+4. 回读远端 Release，核对标签、文件名、文件大小、SHA-256 摘要和下载链接。
 
 ## Microsoft Store
 
