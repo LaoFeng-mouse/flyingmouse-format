@@ -2,10 +2,19 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { test } = require("node:test");
+const { pathToFileURL } = require("url");
 const { createPdfjsLoader, loadPdfjsModule } = require("../server");
 
 const MODERN_PDFJS = "pdfjs-dist/legacy/build/pdf.mjs";
 const LEGACY_PDFJS = "pdfjs-dist/legacy/build/pdf.js";
+
+function pdfjsTestOptions(importer) {
+  return {
+    importer,
+    modernSpecifier: MODERN_PDFJS,
+    legacySpecifier: LEGACY_PDFJS
+  };
+}
 
 function readRoot(fileName) {
   return fs.readFileSync(path.join(__dirname, "..", fileName), "utf8");
@@ -32,24 +41,20 @@ test("local service sends a restrictive content security policy", () => {
 
 test("PDF.js loader supports modern and Win7 legacy layouts", () => {
   const source = readRoot("server.js");
-  assert.match(source, /pdfjs-dist\/legacy\/build\/pdf\.mjs/);
-  assert.match(source, /pdfjs-dist\/legacy\/build\/pdf\.js/);
+  assert.match(source, /pdfjs-dist\/package\.json/);
+  assert.match(source, /"pdf\.mjs"/);
+  assert.match(source, /"pdf\.js"/);
+  assert.match(source, /isMissingPdfjsEntry/);
   assert.match(source, /createPdfjsLoader/);
 });
 
 test("PDF.js loader imports the modern layout when it resolves", async () => {
   const pdfjs = { getDocument() {} };
   const imports = [];
-  const result = await loadPdfjsModule({
-    resolver(specifier) {
-      assert.strictEqual(specifier, MODERN_PDFJS);
-      return "resolved-modern-pdfjs";
-    },
-    async importer(specifier) {
-      imports.push(specifier);
-      return pdfjs;
-    }
-  });
+  const result = await loadPdfjsModule(pdfjsTestOptions(async (specifier) => {
+    imports.push(specifier);
+    return pdfjs;
+  }));
 
   assert.strictEqual(result, pdfjs);
   assert.deepStrictEqual(imports, [MODERN_PDFJS]);
@@ -57,28 +62,35 @@ test("PDF.js loader imports the modern layout when it resolves", async () => {
 
 test("PDF.js loader falls back to the legacy layout only when the modern entry is missing", async () => {
   const pdfjs = { getDocument() {} };
-  const missing = Object.assign(new Error("modern entry missing"), { code: "MODULE_NOT_FOUND" });
+  const packageRoot = "D:\\app\\node_modules\\pdfjs-dist";
+  const modernEntry = path.join(packageRoot, "legacy", "build", "pdf.mjs");
+  const legacyEntry = path.join(packageRoot, "legacy", "build", "pdf.js");
+  const modernUrl = pathToFileURL(modernEntry).href;
+  const legacyUrl = pathToFileURL(legacyEntry).href;
+  const missing = Object.assign(
+    new Error(`Cannot find module '${modernEntry}' imported from D:\\app\\server.js`),
+    { code: "ERR_MODULE_NOT_FOUND", url: modernUrl }
+  );
   const imports = [];
   const result = await loadPdfjsModule({
-    resolver() {
-      throw missing;
+    packageJsonResolver(specifier) {
+      assert.strictEqual(specifier, "pdfjs-dist/package.json");
+      return path.join(packageRoot, "package.json");
     },
     async importer(specifier) {
       imports.push(specifier);
+      if (specifier === modernUrl) throw missing;
       return pdfjs;
     }
   });
 
   assert.strictEqual(result, pdfjs);
-  assert.deepStrictEqual(imports, [LEGACY_PDFJS]);
+  assert.deepStrictEqual(imports, [modernUrl, legacyUrl]);
 });
 
 test("PDF.js loader unwraps a CommonJS default export", async () => {
   const pdfjs = { getDocument() {} };
-  const result = await loadPdfjsModule({
-    resolver: () => "resolved-modern-pdfjs",
-    importer: async () => ({ default: pdfjs })
-  });
+  const result = await loadPdfjsModule(pdfjsTestOptions(async () => ({ default: pdfjs })));
 
   assert.strictEqual(result, pdfjs);
 });
@@ -86,62 +98,51 @@ test("PDF.js loader unwraps a CommonJS default export", async () => {
 test("PDF.js loader preserves a modern module runtime error without trying the legacy entry", async () => {
   const runtimeError = new Error("modern PDF.js initialization failed");
   const imports = [];
-  const promise = loadPdfjsModule({
-    resolver: () => "resolved-modern-pdfjs",
-    async importer(specifier) {
-      imports.push(specifier);
-      throw runtimeError;
-    }
-  });
+  const promise = loadPdfjsModule(pdfjsTestOptions(async (specifier) => {
+    imports.push(specifier);
+    throw runtimeError;
+  }));
 
   await assert.rejects(promise, (error) => error === runtimeError);
   assert.deepStrictEqual(imports, [MODERN_PDFJS]);
 });
 
-test("PDF.js loader preserves a non-missing resolver error without importing either entry", async () => {
-  const resolverError = Object.assign(new Error("resolver denied access"), { code: "EACCES" });
-  const imports = [];
-  const promise = loadPdfjsModule({
-    resolver() {
-      throw resolverError;
-    },
-    async importer(specifier) {
-      imports.push(specifier);
-      return {};
+test("PDF.js loader does not fall back when a dependency of the modern entry is missing", async () => {
+  const dependencyError = Object.assign(
+    new Error("Cannot find package 'canvas' imported from D:\\app\\node_modules\\pdfjs-dist\\legacy\\build\\pdf.mjs"),
+    {
+      code: "ERR_MODULE_NOT_FOUND",
+      url: "file:///D:/app/node_modules/canvas/index.js"
     }
-  });
+  );
+  const imports = [];
+  const promise = loadPdfjsModule(pdfjsTestOptions(async (specifier) => {
+    imports.push(specifier);
+    throw dependencyError;
+  }));
 
-  await assert.rejects(promise, (error) => error === resolverError);
-  assert.deepStrictEqual(imports, []);
+  await assert.rejects(promise, (error) => error === dependencyError);
+  assert.deepStrictEqual(imports, [MODERN_PDFJS]);
 });
 
 test("PDF.js loader preserves a missing legacy entry error", async () => {
-  const modernMissing = Object.assign(new Error("modern entry missing"), { code: "MODULE_NOT_FOUND" });
+  const modernMissing = Object.assign(new Error(`Cannot find module '${MODERN_PDFJS}'`), { code: "MODULE_NOT_FOUND" });
   const legacyMissing = Object.assign(new Error("legacy entry missing"), { code: "MODULE_NOT_FOUND" });
-  const promise = loadPdfjsModule({
-    resolver() {
-      throw modernMissing;
-    },
-    async importer(specifier) {
-      assert.strictEqual(specifier, LEGACY_PDFJS);
-      throw legacyMissing;
-    }
-  });
+  const promise = loadPdfjsModule(pdfjsTestOptions(async (specifier) => {
+    if (specifier === MODERN_PDFJS) throw modernMissing;
+    throw legacyMissing;
+  }));
 
   await assert.rejects(promise, (error) => error === legacyMissing);
 });
 
 test("PDF.js loader preserves a legacy module runtime error", async () => {
-  const modernMissing = Object.assign(new Error("modern entry missing"), { code: "MODULE_NOT_FOUND" });
+  const modernMissing = Object.assign(new Error(`Cannot find module '${MODERN_PDFJS}'`), { code: "MODULE_NOT_FOUND" });
   const legacyError = new Error("legacy PDF.js initialization failed");
-  const promise = loadPdfjsModule({
-    resolver() {
-      throw modernMissing;
-    },
-    async importer() {
-      throw legacyError;
-    }
-  });
+  const promise = loadPdfjsModule(pdfjsTestOptions(async (specifier) => {
+    if (specifier === MODERN_PDFJS) throw modernMissing;
+    throw legacyError;
+  }));
 
   await assert.rejects(promise, (error) => error === legacyError);
 });
@@ -149,13 +150,10 @@ test("PDF.js loader preserves a legacy module runtime error", async () => {
 test("PDF.js loader lazily caches one promise across concurrent and repeated calls", async () => {
   const pdfjs = { getDocument() {} };
   let imports = 0;
-  const loadPdfjs = createPdfjsLoader({
-    resolver: () => "resolved-modern-pdfjs",
-    async importer() {
-      imports += 1;
-      return pdfjs;
-    }
-  });
+  const loadPdfjs = createPdfjsLoader(pdfjsTestOptions(async () => {
+    imports += 1;
+    return pdfjs;
+  }));
 
   assert.strictEqual(imports, 0);
   const first = loadPdfjs();
@@ -184,7 +182,17 @@ test("package pins the expected Electron version and includes the security modul
 test("package bundles the AV3A helper and configures its runtime path", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   const main = readRoot("electron-main.js");
-  assert.ok(packageJson.build.extraResources.some((item) => item.from === "bin/avs3" && item.to === "avs3"));
+  const avs3Resources = packageJson.build.extraResources.filter((item) => item.to === "avs3");
+  assert.strictEqual(avs3Resources.length, 1);
+  if (packageJson.name === "flyingmouse-format") {
+    assert.strictEqual(avs3Resources[0].from, "bin/avs3");
+  } else if (packageJson.name === "flyingmouse-format-win7") {
+    assert.ok(path.isAbsolute(avs3Resources[0].from));
+    assert.strictEqual(path.basename(avs3Resources[0].from), "avs3");
+    assert.strictEqual(path.basename(path.dirname(avs3Resources[0].from)), "bin");
+  } else {
+    assert.fail(`unexpected package name: ${packageJson.name}`);
+  }
   assert.match(main, /FLYINGMOUSE_AVS3_DECODER_PATH/);
   assert.match(main, /avs3RM0Decoder\.exe/);
 });
