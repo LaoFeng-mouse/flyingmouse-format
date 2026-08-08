@@ -316,16 +316,35 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-let cachedPdfjsPromise = null;
-
-function loadPdfjs() {
-  if (!cachedPdfjsPromise) {
-    cachedPdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs")
-      .catch(() => import("pdfjs-dist/legacy/build/pdf.js"))
-      .then((mod) => mod.default || mod);
+async function loadPdfjsModule({
+  resolver = require.resolve,
+  importer = (specifier) => import(specifier)
+} = {}) {
+  let specifier = "pdfjs-dist/legacy/build/pdf.mjs";
+  try {
+    resolver(specifier);
+  } catch (error) {
+    if (!error || error.code !== "MODULE_NOT_FOUND") {
+      throw error;
+    }
+    specifier = "pdfjs-dist/legacy/build/pdf.js";
   }
-  return cachedPdfjsPromise;
+
+  const mod = await importer(specifier);
+  return mod.default || mod;
 }
+
+function createPdfjsLoader(options) {
+  let cachedPdfjsPromise = null;
+  return function loadPdfjs() {
+    if (!cachedPdfjsPromise) {
+      cachedPdfjsPromise = loadPdfjsModule(options);
+    }
+    return cachedPdfjsPromise;
+  };
+}
+
+const loadPdfjs = createPdfjsLoader();
 
 function asarUnpackedPath(filePath) {
   return filePath.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
@@ -1626,4 +1645,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer };
+module.exports = { app, startServer, createPdfjsLoader, loadPdfjsModule };
