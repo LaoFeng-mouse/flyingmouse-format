@@ -68,6 +68,7 @@ Electron 保存对话框 → 用户选择的目录
 
 - 标准版直接使用根 `package.json`：Electron 43，面向 Windows 10 / 11 x64。
 - Windows 7 兼容版由 `win7-build-profile.js` 派生独立 profile/manifest，使用专用 `win7-package-lock.json` 经 `npm ci` 在可重建的 `output/win7-stage/` 安装 Electron 22.3.27、Sharp 0.32.6 和 PDF.js 2.16.105；根 manifest、根 `node_modules` 与标准版依赖不被改写或降级。
+- 构建主机允许 Node.js 18–22，推荐 22 LTS；版本检查在 staging 变更前 fail closed。npm 与 electron-builder 子进程的 `PATH`、`NODE`、`npm_node_execpath` 绑定当前 Node，可避免生命周期脚本误用系统中的其他版本；递归 staging 复制使用 Node 文件 API，支持中文等 Unicode 路径。
 - `scripts/build-win7.js` 只允许清理项目内精确的 `output/win7-stage`。它在 npm 前后按原始字节和 SHA-256 绑定 staging 的 `package.json` / `package-lock.json`，并校验实际 manifest 与预期 profile 一致。
 - 本地 electron-builder 入口必须 canonical 地位于 staging 内；`extraResources` 必须 canonical 地位于各自允许的项目根或 staging 根内，且路径链和递归资源中不得出现 reparse point。最终只复制精确命名的 Win7 安装包到根 `dist/`。
 - PDF.js 加载器把入口固定在当前应用自己的 `node_modules/pdfjs-dist`，现代版优先 `.mjs`，旧版仅在该入口确实缺失时回退 `.js`，禁止借用父目录依赖。
