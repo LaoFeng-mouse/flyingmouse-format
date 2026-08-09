@@ -82,6 +82,7 @@ function createWin7Package(basePackage, projectRoot) {
   profile.name = "flyingmouse-format-win7";
   profile.dependencies.sharp = "0.32.6";
   profile.dependencies["pdfjs-dist"] = "2.16.105";
+  profile.dependencies.turndown = "7.2.0";
   profile.devDependencies.electron = "22.3.27";
 
   for (const scriptName of ["test", "test:ci"]) {

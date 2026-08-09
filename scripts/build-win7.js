@@ -329,6 +329,39 @@ function assertRegularFileInside(filePath, allowedPaths, label) {
   return resolvedFile;
 }
 
+function runWin7RuntimeProbe(stagePath, projectRoot, runner = spawnSync) {
+  const safeStagePath = assertSafeStagePath(stagePath, projectRoot);
+  const stagePaths = {
+    resolvedRoot: safeStagePath,
+    canonicalRoot: fs.realpathSync.native(safeStagePath)
+  };
+  const electronExecutable = assertRegularFileInside(path.join(
+    safeStagePath,
+    "node_modules",
+    "electron",
+    "dist",
+    process.platform === "win32" ? "electron.exe" : "electron"
+  ), stagePaths, "Win7 Electron runtime");
+  const probe = [
+    'const TurndownService = require("turndown");',
+    'const markdown = new TurndownService().turndown("<h1>Win7</h1>").trim();',
+    'if (markdown !== "# Win7") throw new Error(`Unexpected Turndown output: ${markdown}`);'
+  ].join(" ");
+  const result = runner(electronExecutable, ["-e", probe], {
+    cwd: safeStagePath,
+    stdio: "inherit",
+    shell: false,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+  });
+  if (result.error) throw new Error(`Win7 Electron runtime probe failed: ${result.error.message}`);
+  if (result.signal) {
+    throw new Error(`Win7 Electron runtime probe terminated by signal ${result.signal}.`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`Win7 Electron runtime probe failed with exit code ${result.status}.`);
+  }
+}
+
 function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
   const projectRoot = path.resolve(options.projectRoot || path.join(stagePath, "..", ".."));
   const safeStagePath = assertSafeStagePath(stagePath, projectRoot);
@@ -386,6 +419,7 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
     "electron-builder",
     "cli.js"
   ), stagePaths, "Local electron-builder CLI");
+  runWin7RuntimeProbe(safeStagePath, projectRoot, runner);
   runChecked(
     process.execPath,
     [localBuilderCli, "--win", "nsis", "--x64"],
@@ -551,6 +585,7 @@ module.exports = {
   prepareWin7Stage,
   removeWin7Stage,
   runBuildCommands,
+  runWin7RuntimeProbe,
   validateExtraResources,
   validateWin7Lockfile
 };
