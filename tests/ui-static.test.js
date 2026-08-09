@@ -66,3 +66,22 @@ test("renderer restores and updates target preferences by source extension", () 
   assert.match(app, /preferredTarget\(localStorage/);
   assert.match(app, /rememberTarget\(localStorage/);
 });
+
+test("PDF to XLSX uses a contextual bilingual smart-table label and warning", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="pdfExcelHint"[^>]*hidden/);
+  assert.match(app, /Excel（智能表格提取）/);
+  assert.match(app, /Excel \(smart table extraction\)/);
+  assert.match(app, /适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整/);
+  assert.match(app, /Best for digital PDFs with regular tables/);
+  assert.match(app, /targetSelect\.value === "xlsx"[\s\S]*info\.category === "pdf"/);
+});
+
+test("renderer enforces the advertised 2 GB batch limit and localizes resource errors", () => {
+  const app = readPublic("app.js");
+  assert.match(app, /maxBatchBytes/);
+  assert.match(app, /2 \* 1024 \* 1024 \* 1024/);
+  assert.match(app, /result\?\.messages\?\.enUS/);
+  assert.match(app, /result\?\.messages\?\.zhCN/);
+});

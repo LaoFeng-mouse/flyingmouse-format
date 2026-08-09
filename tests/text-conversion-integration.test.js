@@ -75,10 +75,30 @@ test("server reports invalid CSV as a stable client error", async () => {
   assert.match(body.error, /CSV/);
 });
 
+test("capabilities expose stable conversion limits and Sharp keeps pixel protection enabled", async () => {
+  const response = await fetch(`${baseUrl}/api/capabilities`);
+  assert.equal(response.status, 200);
+  const capabilities = await response.json();
+  assert.deepEqual(capabilities.limits, {
+    maxImagePixels: 50_000_000,
+    maxImageDimension: 16_384,
+    maxImagePdfPixels: 100_000_000,
+    maxBatchBytes: 2 * 1024 * 1024 * 1024,
+    maxPdfPages: 500,
+    maxOcrPdfPages: 100
+  });
+  const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.doesNotMatch(serverSource, /limitInputPixels\s*:\s*false/);
+  assert.match(serverSource, /assertImagePdfBudget\(metadataList\)/);
+  assert.match(serverSource, /assertPdfPages\(pdf\.numPages\)/);
+  assert.match(serverSource, /"-cropbox"/);
+  assert.match(serverSource, /async function\* pages\(\)/);
+});
+
 test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
-  for (const file of ["resource-policy.js", "text-conversion.js"]) {
+  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }

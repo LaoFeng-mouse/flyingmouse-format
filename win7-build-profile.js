@@ -14,6 +14,8 @@ const REQUIRED_RUNTIME_FILES = [
   "resource-policy.js",
   "text-conversion.js",
   "pdf-table-extractor.js",
+  "pdf-table-runtime.js",
+  "ci-engines-v1.json",
   "logger.js",
   "settings-store.js",
   "ncm-format.js",

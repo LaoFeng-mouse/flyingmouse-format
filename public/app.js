@@ -41,6 +41,7 @@ const fileStrip = document.querySelector("#fileStrip");
 const fileName = document.querySelector("#fileName");
 const fileMeta = document.querySelector("#fileMeta");
 const targetSelect = document.querySelector("#targetSelect");
+const pdfExcelHint = document.querySelector("#pdfExcelHint");
 const zipCompressionField = document.querySelector("#zipCompressionField");
 const zipCompression = document.querySelector("#zipCompression");
 const convertButton = document.querySelector("#convertButton");
@@ -74,6 +75,7 @@ const messages = {
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
     "action.save": "保存", "action.saveAll": "保存全部", "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
+    "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
@@ -93,6 +95,7 @@ const messages = {
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
     "action.save": "Save", "action.saveAll": "Save all", "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
+    "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
@@ -132,6 +135,7 @@ function refreshLanguage() {
   if (!state.files.length) setStatus(t("status.ready"));
   resetProgress();
   renderBatchList();
+  syncPdfExcelHint();
 }
 
 const mouseAssets = {
@@ -267,6 +271,7 @@ function clearFile() {
   batchList.hidden = true;
   batchList.replaceChildren();
   setSelectPlaceholder(targetSelect, "", t("target.placeholder"));
+  syncPdfExcelHint();
   targetSelect.disabled = true;
   convertButton.disabled = true;
   resetDownload();
@@ -410,9 +415,26 @@ function syncZipCompressionField() {
   zipCompressionField.hidden = targetSelect.value !== "zip";
 }
 
+function syncPdfExcelHint() {
+  if (!pdfExcelHint) return;
+  pdfExcelHint.hidden = !(targetSelect.value === "xlsx"
+    && state.fileInfos.length > 0
+    && state.fileInfos.every((info) => info.category === "pdf"));
+}
+
 async function acceptFiles(fileList) {
   const files = [...fileList].filter((file) => file && file.size >= 0);
   if (!files.length) return;
+  const maxBatchBytes = state.capabilities?.limits?.maxBatchBytes || (2 * 1024 * 1024 * 1024);
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes > maxBatchBytes) {
+    setStatus(i18n.language === "en-US"
+      ? "This batch exceeds the 2 GB limit. Convert the files in smaller batches."
+      : "本批文件总大小超过 2GB，请分批转换。", "error");
+    setMouseState("error");
+    fileInput.value = "";
+    return;
+  }
 
   state.files = files;
   state.fileInfos = [];
@@ -461,6 +483,9 @@ async function acceptFiles(fileList) {
           ? (i18n.language === "en-US" ? "PDF (merge)" : "PDF（合并）")
           : (i18n.language === "en-US" ? "PDF (split into pages)" : "PDF（拆分为单页）");
       }
+      if (target === "xlsx" && state.fileInfos.every((info) => info.category === "pdf")) {
+        label = i18n.language === "en-US" ? "Excel (smart table extraction)" : "Excel（智能表格提取）";
+      }
       option.textContent = label;
       targetSelect.append(option);
     }
@@ -471,6 +496,7 @@ async function acceptFiles(fileList) {
     targetSelect.disabled = false;
     convertButton.disabled = false;
     syncZipCompressionField();
+    syncPdfExcelHint();
     setMouseState(files.length > 1 ? "batch" : "idle");
     if (files.length === 1) {
       const info = infos[0];
@@ -500,6 +526,11 @@ async function parseResponse(response) {
   }
 }
 
+function responseErrorMessage(result, status) {
+  const localized = i18n.language === "en-US" ? result?.messages?.enUS : result?.messages?.zhCN;
+  return localized || result?.error || (i18n.language === "en-US" ? `Server returned ${status}` : `服务器返回 ${status}`);
+}
+
 async function convertOneFile(file, targetFormat) {
   const form = new FormData();
   form.append("file", file);
@@ -515,7 +546,7 @@ async function convertOneFile(file, targetFormat) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(result.error || `服务器返回 ${response.status}`);
+    throw new Error(responseErrorMessage(result, response.status));
   }
   return result;
 }
@@ -540,7 +571,7 @@ async function convertImagesToPdf(files) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(result.error || `服务器返回 ${response.status}`);
+    throw new Error(responseErrorMessage(result, response.status));
   }
   return result;
 }
@@ -612,7 +643,7 @@ async function convertPdfsToMerged(files) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(result.error || `服务器返回 ${response.status}`);
+    throw new Error(responseErrorMessage(result, response.status));
   }
   return result;
 }
@@ -849,6 +880,7 @@ languageSelect.addEventListener("change", () => {
 });
 targetSelect.addEventListener("change", () => {
   syncZipCompressionField();
+  syncPdfExcelHint();
   rememberTarget(localStorage, state.files.map((file) => extensionOf(file.name)), targetSelect.value);
 });
 downloadButton.addEventListener("click", saveConvertedFile);
