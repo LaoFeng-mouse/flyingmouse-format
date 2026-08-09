@@ -10,6 +10,7 @@ const scriptPath = path.join(projectRoot, "scripts", "build-win7.js");
 const stagePath = path.join(projectRoot, "output", "win7-stage");
 const rootPackagePath = path.join(projectRoot, "package.json");
 const rootWin7LockPath = path.join(projectRoot, "win7-package-lock.json");
+const supportedBuildNodeVersion = "22.22.0";
 
 function runPrepareOnly() {
   return execFileSync(process.execPath, [scriptPath, "--prepare-only"], {
@@ -43,7 +44,7 @@ function createJunctionOrSkip(t, target, junction) {
 }
 
 test("prepare-only creates a clean, current Win7 staging tree without changing the root manifest", (t) => {
-  const { removeWin7Stage } = require("../scripts/build-win7");
+  const { prepareWin7Stage, removeWin7Stage } = require("../scripts/build-win7");
   t.after(() => {
     removeWin7Stage(stagePath, projectRoot);
     assert.ok(!fs.existsSync(stagePath), "shared Win7 stage survived test cleanup");
@@ -56,11 +57,15 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   fs.mkdirSync(stagePath, { recursive: true });
   fs.writeFileSync(path.join(stagePath, "stale.txt"), "remove me");
 
-  const output = runPrepareOnly();
-
-  assert.match(output, /Win7 staging prepared:/);
-  assert.match(output, /prepare-only complete/i);
-  assert.match(output, new RegExp(stagePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  const currentNodeMajor = Number(process.versions.node.split(".")[0]);
+  if (currentNodeMajor >= 18 && currentNodeMajor <= 22) {
+    const output = runPrepareOnly();
+    assert.match(output, /Win7 staging prepared:/);
+    assert.match(output, /prepare-only complete/i);
+    assert.match(output, new RegExp(stagePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  } else {
+    prepareWin7Stage(projectRoot, { nodeVersion: supportedBuildNodeVersion });
+  }
   assert.ok(!fs.existsSync(path.join(stagePath, "stale.txt")), "old staging content survived");
   assert.deepEqual(fs.readFileSync(rootPackagePath), beforePackage, "root package.json changed");
   assert.deepEqual(fs.readFileSync(rootWin7LockPath), beforeWin7Lock, "root Win7 lock changed");
@@ -181,6 +186,7 @@ test("build commands use only the installed local builder and stop after a faile
   fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(stagedLock));
   const buildOptions = {
     npmCliPath,
+    nodeVersion: supportedBuildNodeVersion,
     projectRoot: temporaryRoot,
     packageJson: stagedPackage
   };
@@ -371,7 +377,7 @@ test("build commands bind validation to unchanged staged manifest and lock bytes
           }
           return { status: 0 };
         },
-        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+        { npmCliPath, nodeVersion: supportedBuildNodeVersion, projectRoot: temporaryRoot, packageJson }
       ),
     /package.*changed during npm ci|does not match.*expected/i
   );
@@ -394,7 +400,7 @@ test("build commands bind validation to unchanged staged manifest and lock bytes
           }
           return { status: 0 };
         },
-        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+        { npmCliPath, nodeVersion: supportedBuildNodeVersion, projectRoot: temporaryRoot, packageJson }
       ),
     /package lock changed during npm ci/i
   );
@@ -457,7 +463,7 @@ test("build commands reject a junctioned local builder CLI before executing it",
           calls.push(args);
           return { status: 0 };
         },
-        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+        { npmCliPath, nodeVersion: supportedBuildNodeVersion, projectRoot: temporaryRoot, packageJson }
       ),
     /builder.*reparse|reparse.*builder|builder.*canonical/i
   );
@@ -490,6 +496,10 @@ test("Win7 runtime probe requires Turndown conversion inside staged Electron", (
   assert.equal(calls[0].command, electronExecutable);
   assert.equal(calls[0].args[0], "-e");
   assert.match(calls[0].args[1], /require\(["']turndown["']\)/);
+  assert.match(
+    calls[0].args[1],
+    /new TurndownService\(\{\s*headingStyle:\s*["']atx["'],\s*codeBlockStyle:\s*["']fenced["']\s*\}\)/
+  );
   assert.match(calls[0].args[1], /<h1>Win7<\/h1>/);
   assert.match(calls[0].args[1], /# Win7/);
   assert.equal(calls[0].options.env.ELECTRON_RUN_AS_NODE, "1");
@@ -499,6 +509,31 @@ test("Win7 runtime probe requires Turndown conversion inside staged Electron", (
     () => runWin7RuntimeProbe(temporaryStage, temporaryRoot, () => ({ status: 9 })),
     /Win7 Electron runtime probe failed with exit code 9/i
   );
+});
+
+test("Win7 build rejects unsupported host Node before staging or npm", (t) => {
+  const { assertSupportedBuildNode, buildWin7 } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-node-version-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  let runnerCalls = 0;
+
+  assert.throws(
+    () =>
+      buildWin7(
+        temporaryRoot,
+        () => {
+          runnerCalls += 1;
+          return { status: 0 };
+        },
+        { nodeVersion: "26.2.0" }
+      ),
+    /Node\.js 26\.2\.0.*Node\.js 22 LTS/i
+  );
+  assert.equal(runnerCalls, 0, "npm ran with an unsupported build host");
+  assert.ok(!fs.existsSync(temporaryStage), "unsupported build host wrote staging content");
+  assert.doesNotThrow(() => assertSupportedBuildNode("18.20.8"));
+  assert.doesNotThrow(() => assertSupportedBuildNode("22.22.0"));
+  assert.throws(() => assertSupportedBuildNode("16.20.2"), /Node\.js 22 LTS/i);
 });
 
 test("Win7 lock validation fails closed before npm when the lock is missing or mismatched", (t) => {
@@ -547,7 +582,7 @@ test("Win7 lock validation fails closed before npm when the lock is missing or m
           calls.push(args);
           return { status: 0 };
         },
-        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+        { npmCliPath, nodeVersion: supportedBuildNodeVersion, projectRoot: temporaryRoot, packageJson }
       ),
     /Win7 package lock.*missing/i
   );
@@ -562,7 +597,7 @@ test("Win7 lock validation fails closed before npm when the lock is missing or m
           calls.push(args);
           return { status: 0 };
         },
-        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+        { npmCliPath, nodeVersion: supportedBuildNodeVersion, projectRoot: temporaryRoot, packageJson }
       ),
     /dependencies.*sharp|sharp.*mismatch/i
   );
@@ -613,6 +648,7 @@ test("build commands reject junction and nested staging paths before npm", (t) =
     () =>
       runBuildCommands(junctionStage, runner, {
         npmCliPath,
+        nodeVersion: supportedBuildNodeVersion,
         projectRoot: temporaryRoot,
         packageJson
       }),
@@ -630,6 +666,7 @@ test("build commands reject junction and nested staging paths before npm", (t) =
     () =>
       runBuildCommands(nestedStage, runner, {
         npmCliPath,
+        nodeVersion: supportedBuildNodeVersion,
         projectRoot: temporaryRoot,
         packageJson
       }),

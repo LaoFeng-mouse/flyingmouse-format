@@ -8,6 +8,24 @@ const { createWin7BuildProfile } = require("../win7-build-profile");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const STAGE_BASENAME = "win7-stage";
+const MINIMUM_BUILD_NODE_MAJOR = 18;
+const MAXIMUM_BUILD_NODE_MAJOR = 22;
+
+function assertSupportedBuildNode(nodeVersion = process.versions.node) {
+  const match = /^v?(\d+)\./.exec(String(nodeVersion));
+  const major = match ? Number(match[1]) : NaN;
+  if (
+    !Number.isInteger(major) ||
+    major < MINIMUM_BUILD_NODE_MAJOR ||
+    major > MAXIMUM_BUILD_NODE_MAJOR
+  ) {
+    throw new Error(
+      `Unsupported Node.js ${nodeVersion} for Win7 builds. ` +
+      "Use Node.js 22 LTS (supported build host majors: 18 through 22)."
+    );
+  }
+  return major;
+}
 
 function pathIsStrictlyInside(candidate, parent) {
   const relative = path.relative(parent, candidate);
@@ -155,7 +173,8 @@ function copyStagingEntry(entry, projectRoot, stagePath) {
   }
 }
 
-function prepareWin7Stage(projectRoot = PROJECT_ROOT) {
+function prepareWin7Stage(projectRoot = PROJECT_ROOT, options = {}) {
+  assertSupportedBuildNode(options.nodeVersion);
   const projectPaths = getProjectPaths(projectRoot);
   const { resolvedRoot } = projectPaths;
   const packagePath = path.join(resolvedRoot, "package.json");
@@ -344,7 +363,7 @@ function runWin7RuntimeProbe(stagePath, projectRoot, runner = spawnSync) {
   ), stagePaths, "Win7 Electron runtime");
   const probe = [
     'const TurndownService = require("turndown");',
-    'const markdown = new TurndownService().turndown("<h1>Win7</h1>").trim();',
+    'const markdown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" }).turndown("<h1>Win7</h1>").trim();',
     'if (markdown !== "# Win7") throw new Error(`Unexpected Turndown output: ${markdown}`);'
   ].join(" ");
   const result = runner(electronExecutable, ["-e", probe], {
@@ -363,6 +382,7 @@ function runWin7RuntimeProbe(stagePath, projectRoot, runner = spawnSync) {
 }
 
 function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
+  assertSupportedBuildNode(options.nodeVersion);
   const projectRoot = path.resolve(options.projectRoot || path.join(stagePath, "..", ".."));
   const safeStagePath = assertSafeStagePath(stagePath, projectRoot);
   const stagePaths = {
@@ -544,9 +564,10 @@ function copyWin7Artifact(stagePath, projectRoot, packageJson, operations = {}) 
   return destination;
 }
 
-function buildWin7(projectRoot = PROJECT_ROOT, runner = spawnSync) {
-  const { stagePath, packageJson } = prepareWin7Stage(projectRoot);
-  runBuildCommands(stagePath, runner, { projectRoot, packageJson });
+function buildWin7(projectRoot = PROJECT_ROOT, runner = spawnSync, options = {}) {
+  assertSupportedBuildNode(options.nodeVersion);
+  const { stagePath, packageJson } = prepareWin7Stage(projectRoot, options);
+  runBuildCommands(stagePath, runner, { ...options, projectRoot, packageJson });
   return copyWin7Artifact(stagePath, path.resolve(projectRoot), packageJson);
 }
 
@@ -577,6 +598,7 @@ if (require.main === module) {
 
 module.exports = {
   assertSafeStagePath,
+  assertSupportedBuildNode,
   buildWin7,
   copyStagingEntry,
   copyWin7Artifact,
