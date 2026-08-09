@@ -1,6 +1,8 @@
 const path = require("node:path");
 
-const BUILDER_ONLY_TESTS = new Set([
+const STAGING_EXCLUDED_TESTS = new Set([
+  "tests/ci-engine-release.test.js",
+  "tests/conversion.test.js",
   "tests/win7-build-profile.test.js",
   "tests/win7-build-script.test.js",
   "tests/pe-metadata.test.js"
@@ -59,7 +61,7 @@ function validateBasePackage(basePackage, projectRoot) {
   }
 }
 
-function removeBuilderOnlyTests(command, scriptName) {
+function removeStagingExcludedTests(command, scriptName) {
   const invalidMessage = `${scriptName} must use the form node --test <test files>.`;
   if (/[&|;<>`"']|[\r\n\t]/.test(command)) throw new Error(invalidMessage);
 
@@ -75,7 +77,7 @@ function removeBuilderOnlyTests(command, scriptName) {
     throw new Error(invalidMessage);
   }
 
-  const testFiles = parts.slice(2).filter((part) => !BUILDER_ONLY_TESTS.has(part));
+  const testFiles = parts.slice(2).filter((part) => !STAGING_EXCLUDED_TESTS.has(part));
   if (testFiles.length === 0) throw new Error(`${scriptName} has no runtime tests after filtering.`);
   return ["node", "--test", ...testFiles].join(" ");
 }
@@ -91,7 +93,7 @@ function createWin7Package(basePackage, projectRoot) {
   profile.devDependencies.electron = "22.3.27";
 
   for (const scriptName of ["test", "test:ci"]) {
-    profile.scripts[scriptName] = removeBuilderOnlyTests(
+    profile.scripts[scriptName] = removeStagingExcludedTests(
       profile.scripts[scriptName],
       `scripts.${scriptName}`
     );
@@ -119,7 +121,7 @@ function stageSourceEntries(basePackage) {
     throw new Error("Base package is missing electron-builder files.");
   }
 
-  const entries = new Set(["build", "tests", ...REQUIRED_RUNTIME_FILES]);
+  const entries = new Set(["build", "tests", "win7-build-profile.js", ...REQUIRED_RUNTIME_FILES]);
   for (const pattern of basePackage.build.files) {
     if (pattern === "node_modules" || pattern.startsWith("node_modules/")) continue;
     if (pattern.endsWith("/**/*")) {
