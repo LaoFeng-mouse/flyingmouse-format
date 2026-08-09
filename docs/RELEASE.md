@@ -31,6 +31,8 @@ Win7 构建从当前源码派生独立 staging，不修改根 `package.json`、�
 npm run dist:win7
 ```
 
+推荐在 Node.js 22 LTS 运行。脚本只接受构建主机 Node.js 18–22；其他主版本会在修改 staging 或运行 npm 前失败。构建子进程固定使用当前 Node，staging 复制支持中文等 Unicode 路径。
+
 若只需生成 staging 进行依赖或文件检查，可单独运行下列命令；它不会打包，后续完整构建仍会重新准备 staging：
 
 ```powershell
@@ -56,7 +58,7 @@ npm test --prefix output\win7-stage
 npm audit --omit=dev --prefix output\win7-stage
 ```
 
-内层应用的 PE 检查器预期输出 `format: "PE32+"`、`majorOperatingSystemVersion: 5`、`minorOperatingSystemVersion: 2`；外层安装器输出 `format: "PE32"`、OS `4.0`，不能用它代替应用本体的兼容性证据。staging 测试预期 83 项中 81 通过、2 个真实 fixture 条件跳过、0 失败；遗留生产依赖审计预期 2 个 high。
+内层应用的 PE 检查器预期输出 `format: "PE32+"`、`majorOperatingSystemVersion: 5`、`minorOperatingSystemVersion: 2`；外层安装器输出 `format: "PE32"`、OS `4.0`，不能用它代替应用本体的兼容性证据。本次最终锁定 staging 在 Node.js 22 下为 83/83 通过；遗留生产依赖审计为 2 个 high。
 
 ## 验收
 
@@ -67,7 +69,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - 检查 EXE 的 ProductVersion 与发布版本一致。
 - 计算安装包 SHA-256 并写入交接记录和 Release。
 - 安装包当前未签名，发布说明必须保留 SmartScreen 提示。
-- Win7 兼容包还必须记录主线测试（本次基线为 124 项：122 通过、2 跳过）、staging 运行时测试、3 个真实 NCM/AV3A 源文件不变、PE 5.2、ASAR/资源/图标、当前 Windows 12 秒冒烟，以及主线 0 漏洞和 Win7 旧依赖 2 个 high 的审计结果。PDF.js 2.16 必须保持 `isEvalSupported: false`；Sharp 0.32 的遗留漏洞无法在保留 Electron 22/Win7 的同时直接升级，Release 说明必须建议离线处理可信文件。
+- Win7 兼容包还必须记录主线测试（本次最终基线为 128/128）、Node.js 22 staging 测试（83/83）、3 个真实 NCM/AV3A 源文件不变、PE 5.2、ASAR/资源/图标、当前 Windows 12 秒冒烟，以及主线 0 漏洞和 Win7 旧依赖 2 个 high 的审计结果。PDF.js 2.16 必须保持 `isEvalSupported: false`；Sharp 0.32 的遗留漏洞无法在保留 Electron 22/Win7 的同时直接升级，Release 说明必须建议离线处理可信文件。
 - PE 5.2 和当前 Windows 冒烟不能代替真实 Windows 7 SP1 x64 设备验收；未在真实设备运行时必须明确写“待验收”。
 
 ## 桌面快捷方式
