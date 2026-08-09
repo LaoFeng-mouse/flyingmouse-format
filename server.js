@@ -1450,6 +1450,21 @@ app.post("/api/targets", async (req, res) => {
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools) });
 });
 
+function readFileHeader(filePath, n) {
+  const fd = fs.openSync(filePath, "r");
+  const buf = Buffer.alloc(n);
+  fs.readSync(fd, buf, 0, n, 0);
+  fs.closeSync(fd);
+  return buf;
+}
+
+function looksLikeImage(filePath) {
+  const h = readFileHeader(filePath, 16);
+  const hex = h.toString("hex");
+  const lat = h.toString("latin1");
+  return hex.startsWith("ffd8ff") || hex.startsWith("89504e47") || lat.startsWith("GIF8") || hex.startsWith("52494646") || hex.startsWith("424d") || hex.startsWith("49492a00") || hex.startsWith("4d4d002a");
+}
+
 app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
   const files = req.files || [];
 
@@ -1467,7 +1482,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     };
   });
 
-  if (imageFiles.some((file) => file.category !== "image")) {
+  if (imageFiles.some((file) => file.category !== "image") || imageFiles.some((file) => !looksLikeImage(file.inputPath))) {
     logger.warn(`Rejected images-to-pdf: non-image file included (${imageFiles.map((f) => f.originalName).join(", ")})`);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     res.status(400).json({ error: "批量合并 PDF 只支持图片文件。请先移除非图片文件。" });
@@ -1513,7 +1528,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
     originalName: decodeUploadFileName(file.originalname)
   }));
 
-  if (pdfFiles.some((file) => normalizeExt(extFromName(file.originalName)) !== "pdf")) {
+  if (pdfFiles.some((file) => normalizeExt(extFromName(file.originalName)) !== "pdf") || pdfFiles.some((file) => readFileHeader(file.inputPath, 5).toString("latin1") !== "%PDF-")) {
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     res.status(400).json({ error: "批量合并 PDF 只支持 PDF 文件。请先移除非 PDF 文件。" });
     return;
