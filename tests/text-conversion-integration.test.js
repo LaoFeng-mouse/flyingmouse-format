@@ -34,6 +34,14 @@ async function convert(name, content, targetFormat, type) {
   return download.text();
 }
 
+async function convertResponse(name, content, targetFormat, type) {
+  const form = new FormData();
+  form.append("file", new Blob([content], { type }), name);
+  form.append("targetFormat", targetFormat);
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  return { response, body: await response.json() };
+}
+
 test("server preserves HTML headings and lists when converting to Markdown", async () => {
   const markdown = await convert(
     "page.html",
@@ -55,6 +63,18 @@ test("server preserves legal quoted newlines when converting CSV to JSON", async
   assert.deepEqual(JSON.parse(json), [{ name: "鼠鼠", description: "第一行\r\n第二行" }]);
 });
 
+test("server reports invalid CSV as a stable client error", async () => {
+  const { response, body } = await convertResponse(
+    "duplicate.csv",
+    "name,name\nfirst,second\n",
+    "json",
+    "text/csv"
+  );
+  assert.equal(response.status, 422);
+  assert.equal(body.errorCode, "CSV_PARSE_FAILED");
+  assert.match(body.error, /CSV/);
+});
+
 test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
@@ -63,4 +83,3 @@ test("packaging and Win7 staging include the new runtime modules", () => {
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }
 });
-
