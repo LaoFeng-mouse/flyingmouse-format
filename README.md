@@ -62,6 +62,8 @@ Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electro
 npm run dist:win7
 ```
 
+Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；构建脚本会锁定 staging manifest/lockfile，并校验本地 builder 与打包资源没有越过各自允许的根目录或经过 junction/符号链接。
+
 仅需检查 staging 时可运行 `node scripts/build-win7.js --prepare-only`；它不会打包。完整构建会重新准备 staging。
 
 ## English
@@ -100,6 +102,8 @@ The complete build requires only:
 ```powershell
 npm run dist:win7
 ```
+
+The Win7 staging tree is rebuilt with its dedicated `win7-package-lock.json` via `npm ci`. The build script binds the staged manifest/lockfile and rejects local builder or packaged resources that escape their allowed roots or traverse junctions/symlinks.
 
 Use `node scripts/build-win7.js --prepare-only` only to inspect staging without packaging. A complete build prepares staging again.
 

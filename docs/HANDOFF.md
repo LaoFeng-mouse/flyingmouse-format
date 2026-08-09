@@ -56,8 +56,9 @@
 
 ### Win7 分支验证（2026-08-09）
 
-- Win7 主线自动化：119 项，117 通过、2 个真实 fixture 条件跳过、0 失败。
-- Win7 staging：83 项，81 通过、2 个真实 fixture 条件跳过、0 失败。
+- Win7 主线自动化：124 项，122 通过、2 个真实 fixture 条件跳过、0 失败。
+- Win7 运行时 staging 验证：83 项，81 通过、2 个真实 fixture 条件跳过、0 失败。
+- 锁定构建：专用 `win7-package-lock.json` 经 `npm ci` 重建 staging；npm 前后会校验 staging manifest/lockfile 的原始字节和 SHA-256。本地 builder 必须通过 regular-file/canonical/reparse 检查，`extraResources` 必须在各自允许根目录内通过 canonical containment 与递归 reparse 检查。
 - 真实 NCM：用户提供的 3 个样本均端到端转换为可播放 MP3，源文件 SHA-256 均未改变。
 - 最终 ASAR：`server.js` 与源码 SHA-256 一致，包含 PDF.js 本地依赖边界和 `isEvalSupported: false`；AV3A、FFmpeg、LibreOffice、Poppler、Tessdata 资源齐全。
 - 当前 Windows 冒烟：Microsoft Windows 11 家庭版 中文版，x64，Version `10.0.26200` / Build `26200`；解包 EXE 连续运行 12 秒，4 个精确同路径 Electron 进程均响应，测试后只结束本次启动的进程。
