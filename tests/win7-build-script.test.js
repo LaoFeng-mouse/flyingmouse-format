@@ -19,6 +19,10 @@ function runPrepareOnly() {
   });
 }
 
+function readPathEnvironment(environment) {
+  return Object.entries(environment).find(([name]) => name.toLowerCase() === "path")?.[1];
+}
+
 function createTemporaryRoot(t, prefix) {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
@@ -154,6 +158,39 @@ test("safe stage removal requires the exact project output Win7 stage path", () 
   assert.doesNotThrow(() => assertSafeStagePath(stagePath, projectRoot));
 });
 
+test("Win7 child environment binds lifecycle Node without mutating inherited variables", () => {
+  const { createWin7ChildEnv } = require("../scripts/build-win7");
+  const nodeExecutable = path.join(projectRoot, "portable-node", "node.exe");
+  const inheritedWithMixedCasePath = {
+    Path: ["legacy-one", "legacy-two"].join(path.delimiter),
+    KEEP_ME: "unchanged"
+  };
+  const inheritedBefore = structuredClone(inheritedWithMixedCasePath);
+
+  const childEnvironment = createWin7ChildEnv(
+    nodeExecutable,
+    inheritedWithMixedCasePath
+  );
+
+  assert.notStrictEqual(childEnvironment, inheritedWithMixedCasePath);
+  assert.deepEqual(inheritedWithMixedCasePath, inheritedBefore);
+  assert.equal(
+    readPathEnvironment(childEnvironment),
+    [path.dirname(nodeExecutable), inheritedWithMixedCasePath.Path].join(path.delimiter)
+  );
+  assert.equal(childEnvironment.npm_node_execpath, nodeExecutable);
+  assert.equal(childEnvironment.NODE, nodeExecutable);
+  assert.equal(childEnvironment.KEEP_ME, "unchanged");
+  assert.equal(Object.keys(childEnvironment).filter((name) => name.toLowerCase() === "path").length, 1);
+
+  const withoutInheritedPath = { KEEP_ME: "still here" };
+  assert.equal(
+    readPathEnvironment(createWin7ChildEnv(nodeExecutable, withoutInheritedPath)),
+    path.dirname(nodeExecutable)
+  );
+  assert.deepEqual(withoutInheritedPath, { KEEP_ME: "still here" });
+});
+
 test("build commands use only the installed local builder and stop after a failed command", (t) => {
   const { runBuildCommands } = require("../scripts/build-win7");
   const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-commands-");
@@ -191,6 +228,11 @@ test("build commands use only the installed local builder and stop after a faile
     packageJson: stagedPackage
   };
   const calls = [];
+  const processEnvironmentBefore = {
+    path: readPathEnvironment(process.env),
+    npmNodeExecPath: process.env.npm_node_execpath,
+    node: process.env.NODE
+  };
   const runner = (command, args, options) => {
     calls.push({ command, args, options });
     return { status: calls.length === 1 ? 7 : 0 };
@@ -205,6 +247,21 @@ test("build commands use only the installed local builder and stop after a faile
   assert.deepEqual(calls[0].args, [npmCliPath, "ci", "--no-audit", "--no-fund"]);
   assert.equal(calls[0].options.cwd, temporaryStage);
   assert.equal(calls[0].options.stdio, "inherit");
+  assert.notStrictEqual(calls[0].options.env, process.env);
+  assert.equal(
+    readPathEnvironment(calls[0].options.env).split(path.delimiter)[0],
+    path.dirname(process.execPath)
+  );
+  assert.equal(calls[0].options.env.npm_node_execpath, process.execPath);
+  assert.equal(calls[0].options.env.NODE, process.execPath);
+  assert.deepEqual(
+    {
+      path: readPathEnvironment(process.env),
+      npmNodeExecPath: process.env.npm_node_execpath,
+      node: process.env.NODE
+    },
+    processEnvironmentBefore
+  );
 
   calls.length = 0;
   assert.throws(
@@ -287,6 +344,10 @@ test("build commands use only the installed local builder and stop after a faile
     "--x64"
   ]);
   assert.ok(calls.every(({ options }) => options.cwd === temporaryStage));
+  assert.ok(calls.every(({ options }) => options.env !== process.env));
+  assert.ok(calls.every(({ options }) =>
+    readPathEnvironment(options.env).split(path.delimiter)[0] === path.dirname(process.execPath)
+  ));
 
   calls.length = 0;
   const missingResourcePackage = {

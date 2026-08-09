@@ -216,11 +216,33 @@ function prepareWin7Stage(projectRoot = PROJECT_ROOT, options = {}) {
   return { stagePath, packageJson };
 }
 
+function createWin7ChildEnv(
+  nodeExecutable = process.execPath,
+  inheritedEnvironment = process.env
+) {
+  const resolvedNodeExecutable = path.resolve(nodeExecutable);
+  const childEnvironment = { ...inheritedEnvironment };
+  let inheritedPath;
+  for (const name of Object.keys(childEnvironment)) {
+    if (name.toLowerCase() !== "path") continue;
+    if (inheritedPath === undefined) inheritedPath = childEnvironment[name];
+    delete childEnvironment[name];
+  }
+  childEnvironment.PATH = [
+    path.dirname(resolvedNodeExecutable),
+    ...(typeof inheritedPath === "string" && inheritedPath.length > 0 ? [inheritedPath] : [])
+  ].join(path.delimiter);
+  childEnvironment.NODE = resolvedNodeExecutable;
+  childEnvironment.npm_node_execpath = resolvedNodeExecutable;
+  return childEnvironment;
+}
+
 function runChecked(command, args, label, stagePath, runner) {
   const result = runner(command, args, {
     cwd: stagePath,
     stdio: "inherit",
-    shell: false
+    shell: false,
+    env: createWin7ChildEnv()
   });
   if (result.error) throw new Error(`${label} failed: ${result.error.message}`);
   if (result.signal) throw new Error(`${label} terminated by signal ${result.signal}.`);
@@ -387,7 +409,7 @@ function runWin7RuntimeProbe(stagePath, projectRoot, runner = spawnSync) {
     cwd: safeStagePath,
     stdio: "inherit",
     shell: false,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+    env: { ...createWin7ChildEnv(), ELECTRON_RUN_AS_NODE: "1" }
   });
   if (result.error) throw new Error(`Win7 Electron runtime probe failed: ${result.error.message}`);
   if (result.signal) {
@@ -617,6 +639,7 @@ module.exports = {
   assertSafeStagePath,
   assertSupportedBuildNode,
   buildWin7,
+  createWin7ChildEnv,
   copyStagingEntry,
   copyWin7Artifact,
   main,
