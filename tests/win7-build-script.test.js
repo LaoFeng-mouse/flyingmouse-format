@@ -107,6 +107,9 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   assert.equal(stagedLock.packages[""].devDependencies.electron, "22.3.27");
   assert.equal(stagedLock.packages[""].dependencies.sharp, "0.32.6");
   assert.equal(stagedLock.packages[""].dependencies["pdfjs-dist"], "2.16.105");
+  assert.equal(stagedLock.packages[""].dependencies.turndown, "7.2.0");
+  assert.equal(stagedLock.packages["node_modules/turndown"].version, "7.2.0");
+  assert.equal(stagedLock.packages["node_modules/turndown"].engines, undefined);
   assert.ok(stagedLock.packages["node_modules/electron-builder"]);
   assert.deepEqual(stagedPackage.build.win.target, ["nsis"]);
   assert.equal(stagedPackage.build.appx, undefined);
@@ -243,6 +246,15 @@ test("build commands use only the installed local builder and stop after a faile
       );
       fs.mkdirSync(path.dirname(localBuilderCli), { recursive: true });
       fs.writeFileSync(localBuilderCli, "local builder CLI");
+      const electronExecutable = path.join(
+        temporaryStage,
+        "node_modules",
+        "electron",
+        "dist",
+        process.platform === "win32" ? "electron.exe" : "electron"
+      );
+      fs.mkdirSync(path.dirname(electronExecutable), { recursive: true });
+      fs.writeFileSync(electronExecutable, "staged Electron runtime");
     }
     return { status: 0 };
   }, buildOptions);
@@ -253,8 +265,16 @@ test("build commands use only the installed local builder and stop after a faile
     process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
   );
   assert.ok(fs.statSync(expectedLocalBuilder).isFile());
-  assert.equal(calls[1].command, process.execPath);
-  assert.deepEqual(calls[1].args, [
+  assert.equal(calls[1].command, path.join(
+    temporaryStage,
+    "node_modules",
+    "electron",
+    "dist",
+    process.platform === "win32" ? "electron.exe" : "electron"
+  ));
+  assert.equal(calls[1].options.env.ELECTRON_RUN_AS_NODE, "1");
+  assert.equal(calls[2].command, process.execPath);
+  assert.deepEqual(calls[2].args, [
     path.join(temporaryStage, "node_modules", "electron-builder", "cli.js"),
     "--win",
     "nsis",
@@ -444,6 +464,41 @@ test("build commands reject a junctioned local builder CLI before executing it",
   assert.equal(calls.length, 1, "junctioned electron-builder CLI was executed");
   assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
   fs.unlinkSync(builderJunction);
+});
+
+test("Win7 runtime probe requires Turndown conversion inside staged Electron", (t) => {
+  const { runWin7RuntimeProbe } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-runtime-probe-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const electronExecutable = path.join(
+    temporaryStage,
+    "node_modules",
+    "electron",
+    "dist",
+    process.platform === "win32" ? "electron.exe" : "electron"
+  );
+  fs.mkdirSync(path.dirname(electronExecutable), { recursive: true });
+  fs.writeFileSync(electronExecutable, "staged Electron runtime");
+  const calls = [];
+
+  runWin7RuntimeProbe(temporaryStage, temporaryRoot, (command, args, options) => {
+    calls.push({ command, args, options });
+    return { status: 0 };
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, electronExecutable);
+  assert.equal(calls[0].args[0], "-e");
+  assert.match(calls[0].args[1], /require\(["']turndown["']\)/);
+  assert.match(calls[0].args[1], /<h1>Win7<\/h1>/);
+  assert.match(calls[0].args[1], /# Win7/);
+  assert.equal(calls[0].options.env.ELECTRON_RUN_AS_NODE, "1");
+  assert.equal(calls[0].options.cwd, temporaryStage);
+
+  assert.throws(
+    () => runWin7RuntimeProbe(temporaryStage, temporaryRoot, () => ({ status: 9 })),
+    /Win7 Electron runtime probe failed with exit code 9/i
+  );
 });
 
 test("Win7 lock validation fails closed before npm when the lock is missing or mismatched", (t) => {

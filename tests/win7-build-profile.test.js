@@ -30,6 +30,7 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
   assert.equal(profile.devDependencies.electron, "22.3.27");
   assert.equal(profile.dependencies.sharp, "0.32.6");
   assert.equal(profile.dependencies["pdfjs-dist"], "2.16.105");
+  assert.equal(profile.dependencies.turndown, "7.2.0");
   assert.equal(profile.build.artifactName, "${productName}-Setup-${version}-win7-${arch}.${ext}");
   assert.equal(resolveArtifactName(profile), "FlyingMouse Format-Setup-0.3.2-win7-x64.exe");
   assert.deepEqual(profile.build.win.target, ["nsis"]);
