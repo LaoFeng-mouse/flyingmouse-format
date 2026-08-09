@@ -1,0 +1,66 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { after, before, test } = require("node:test");
+
+const runtimeDir = path.join(os.tmpdir(), `flyingmouse-text-integration-${process.pid}`);
+process.env.FLYINGMOUSE_RUNTIME_DIR = runtimeDir;
+const { startServer } = require("../server");
+
+let server;
+let baseUrl;
+
+before(async () => {
+  const started = await startServer(0);
+  server = started.server;
+  baseUrl = started.url;
+});
+
+after(async () => {
+  if (server) await new Promise((resolve) => server.close(resolve));
+  await fs.rm(runtimeDir, { recursive: true, force: true });
+});
+
+async function convert(name, content, targetFormat, type) {
+  const form = new FormData();
+  form.append("file", new Blob([content], { type }), name);
+  form.append("targetFormat", targetFormat);
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await response.json();
+  assert.equal(response.status, 200, body.error);
+  const download = await fetch(`${baseUrl}${body.downloadUrl}`);
+  assert.equal(download.status, 200);
+  return download.text();
+}
+
+test("server preserves HTML headings and lists when converting to Markdown", async () => {
+  const markdown = await convert(
+    "page.html",
+    "<h1>Hello</h1><ul><li>Mouse</li><li>Format</li></ul>",
+    "md",
+    "text/html"
+  );
+  assert.match(markdown, /^# Hello/m);
+  assert.match(markdown, /^\*\s+Mouse/m);
+});
+
+test("server preserves legal quoted newlines when converting CSV to JSON", async () => {
+  const json = await convert(
+    "table.csv",
+    '"name","description"\r\n"鼠鼠","第一行\r\n第二行"\r\n',
+    "json",
+    "text/csv"
+  );
+  assert.deepEqual(JSON.parse(json), [{ name: "鼠鼠", description: "第一行\r\n第二行" }]);
+});
+
+test("packaging and Win7 staging include the new runtime modules", () => {
+  const packageJson = require("../package.json");
+  const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
+  for (const file of ["resource-policy.js", "text-conversion.js"]) {
+    assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
+    assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
+  }
+});
+

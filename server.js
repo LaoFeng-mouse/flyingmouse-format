@@ -15,7 +15,7 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
-const TurndownService = require("turndown");
+const { createTurndownService, htmlToMarkdown, csvToJsonObjects } = require("./text-conversion");
 const { convertNcm } = require("./ncm-format");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
@@ -256,6 +256,10 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "spreadsheet" && tools.libreoffice) {
     spreadsheetTargets.forEach((target) => targets.add(target));
+  }
+
+  if (normalizeExt(rawExt) === "csv") {
+    textTargets.forEach((target) => targets.add(target));
   }
 
   if (category === "presentation" && tools.libreoffice) {
@@ -513,33 +517,6 @@ function htmlToText(html) {
     .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function csvToJson(csv) {
-  const rows = csv.replace(/\r\n/g, "\n").split("\n").filter(Boolean).map((line) => {
-    const cells = [];
-    let current = "";
-    let quoted = false;
-    for (let i = 0; i < line.length; i += 1) {
-      const char = line[i];
-      if (char === '"' && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else if (char === '"') {
-        quoted = !quoted;
-      } else if (char === "," && !quoted) {
-        cells.push(current);
-        current = "";
-      } else {
-        current += char;
-      }
-    }
-    cells.push(current);
-    return cells;
-  });
-
-  const headers = rows.shift() || [];
-  return rows.map((row) => Object.fromEntries(headers.map((header, index) => [header || `column_${index + 1}`, row[index] || ""])));
 }
 
 function jsonToCsv(jsonText) {
@@ -909,11 +886,11 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
 <body><pre>${escapeHtml(raw)}</pre></body>
 </html>`;
   } else if (target === "md") {
-    if (source === "html") converted = htmlToText(raw);
+    if (source === "html") converted = htmlToMarkdown(raw);
     else if (source === "json") converted = `\`\`\`json\n${JSON.stringify(parseJsonText(raw), null, 2)}\n\`\`\`\n`;
   } else if (target === "json") {
     if (source === "json") converted = JSON.stringify(parseJsonText(raw), null, 2);
-    else if (source === "csv") converted = JSON.stringify(csvToJson(raw), null, 2);
+    else if (source === "csv") converted = JSON.stringify(csvToJsonObjects(raw), null, 2);
     else converted = JSON.stringify({ text: raw }, null, 2);
   } else if (target === "csv") {
     if (source === "json") converted = jsonToCsv(raw);
@@ -1006,7 +983,7 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
-  const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
+  const turndown = createTurndownService();
   const markdown = turndown.turndown(html).trim();
   if (!markdown) {
     throw new Error("文档转 Markdown 失败，未提取到任何内容。");
@@ -1589,6 +1566,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget);
+    } else if (category === "spreadsheet" && inputExt === "csv" && ["txt", "md", "json"].includes(requestedTarget)) {
+      await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
       if (category === "document" && requestedTarget === "md") {
         await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
