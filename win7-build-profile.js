@@ -13,6 +13,7 @@ const REQUIRED_RUNTIME_FILES = [
   "server.js",
   "resource-policy.js",
   "text-conversion.js",
+  "pdf-table-extractor.js",
   "logger.js",
   "settings-store.js",
   "ncm-format.js",
