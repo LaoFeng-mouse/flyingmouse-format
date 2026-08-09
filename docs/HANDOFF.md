@@ -33,7 +33,9 @@
 - NSIS 外壳：PE32，目标 OS `4.0`（不是应用兼容性判断对象）
 - 锁定运行时：Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`
 - 签名：未签名（`NotSigned`）
-- GitHub 资产：截至 2026-08-09 尚未上传，未做远端大小或 SHA-256 回读验证
+- GitHub Release：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.2`
+- GitHub 资产：`FlyingMouse.Format-Setup-0.3.2-win7-x64.exe`（GitHub 发布时自动将本地文件名中的空格规范化为点，未改变本地 `dist` 文件名）
+- 远端回读：大小 517,754,235 字节，SHA-256/digest 与本地 `74481cf3340772eee8e46dca7c1a317099d032668de74e051aa2b86143a03d8d` 一致；既有标准资产 `FlyingMouse.Format-Setup-0.3.2-x64.exe` 未改变。
 
 ## 功能结果
 
