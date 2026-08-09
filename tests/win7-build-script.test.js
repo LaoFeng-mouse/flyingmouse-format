@@ -104,6 +104,7 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   );
 
   const rootPackage = JSON.parse(beforePackage.toString("utf8"));
+  const rootWin7Lock = JSON.parse(beforeWin7Lock.toString("utf8"));
   const stagedPackage = JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
   const stagedLock = JSON.parse(fs.readFileSync(path.join(stagePath, "package-lock.json"), "utf8"));
   assert.equal(rootPackage.name, "flyingmouse-format");
@@ -112,7 +113,7 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   assert.equal(stagedPackage.dependencies["pdfjs-dist"], "2.16.105");
   assert.equal(stagedPackage.devDependencies.electron, "22.3.27");
   assert.equal(stagedLock.name, "flyingmouse-format-win7");
-  assert.equal(stagedLock.version, "0.3.2");
+  assert.equal(stagedLock.version, rootWin7Lock.version);
   assert.equal(stagedLock.packages[""].devDependencies.electron, "22.3.27");
   assert.equal(stagedLock.packages[""].dependencies.sharp, "0.32.6");
   assert.equal(stagedLock.packages[""].dependencies["pdfjs-dist"], "2.16.105");
