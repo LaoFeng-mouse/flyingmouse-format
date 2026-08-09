@@ -839,6 +839,41 @@ test("stage cleanup rejects output and stage junctions without touching their ta
   fs.unlinkSync(stageJunction);
 });
 
+test("staging recursively copies nested directories without fs.cpSync", (t) => {
+  const { copyStagingEntry } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-unicode-copy-");
+  const source = path.join(temporaryRoot, "public");
+  const nested = path.join(source, "图标", "鼠鼠");
+  const emptyDirectory = path.join(source, "空目录");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const payload = Buffer.from([0x00, 0x57, 0x69, 0x6e, 0x37, 0xff]);
+  fs.mkdirSync(nested, { recursive: true });
+  fs.mkdirSync(emptyDirectory, { recursive: true });
+  fs.mkdirSync(temporaryStage, { recursive: true });
+  fs.writeFileSync(path.join(source, "index.html"), "<h1>Win7</h1>");
+  fs.writeFileSync(path.join(nested, "资源.bin"), payload);
+
+  const originalCpSync = fs.cpSync;
+  try {
+    fs.cpSync = () => {
+      throw new Error("fs.cpSync must not be used for Win7 staging");
+    };
+    copyStagingEntry("public", temporaryRoot, temporaryStage);
+  } finally {
+    fs.cpSync = originalCpSync;
+  }
+
+  assert.equal(
+    fs.readFileSync(path.join(temporaryStage, "public", "index.html"), "utf8"),
+    "<h1>Win7</h1>"
+  );
+  assert.deepEqual(
+    fs.readFileSync(path.join(temporaryStage, "public", "图标", "鼠鼠", "资源.bin")),
+    payload
+  );
+  assert.ok(fs.statSync(path.join(temporaryStage, "public", "空目录")).isDirectory());
+});
+
 test("staging rejects a recursive source junction without copying external content", (t) => {
   const { copyStagingEntry } = require("../scripts/build-win7");
   const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-source-root-");
