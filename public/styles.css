@@ -384,6 +384,17 @@ h1 {
   font-weight: 700;
 }
 
+.format-hint {
+  margin: -4px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(151, 111, 50, 0.22);
+  border-radius: 12px;
+  color: var(--muted);
+  background: rgba(255, 248, 225, 0.72);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 select {
   width: 100%;
   height: 46px;

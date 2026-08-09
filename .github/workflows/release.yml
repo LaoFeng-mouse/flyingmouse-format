@@ -1,0 +1,68 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Restore fixed conversion engines
+        shell: powershell
+        run: .\scripts\restore-ci-engines.ps1
+
+      - name: Syntax checks
+        run: |
+          node --check server.js
+          node --check pdf-table-extractor.js
+          node --check pdf-table-runtime.js
+          node --check public/app.js
+
+      - name: Full real conversion suite
+        run: npm test
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+
+      - name: Build Windows 10 and 11 installer
+        run: npm run dist
+
+      - name: Build isolated Windows 7 installer
+        run: npm run dist:win7
+
+      - name: Inspect installer PE metadata
+        shell: powershell
+        run: |
+          $standard = Get-ChildItem -LiteralPath dist -Filter '*Setup-*-x64.exe' | Where-Object { $_.Name -notmatch 'win7' } | Select-Object -First 1
+          $win7 = Get-ChildItem -LiteralPath dist -Filter '*Setup-*-win7-x64.exe' | Select-Object -First 1
+          if (-not $standard -or -not $win7) { throw 'Expected installers were not produced.' }
+          node scripts/inspect-pe.js $standard.FullName
+          node scripts/inspect-pe.js $win7.FullName
+
+      - name: Upload validated installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: flyingmouse-format-${{ github.ref_name }}
+          path: |
+            dist/*Setup-*-x64.exe
+            dist/*Setup-*-win7-x64.exe
+          if-no-files-found: error

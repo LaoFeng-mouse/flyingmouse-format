@@ -16,6 +16,15 @@ const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const { createTurndownService, htmlToMarkdown, csvToJsonObjects } = require("./text-conversion");
+const {
+  LIMITS,
+  ResourceLimitError,
+  assertImageMetadata,
+  assertImagePdfBudget,
+  assertBatchBytes,
+  assertPdfPages
+} = require("./resource-policy");
+const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
 const { convertNcm } = require("./ncm-format");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
@@ -543,9 +552,27 @@ async function convertImage(inputPath, outputPath, target) {
     return;
   }
 
-  const image = sharp(inputPath, { animated: true, limitInputPixels: false }).rotate();
+  await inspectImageMetadata(inputPath, true);
+  const image = sharp(inputPath, { animated: true, limitInputPixels: LIMITS.maxImagePixels }).rotate();
   const normalized = target === "jpg" ? "jpeg" : target;
   await image.toFormat(normalized, target === "jpg" ? { quality: 90 } : undefined).toFile(outputPath);
+}
+
+async function inspectImageMetadata(inputPath, animated = false) {
+  let metadata;
+  try {
+    metadata = await sharp(inputPath, {
+      animated,
+      limitInputPixels: LIMITS.maxImagePixels
+    }).metadata();
+  } catch (error) {
+    if (/pixel limit|input image exceeds/i.test(String(error?.message || ""))) {
+      throw new ResourceLimitError("IMAGE_PIXELS_EXCEEDED");
+    }
+    throw error;
+  }
+  assertImageMetadata(metadata);
+  return metadata;
 }
 
 async function convertImageToVideo(inputPath, outputPath, target) {
@@ -578,8 +605,8 @@ async function convertImageToVideo(inputPath, outputPath, target) {
 async function prepareImageForOcr(inputPath) {
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ocr-image-"));
   const outputPath = path.join(tempDir, "ocr-input.png");
-  const metadata = await sharp(inputPath, { limitInputPixels: false }).metadata();
-  const pipeline = sharp(inputPath, { limitInputPixels: false })
+  const metadata = await inspectImageMetadata(inputPath);
+  const pipeline = sharp(inputPath, { limitInputPixels: LIMITS.maxImagePixels })
     .rotate()
     .flatten({ background: "#ffffff" })
     .grayscale()
@@ -650,7 +677,7 @@ function pdfNumber(value) {
 }
 
 async function readImageForPdf(inputPath) {
-  const { data, info } = await sharp(inputPath, { limitInputPixels: false })
+  const { data, info } = await sharp(inputPath, { limitInputPixels: LIMITS.maxImagePixels })
     .rotate()
     .flatten({ background: "#ffffff" })
     .toColorspace("srgb")
@@ -680,6 +707,10 @@ async function convertImagesToPdf(imageFiles, outputPath) {
   if (!imageFiles.length) {
     throw new Error("请先选择要转换为 PDF 的图片。");
   }
+
+  const metadataList = [];
+  for (const file of imageFiles) metadataList.push(await inspectImageMetadata(file.inputPath));
+  assertImagePdfBudget(metadataList);
 
   const images = [];
   for (const file of imageFiles) {
@@ -1081,6 +1112,7 @@ async function extractPdfRowsByPage(inputPath) {
     isEvalSupported: false
   });
   const pdf = await loadingTask.promise;
+  assertPdfPages(pdf.numPages);
   const pages = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
@@ -1111,6 +1143,156 @@ function applyColumnWidths(sheet, rows) {
   sheet.columns = widths.map((wch) => ({ width: wch }));
 }
 
+async function renderPdfTablePage(inputPath, pageNumber, tempDir, dpi = 200) {
+  const prefix = path.join(tempDir, `page-${String(pageNumber).padStart(3, "0")}`);
+  await run(PDFTOPPM_PATH, [
+    "-png", "-cropbox", "-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber),
+    "-singlefile", inputPath, prefix
+  ], { timeout: 1000 * 60 * 5 });
+  const outputPath = `${prefix}.png`;
+  if (!fs.existsSync(outputPath)) throw new Error(`PDF page ${pageNumber} could not be rendered for table extraction.`);
+  const metadata = await inspectImageMetadata(outputPath);
+  return { outputPath, metadata };
+}
+
+async function preparePdfTableOcrImage(imagePath, tempDir, pageNumber) {
+  const { data, info } = await sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels })
+    .grayscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const lines = detectTableLinesFromRaw({ data, width: info.width, height: info.height, channels: info.channels });
+  if (!lines.length) return imagePath;
+  const rectangles = lines.map((line) => {
+    const eraseHalfWidth = Math.max(2, Math.ceil((Number(line.thickness) || 1) / 2) + 1);
+    const horizontal = Math.abs(line.y2 - line.y1) <= Math.abs(line.x2 - line.x1);
+    if (horizontal) {
+      return `<rect x="${Math.max(0, line.x1 - 2)}" y="${Math.max(0, line.y1 - eraseHalfWidth)}" width="${Math.max(1, line.x2 - line.x1 + 4)}" height="${eraseHalfWidth * 2}" fill="white"/>`;
+    }
+    return `<rect x="${Math.max(0, line.x1 - eraseHalfWidth)}" y="${Math.max(0, line.y1 - 2)}" width="${eraseHalfWidth * 2}" height="${Math.max(1, line.y2 - line.y1 + 4)}" fill="white"/>`;
+  }).join("");
+  const overlay = Buffer.from(`<svg width="${info.width}" height="${info.height}" xmlns="http://www.w3.org/2000/svg">${rectangles}</svg>`);
+  const outputPath = path.join(tempDir, `ocr-clean-${String(pageNumber).padStart(3, "0")}.png`);
+  await sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels }).composite([{ input: overlay }]).png().toFile(outputPath);
+  return outputPath;
+}
+
+async function recognizePdfTablePage(worker, imagePath, tempDir, pageNumber) {
+  const ocrImagePath = await preparePdfTableOcrImage(imagePath, tempDir, pageNumber);
+  const result = await worker.recognize(ocrImagePath, {}, { text: true, blocks: true });
+  return result;
+}
+
+async function extractComplexPdfTableModel(inputPath) {
+  const pdfjsLib = await loadPdfjs();
+  const data = new Uint8Array(await fsp.readFile(inputPath));
+  const loadingTask = pdfjsLib.getDocument({
+    data,
+    disableFontFace: true,
+    useSystemFonts: true,
+    isEvalSupported: false
+  });
+  const pdf = await loadingTask.promise;
+  assertPdfPages(pdf.numPages);
+  const canRender = await commandExists(PDFTOPPM_PATH, ["-v"]);
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-table-"));
+  const rendered = new Map();
+  let worker = null;
+  let ocrBudgetChecked = false;
+
+  const ensureRendered = async (pageNumber) => {
+    if (!canRender) return null;
+    if (!rendered.has(pageNumber)) rendered.set(pageNumber, renderPdfTablePage(inputPath, pageNumber, tempDir));
+    return rendered.get(pageNumber);
+  };
+
+  try {
+    async function* pages() {
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        try {
+          const viewport = page.getViewport({ scale: 200 / 72, rotation: page.rotate || 0 });
+          yield {
+            pageNumber,
+            width: viewport.width,
+            height: viewport.height,
+            viewport,
+            textContent: await page.getTextContent()
+          };
+        } finally {
+          page.cleanup();
+        }
+      }
+    }
+
+    return await buildPdfTableWorkbook(pages(), {
+      renderPage: canRender ? async (page) => {
+        const image = await ensureRendered(page.pageNumber);
+        const { data: raw, info } = await sharp(image.outputPath, { limitInputPixels: LIMITS.maxImagePixels })
+          .grayscale()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        return { data: raw, width: info.width, height: info.height, channels: info.channels };
+      } : null,
+      ocrPage: canRender && ocrAvailable() ? async (page) => {
+        if (!ocrBudgetChecked) {
+          assertPdfPages(pdf.numPages, { ocr: true });
+          ocrBudgetChecked = true;
+        }
+        if (!worker) worker = await createOcrWorker();
+        const image = await ensureRendered(page.pageNumber);
+        return recognizePdfTablePage(worker, image.outputPath, tempDir, page.pageNumber);
+      } : null
+    });
+  } finally {
+    if (worker) await worker.terminate().catch(() => {});
+    await loadingTask.destroy().catch(() => {});
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function addPdfTableNotes(sheet, rows, confidenceRows) {
+  rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const confidence = confidenceRows?.[rowIndex]?.[columnIndex];
+    if (value && Number.isFinite(confidence) && confidence < 0.75) {
+      sheet.getCell(rowIndex + 1, columnIndex + 1).note = `低置信识别 / Low-confidence extraction: ${Math.round(confidence * 100)}%`;
+    }
+  }));
+}
+
+async function writePdfTableWorkbook(model, outputPath) {
+  const workbook = new ExcelJS.Workbook();
+  const explanation = workbook.addWorksheet("识别说明");
+  explanation.addRows([
+    ["FlyingMouse PDF → Excel 智能表格提取 / Smart table extraction"],
+    ["页码 / Page", "来源 / Source", "表格数 / Tables", "置信度 / Confidence", "警告 / Warnings"],
+    ...(model.summary || []).map((entry) => [
+      entry.pageNumber,
+      entry.source,
+      entry.tableCount,
+      Math.round((entry.confidence || 0) * 100) / 100,
+      (entry.warnings || []).join("; ")
+    ]),
+    [],
+    ["提示 / Note", "扫描件、复杂表头和合并单元格可能需要人工复核；低置信单元格带有批注。 / Scans, complex headers, and merged cells may require review; low-confidence cells include notes."],
+    ...(model.warnings || []).map((warning) => ["Warning", warning])
+  ]);
+  explanation.getRow(1).font = { bold: true, size: 14 };
+  explanation.getRow(2).font = { bold: true };
+  applyColumnWidths(explanation, explanation.getSheetValues().slice(1));
+
+  for (const item of model.sheets || []) {
+    const rows = item.rows?.length ? item.rows : [[""]];
+    const sheet = workbook.addWorksheet(sheetName(item.name));
+    sheet.addRows(rows);
+    for (const merge of item.merges || []) {
+      sheet.mergeCells(merge.startRow + 1, merge.startCol + 1, merge.endRow + 1, merge.endCol + 1);
+    }
+    addPdfTableNotes(sheet, rows, item.cellConfidence);
+    applyColumnWidths(sheet, rows);
+  }
+  await workbook.xlsx.writeFile(outputPath);
+}
+
 async function convertPdf(inputPath, outputPath, target) {
   if (target === "pdf") {
     await splitPdfToZip(inputPath, outputPath);
@@ -1119,6 +1301,11 @@ async function convertPdf(inputPath, outputPath, target) {
 
   if (pdfImageTargets.includes(target)) {
     await convertPdfPagesToImagesZip(inputPath, outputPath, target);
+    return;
+  }
+
+  if (target === "xlsx") {
+    await writePdfTableWorkbook(await extractComplexPdfTableModel(inputPath), outputPath);
     return;
   }
 
@@ -1131,18 +1318,6 @@ async function convertPdf(inputPath, outputPath, target) {
       return;
     }
     throw new Error("这个 PDF 没有可提取的文字表格，可能是扫描版图片 PDF。扫描版需要 OCR 后才能转 Excel。");
-  }
-
-  if (target === "xlsx") {
-    const workbook = new ExcelJS.Workbook();
-    for (const page of pages) {
-      const rows = page.rows.length ? page.rows : [[""]];
-      const sheet = workbook.addWorksheet(sheetName(page.name));
-      sheet.addRows(rows);
-      applyColumnWidths(sheet, rows);
-    }
-    await workbook.xlsx.writeFile(outputPath);
-    return;
   }
 
   if (target === "txt") {
@@ -1179,6 +1354,7 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
 
 async function splitPdfToZip(inputPath, outputPath) {
   const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
+  assertPdfPages(src.getPageCount());
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
   try {
     const entries = [];
@@ -1201,8 +1377,11 @@ async function splitPdfToZip(inputPath, outputPath) {
 
 async function mergePdfFiles(pdfFiles, outputPath) {
   const merged = await PDFDocument.create();
+  let totalPages = 0;
   for (const file of pdfFiles) {
     const src = await PDFDocument.load(await fsp.readFile(file.inputPath), { ignoreEncryption: true });
+    totalPages += src.getPageCount();
+    assertPdfPages(totalPages);
     const pages = await merged.copyPages(src, src.getPageIndices());
     pages.forEach((page) => merged.addPage(page));
   }
@@ -1213,27 +1392,30 @@ async function mergePdfFiles(pdfFiles, outputPath) {
   await fsp.writeFile(outputPath, bytes);
 }
 
-async function renderPdfPages(inputPath, target = "png", dpi = 150) {
+async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = false } = {}) {
+  const sourcePdf = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
+  assertPdfPages(sourcePdf.getPageCount(), { ocr });
   if (!(await commandExists(PDFTOPPM_PATH, ["-v"]))) {
     throw new Error("PDF 转图片引擎未启用。请确认安装包内置的 Poppler 文件完整。");
   }
 
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-pages-"));
-  const prefix = path.join(tempDir, "page");
-  const formatArg = target === "jpg" ? "-jpeg" : "-png";
-  await run(PDFTOPPM_PATH, [formatArg, "-r", String(dpi), inputPath, prefix], { timeout: 1000 * 60 * 20 });
-  const ext = target === "jpg" ? ".jpg" : ".png";
-  const files = (await fsp.readdir(tempDir))
-    .filter((file) => file.toLowerCase().endsWith(ext))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-    .map((file) => path.join(tempDir, file));
+  try {
+    const prefix = path.join(tempDir, "page");
+    const formatArg = target === "jpg" ? "-jpeg" : "-png";
+    await run(PDFTOPPM_PATH, [formatArg, "-cropbox", "-r", String(dpi), inputPath, prefix], { timeout: 1000 * 60 * 20 });
+    const ext = target === "jpg" ? ".jpg" : ".png";
+    const files = (await fsp.readdir(tempDir))
+      .filter((file) => file.toLowerCase().endsWith(ext))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((file) => path.join(tempDir, file));
 
-  if (!files.length) {
+    if (!files.length) throw new Error("PDF 转图片失败，未生成任何页面图片。");
+    return { tempDir, files };
+  } catch (error) {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    throw new Error("PDF 转图片失败，未生成任何页面图片。");
+    throw error;
   }
-
-  return { tempDir, files };
 }
 
 async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
@@ -1256,7 +1438,7 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
     throw new Error("OCR 引擎未启用。请确认安装包内置的 Tesseract 语言文件完整。");
   }
 
-  const rendered = await renderPdfPages(inputPath, "png", 300);
+  const rendered = await renderPdfPages(inputPath, "png", 300, { ocr: true });
   let worker = null;
   try {
     worker = await createOcrWorker();
@@ -1396,11 +1578,27 @@ app.use((_req, res, next) => {
 app.use(express.static(path.join(ROOT, "public")));
 app.use(express.json());
 
+function resourceErrorPayload(error) {
+  return {
+    error: error.message,
+    errorCode: error.errorCode,
+    messages: error.messages,
+    details: error.details
+  };
+}
+
+function sendResourceError(res, error) {
+  if (!(error instanceof ResourceLimitError)) return false;
+  res.status(413).json(resourceErrorPayload(error));
+  return true;
+}
+
 app.get("/api/capabilities", async (_req, res) => {
   const tools = await getTools();
   res.json({
     tools,
     maxUploadBytes: MAX_UPLOAD_BYTES,
+    limits: LIMITS,
     groups: {
       image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])] },
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
@@ -1429,6 +1627,14 @@ app.post("/api/targets", async (req, res) => {
 
 app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
   const files = req.files || [];
+
+  try {
+    assertBatchBytes(files);
+  } catch (error) {
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    if (sendResourceError(res, error)) return;
+    throw error;
+  }
 
   if (!files.length) {
     res.status(400).json({ error: "请先选择要合并为 PDF 的图片。" });
@@ -1473,12 +1679,20 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     logger.error(`Images-to-PDF failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    res.status(500).json({ error: error.message || "图片合并 PDF 失败。" });
+    if (!sendResourceError(res, error)) res.status(500).json({ error: error.message || "图片合并 PDF 失败。" });
   }
 });
 
 app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
   const files = req.files || [];
+
+  try {
+    assertBatchBytes(files);
+  } catch (error) {
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    if (sendResourceError(res, error)) return;
+    throw error;
+  }
 
   if (!files.length) {
     res.status(400).json({ error: "请先选择要合并的 PDF 文件。" });
@@ -1517,7 +1731,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
     logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    res.status(500).json({ error: error.message || "合并 PDF 失败。" });
+    if (!sendResourceError(res, error)) res.status(500).json({ error: error.message || "合并 PDF 失败。" });
   }
 });
 
@@ -1618,13 +1832,14 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     res.json(payload);
   } catch (error) {
     const isClientConversionError = error?.code === "CSV_PARSE_FAILED";
-    if (isClientConversionError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
+    const isResourceLimitError = error instanceof ResourceLimitError;
+    if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
     else logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    const payload = { error: error.message || "转换失败。" };
+    const payload = isResourceLimitError ? resourceErrorPayload(error) : { error: error.message || "转换失败。" };
     if (error?.code) payload.errorCode = error.code;
-    res.status(isClientConversionError ? 422 : 500).json(payload);
+    res.status(isResourceLimitError ? 413 : (isClientConversionError ? 422 : 500)).json(payload);
   }
 });
 

@@ -20,7 +20,10 @@ test("converts PDF.js transforms to top-left words for normal and rotated viewpo
 });
 
 test("normalizes Tesseract blocks, paragraphs, lines and words without duplicates", () => {
-  const leafA = { text: "A", confidence: 91, bbox: { x0: 2, y0: 3, x1: 12, y1: 13 } };
+  const leafA = {
+    text: "A", confidence: 91, bbox: { x0: 2, y0: 3, x1: 12, y1: 13 },
+    symbols: [{ text: "A", confidence: 99, bbox: { x0: 2, y0: 3, x1: 12, y1: 13 } }]
+  };
   const leafB = { text: "B", confidence: 0.42, bbox: { x0: 20, y0: 3, x1: 30, y1: 13 } };
   const result = { data: {
     blocks: [{
@@ -47,9 +50,26 @@ test("detects long horizontal and vertical rules and merges thick adjacent pixel
   for (let y = 1; y <= 12; y += 1) { dark(7, y); dark(8, y); }
   const lines = detectTableLinesFromRaw({ data, width, height, channels: 1, minLengthRatio: 0.6 });
   assert.deepEqual(lines, [
-    { x1: 2, y1: 3.5, x2: 13, y2: 3.5 },
-    { x1: 7.5, y1: 1, x2: 7.5, y2: 12 }
+    { x1: 2, y1: 3.5, x2: 13, y2: 3.5, thickness: 2 },
+    { x1: 7.5, y1: 1, x2: 7.5, y2: 12, thickness: 2 }
   ]);
+});
+
+test("consumes PDF pages from an async iterable one page at a time", async () => {
+  let yielded = 0;
+  async function* pages() {
+    yielded += 1;
+    yield { pageNumber: 1, width: 10, height: 10, textContent: { items: [] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
+    yielded += 1;
+    yield { pageNumber: 2, width: 10, height: 10, textContent: { items: [] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
+  }
+  const seen = [];
+  const model = await buildPdfTableWorkbook(pages(), {
+    detectTablesOnPage: (page) => { seen.push({ page: page.pageNumber, yielded }); return { ...page, tables: [], rawRows: [], warnings: [] }; },
+    buildWorkbookModel: (detected) => detected
+  });
+  assert.deepEqual(seen, [{ page: 1, yielded: 1 }, { page: 2, yielded: 2 }]);
+  assert.equal(model.length, 2);
 });
 
 test("composes page extraction, OCR fallback, line detection and workbook building with injected dependencies", async () => {
@@ -75,4 +95,19 @@ test("composes page extraction, OCR fallback, line detection and workbook buildi
   assert.deepEqual(calls[0].lines, [{ x1: 0, y1: 1, x2: 9, y2: 1 }]);
   assert.equal(calls[1].source, "ocr");
   assert.equal(calls[1].words[0].text, "OCR2");
+});
+
+test("uses OCR when a scanned page contains only ineffective embedded noise text", async () => {
+  let detected;
+  await buildPdfTableWorkbook([{
+    pageNumber: 1, width: 100, height: 80,
+    textContent: { items: [{ str: ".", transform: [1, 0, 0, 8, 4, 20], width: 2, height: 8 }] },
+    viewport: { transform: [1, 0, 0, -1, 0, 80], scale: 1, rotation: 0 }
+  }], {
+    detectTablesOnPage: (page) => { detected = page; return { ...page, tables: [], rawRows: [], warnings: [] }; },
+    buildWorkbookModel: (pages) => pages,
+    ocrPage: async () => ({ data: { words: [{ text: "Mouse", confidence: 90, bbox: { x0: 1, y0: 2, x1: 20, y1: 12 } }] } })
+  });
+  assert.equal(detected.source, "ocr");
+  assert.equal(detected.words[0].text, "Mouse");
 });

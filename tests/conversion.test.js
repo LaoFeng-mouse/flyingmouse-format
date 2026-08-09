@@ -7,6 +7,7 @@ const os = require("os");
 const path = require("path");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
+const { PDFDocument, StandardFonts } = require("pdf-lib");
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
@@ -39,12 +40,33 @@ async function createTextImage(filePath, text = "HELLO 123") {
   await sharp(Buffer.from(svg)).png().toFile(filePath);
 }
 
+async function createScannedTableImage(filePath) {
+  const svg = `<svg width="1600" height="800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100%" height="100%" fill="white"/>
+    <g stroke="black" stroke-width="6">
+      <path d="M80 80H1520M80 300H1520M80 520H1520M80 740H1520"/>
+      <path d="M80 80V740M800 80V740M1520 80V740"/>
+    </g>
+    <g font-family="Arial" font-size="84" fill="black">
+      <text x="150" y="225">Item</text><text x="920" y="225">Qty</text>
+      <text x="150" y="445">Apple</text><text x="920" y="445">2</text>
+      <text x="150" y="665">Banana</text><text x="920" y="665">3</text>
+    </g>
+  </svg>`;
+  await sharp(Buffer.from(svg)).png().toFile(filePath);
+}
+
 function pdfObject(text) {
   return Buffer.from(text, "latin1");
 }
 
 async function createTextPdf(filePath) {
-  const stream = "BT\n/F1 18 Tf\n40 110 Td\n(Quote Item Qty Price) Tj\n0 -26 Td\n(Apple 2 3.50) Tj\nET\n";
+  const stream = [
+    "BT", "/F1 18 Tf",
+    "1 0 0 1 20 118 Tm (Item) Tj", "1 0 0 1 105 118 Tm (Qty) Tj", "1 0 0 1 170 118 Tm (Price) Tj",
+    "1 0 0 1 20 82 Tm (Apple) Tj", "1 0 0 1 105 82 Tm (2) Tj", "1 0 0 1 170 82 Tm (3.50) Tj",
+    "ET", ""
+  ].join("\n");
   const objects = [
     "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
     "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
@@ -66,6 +88,20 @@ async function createTextPdf(filePath) {
   }
   const trailer = `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${body.length}\n%%EOF\n`;
   await fsp.writeFile(filePath, Buffer.concat([body, pdfObject(xref + trailer)]));
+}
+
+async function createCroppedTablePdf(filePath) {
+  const document = await PDFDocument.create();
+  const page = document.addPage([400, 300]);
+  page.setCropBox(50, 50, 300, 200);
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const rows = [["Name", "Value"], ["Mouse", "7"]];
+  rows.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    page.drawText(value, { x: 70 + columnIndex * 130, y: 205 - rowIndex * 70, size: 22, font });
+  }));
+  [60, 180, 310].forEach((x) => page.drawLine({ start: { x, y: 80 }, end: { x, y: 240 }, thickness: 2 }));
+  [80, 160, 240].forEach((y) => page.drawLine({ start: { x: 60, y }, end: { x: 310, y }, thickness: 2 }));
+  await fsp.writeFile(filePath, await document.save());
 }
 
 async function uploadConvert(filePath, fileName, targetFormat, mimeType = "application/octet-stream") {
@@ -298,13 +334,64 @@ test("PDF table extraction to XLSX keeps rows and cells", async () => {
   const ExcelJS = require("exceljs");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(outputPath);
-  const sheet = workbook.worksheets[0];
-  assert.ok(sheet, "xlsx 至少有一个工作表");
-  const rows = [];
-  sheet.eachRow((row) => rows.push(row.values.slice(1)));
-  const joined = rows.map((row) => row.join(" ")).join("\n");
-  assert.match(joined, /Quote/);
-  assert.match(joined, /Apple/);
+  assert.ok(workbook.getWorksheet("识别说明"), "xlsx 必须包含识别说明页");
+  const sheet = workbook.getWorksheet("P001-T01");
+  assert.ok(sheet, "xlsx 必须包含第一页第一张表");
+  const expected = [["Item", "Qty", "Price"], ["Apple", "2", "3.50"]];
+  let matches = 0;
+  expected.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    if (String(sheet.getCell(rowIndex + 1, columnIndex + 1).value || "").trim() === value) matches += 1;
+  }));
+  assert.ok(matches / expected.flat().length >= 0.95, `electronic PDF cell accuracy ${matches}/${expected.flat().length}`);
+});
+
+test("cropped PDF table keeps PDF.js and Poppler coordinates aligned", async () => {
+  const sourcePath = path.join(scratchRoot, "cropped-table.pdf");
+  await createCroppedTablePdf(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "cropped-table.pdf", "xlsx", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "cropped-table.xlsx");
+  const ExcelJS = require("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(outputPath);
+  const sheet = workbook.getWorksheet("P001-T01");
+  assert.ok(sheet);
+  assert.deepStrictEqual([
+    [String(sheet.getCell(1, 1).value), String(sheet.getCell(1, 2).value)],
+    [String(sheet.getCell(2, 1).value), String(sheet.getCell(2, 2).value)]
+  ], [["Name", "Value"], ["Mouse", "7"]]);
+});
+
+test("scanned PDF table extraction uses OCR and preserves table values", async () => {
+  const imagePath = path.join(scratchRoot, "scanned-table.png");
+  await createScannedTableImage(imagePath);
+  const imageToPdf = await uploadConvert(imagePath, "scanned-table.png", "pdf", "image/png");
+  assert.strictEqual(imageToPdf.response.status, 200, imageToPdf.body.error);
+  const pdfPath = await downloadResult(imageToPdf.body, "scanned-table.pdf");
+
+  const { response, body } = await uploadConvert(pdfPath, "scanned-table.pdf", "xlsx", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "scanned-table.xlsx");
+  const ExcelJS = require("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(outputPath);
+  assert.ok(workbook.getWorksheet("识别说明"));
+  assert.equal(workbook.worksheets.filter((sheet) => /^P001-T/.test(sheet.name)).length, 1);
+  const tableSheet = workbook.worksheets.find((sheet) => /^P001-T/.test(sheet.name));
+  assert.ok(tableSheet, "scanned PDF should produce a detected table sheet");
+  const expected = [["Item", "Qty"], ["Apple", "2"], ["Banana", "3"]];
+  let matches = 0;
+  expected.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
+    const actual = String(tableSheet.getCell(rowIndex + 1, columnIndex + 1).value || "").trim();
+    if (actual.toLocaleLowerCase() === value.toLocaleLowerCase()) matches += 1;
+  }));
+  assert.ok(matches / expected.flat().length >= 0.85, `OCR cell accuracy ${matches}/${expected.flat().length}`);
+  const explanationValues = [];
+  workbook.getWorksheet("识别说明").eachRow((row) => explanationValues.push(...row.values.slice(1).map(String)));
+  assert.match(explanationValues.join(" "), /ocr/i);
+  let hasLowConfidenceNote = false;
+  tableSheet.eachRow((row) => row.eachCell((cell) => { if (cell.note) hasLowConfidenceNote = true; }));
+  assert.ok(hasLowConfidenceNote, "low-confidence OCR cells should retain an Excel note");
 });
 
 test("audio files must not offer video container targets", async () => {

@@ -1,0 +1,14 @@
+{
+  "version": "ci-engines-v1",
+  "repository": "LaoFeng-mouse/flyingmouse-format",
+  "releaseTag": "ci-engines-v1",
+  "assetName": "ci-engines-v1.tar.zst",
+  "sha256": "823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a",
+  "requiredFiles": [
+    "ffmpeg/ffmpeg.exe",
+    "poppler/Library/bin/pdftoppm.exe",
+    "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
+    "tessdata/eng.traineddata.gz",
+    "tessdata/chi_sim.traineddata.gz"
+  ]
+}

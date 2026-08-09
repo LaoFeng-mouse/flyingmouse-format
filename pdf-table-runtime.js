@@ -85,7 +85,7 @@ function normalizeOcrResult(result) {
       value.forEach(visit);
       return;
     }
-    const childKeys = ["blocks", "paragraphs", "lines", "words", "symbols"];
+    const childKeys = ["blocks", "paragraphs", "lines", "words"];
     const populatedChildren = childKeys.filter((key) => Array.isArray(value[key]) && value[key].length);
     if (populatedChildren.length) {
       populatedChildren.forEach((key) => visit(value[key]));
@@ -113,6 +113,12 @@ function normalizeOcrResult(result) {
     seenWords.add(key);
     return [{ text, x, y, width, height, confidence: normalizeConfidence(entry.confidence) }];
   }).sort((left, right) => left.y - right.y || left.x - right.x);
+}
+
+function hasEffectiveText(words) {
+  const meaningful = words.filter((word) => /[\p{L}\p{N}]/u.test(word.text));
+  const characterCount = meaningful.reduce((sum, word) => sum + word.text.replace(/\s/g, "").length, 0);
+  return meaningful.length >= 2 || characterCount >= 3;
 }
 
 function pixelIntensity(data, offset, channels) {
@@ -157,7 +163,8 @@ function mergeParallelRuns(candidates) {
   return groups.map((group) => ({
     axis: group.members.reduce((sum, entry) => sum + entry.axis, 0) / group.members.length,
     start: group.start,
-    end: group.end
+    end: group.end,
+    thickness: group.members[group.members.length - 1].axis - group.members[0].axis + 1
   }));
 }
 
@@ -184,8 +191,8 @@ function detectTableLinesFromRaw(options) {
     }
   }
   return [
-    ...mergeParallelRuns(horizontal).map((line) => ({ x1: line.start, y1: cleanNumber(line.axis), x2: line.end, y2: cleanNumber(line.axis) })),
-    ...mergeParallelRuns(vertical).map((line) => ({ x1: cleanNumber(line.axis), y1: line.start, x2: cleanNumber(line.axis), y2: line.end }))
+    ...mergeParallelRuns(horizontal).map((line) => ({ x1: line.start, y1: cleanNumber(line.axis), x2: line.end, y2: cleanNumber(line.axis), thickness: line.thickness })),
+    ...mergeParallelRuns(vertical).map((line) => ({ x1: cleanNumber(line.axis), y1: line.start, x2: cleanNumber(line.axis), y2: line.end, thickness: line.thickness }))
   ];
 }
 
@@ -199,15 +206,20 @@ async function buildPdfTableWorkbook(pages, dependencies) {
   const detectLines = injected.detectLines || detectTableLinesFromRaw;
   const renderPage = injected.renderPage;
   const ocrPage = injected.ocrPage;
-  if (!Array.isArray(pages)) throw new TypeError("pages must be an array");
+  if (!pages || (!pages[Symbol.iterator] && !pages[Symbol.asyncIterator])) {
+    throw new TypeError("pages must be iterable");
+  }
 
   const detectedPages = [];
-  for (const page of pages) {
+  for await (const page of pages) {
     let words = pdfTextContentToWords({ textContent: page.textContent, viewport: page.viewport });
     let source = "pdf-text";
-    if (!words.length && ocrPage) {
-      words = normalizeOcrResult(await ocrPage(page));
-      source = "ocr";
+    if (!hasEffectiveText(words) && ocrPage) {
+      const ocrWords = normalizeOcrResult(await ocrPage(page));
+      if (ocrWords.length) {
+        words = ocrWords;
+        source = "ocr";
+      }
     }
     const raw = page.raw || (renderPage ? await renderPage(page) : null);
     const lines = raw ? await detectLines(raw) : [];
