@@ -57,13 +57,14 @@
 
 ### Win7 最终锁定构建验证（2026-08-09）
 
-- 构建主机：官方 Node.js `22.17.1`；归档 SHA-256 `b1fdb5635ba860f6bf71474f2ca882459a582de49b1d869451e3ad188e3943eb`。脚本允许 Node.js 18–22、绑定子进程到当前 Node，并在 Node.js 26 下于 staging 变更前 fail closed。
+- 构建主机：官方 Node.js `22.17.1`，归档 `node-v22.17.1-win-x64.zip`，SHA-256 `b1fdb5635ba860f6bf71474f2ca882459a582de49b1d869451e3ad188e3943eb`。脚本允许 Node.js 18–22、绑定子进程到当前 Node，并在 Node.js 26 下于 staging 变更前 fail closed。
 - 锁定构建管线：专用 `win7-package-lock.json` 经 `npm ci` 重建 staging；npm 前后校验 staging manifest/lockfile 原始字节和 SHA-256；Unicode 路径复制通过；本地 builder 与 `extraResources` 通过 canonical/reparse 边界检查。
 - 主线自动化：128/128 通过；根 `npm audit --omit=dev` 为 0。
 - Node.js 22 锁定 staging：83/83 通过，无跳过、无失败；生产依赖审计为 2 个 high（PDF.js、Sharp）。
 - 真实 NCM/AV3A：用户提供的 3 个样本均完成 AV3A → WAV → MP3，ID3 可读，FFmpeg 退出码为 0，源文件 SHA-256 均未改变。
 - ASAR/资源：ASAR 内 `server.js` 与源码 SHA-256 均为 `10bf9d3a01a6595265811abf3cdec545980c306281e55f11067aa1414baee8f8`；AV3A/AVS3、FFmpeg、LibreOffice、Poppler、tessdata 与 Tesseract core 资源齐全。
-- 当前 Windows 冒烟：Microsoft Windows 11 家庭版 中文版，x64，Version `10.0.26200` / Build `26200`；解包 EXE 的 4 个精确同路径 Electron 进程均响应，测试后残留为 0。
+- 成品内层与图标：使用 7za 从最终安装包提取内层 EXE，SHA-256 仍为 `080bcf023e624b78008724bcb6a16a7dc0d8876da0b4b0f9d85318e190418faa`；System.Drawing 导出的 32×32 内嵌图标已目视确认为鼠鼠，与 `build/icon.png` 同尺寸 premultiplied RGBA 像素 MAE 为 0（4,096 字节）。
+- 当前 Windows 冒烟：Microsoft Windows 11 家庭版 中文版，x64，Version `10.0.26200` / Build `26200`；解包 EXE 持续运行 12 秒，4 个精确同路径 Electron 进程均响应，测试后残留为 0。
 - Win7 设备验收：尚未在真实 Windows 7 SP1 x64 机器运行，仍为待验收，不得写成已完成。
 
 ## 仍需注意
