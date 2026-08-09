@@ -125,6 +125,8 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   assert.equal(stagedPackage.build.appx, undefined);
   assert.doesNotMatch(stagedPackage.scripts.test, /win7-build-script/);
   assert.doesNotMatch(stagedPackage.scripts["test:ci"], /win7-build-script/);
+  assert.doesNotMatch(stagedPackage.scripts.test, /tests\/conversion\.test|ci-engine-release/);
+  assert.doesNotMatch(stagedPackage.scripts["test:ci"], /tests\/conversion\.test|ci-engine-release/);
 });
 
 test("CLI rejects unknown arguments before preparing staging", () => {

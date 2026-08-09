@@ -40,6 +40,8 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
   assert.equal(profile.build.appx, undefined);
   assert.doesNotMatch(profile.scripts.test, /win7-build-profile|win7-build-script|pe-metadata/);
   assert.doesNotMatch(profile.scripts["test:ci"], /win7-build-profile|win7-build-script|pe-metadata/);
+  assert.doesNotMatch(profile.scripts.test, /tests\/conversion\.test|ci-engine-release/);
+  assert.doesNotMatch(profile.scripts["test:ci"], /tests\/conversion\.test|ci-engine-release/);
   assert.equal(profile.scripts["dist:win7"], undefined);
   assert.ok(stagingEntries.includes("public"));
   assert.equal(JSON.stringify(input), original);
@@ -96,6 +98,7 @@ test("stage source entries contain runtime source and assets but exclude node_mo
   for (const entry of [
     "build",
     "tests",
+    "win7-build-profile.js",
     "public",
     "av3a-format.js",
     "settings-store.js",
