@@ -82,6 +82,10 @@ test("malformed image, batch and page metadata fail closed", () => {
     (error) => error instanceof ResourceLimitError && error.errorCode === "IMAGE_METADATA_INVALID"
   );
   assert.throws(
+    () => assertImageMetadata({ width: 10_000, height: 50_000, pageHeight: 1000, pages: 6 }),
+    (error) => error instanceof ResourceLimitError && error.errorCode === "IMAGE_METADATA_INVALID"
+  );
+  assert.throws(
     () => assertBatchBytes([{ size: "2048" }]),
     (error) => error instanceof ResourceLimitError && error.errorCode === "BATCH_FILE_SIZE_INVALID"
   );

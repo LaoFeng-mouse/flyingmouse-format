@@ -1617,10 +1617,14 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     logger.info(`Convert succeeded: "${originalName}" -> ${downloadName} (${requestedTarget})`);
     res.json(payload);
   } catch (error) {
-    logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
+    const isClientConversionError = error?.code === "CSV_PARSE_FAILED";
+    if (isClientConversionError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
+    else logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    res.status(500).json({ error: error.message || "转换失败。" });
+    const payload = { error: error.message || "转换失败。" };
+    if (error?.code) payload.errorCode = error.code;
+    res.status(isClientConversionError ? 422 : 500).json(payload);
   }
 });
 

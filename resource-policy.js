@@ -69,16 +69,27 @@ function imageDecodedPixels(metadata) {
   const height = positiveInteger(metadata?.height);
   if (!width || !height) throw new ResourceLimitError("IMAGE_METADATA_INVALID");
   const pages = positiveInteger(metadata?.pages) || 1;
-  const frameHeight = positiveInteger(metadata?.pageHeight) || Math.ceil(height / pages);
+  const declaredPageHeight = metadata?.pageHeight == null ? 0 : positiveInteger(metadata.pageHeight);
+  if (metadata?.pageHeight != null && !declaredPageHeight) {
+    throw new ResourceLimitError("IMAGE_METADATA_INVALID");
+  }
+  if (height % pages !== 0) throw new ResourceLimitError("IMAGE_METADATA_INVALID");
+  const frameHeight = declaredPageHeight || (height / pages);
+  if (frameHeight * pages !== height) throw new ResourceLimitError("IMAGE_METADATA_INVALID");
   return width * frameHeight * pages;
 }
 
 function assertImageMetadata(metadata) {
   const width = positiveInteger(metadata?.width);
-  const height = positiveInteger(metadata?.pageHeight) || positiveInteger(metadata?.height);
-  if (!width || !height) throw new ResourceLimitError("IMAGE_METADATA_INVALID");
-  if (width > LIMITS.maxImageDimension || height > LIMITS.maxImageDimension) {
-    throw new ResourceLimitError("IMAGE_DIMENSION_EXCEEDED", { width, height });
+  const totalHeight = positiveInteger(metadata?.height);
+  if (!width || !totalHeight) throw new ResourceLimitError("IMAGE_METADATA_INVALID");
+  const pages = positiveInteger(metadata?.pages) || 1;
+  const frameHeight = positiveInteger(metadata?.pageHeight) || (totalHeight % pages === 0 ? totalHeight / pages : 0);
+  if (!frameHeight || frameHeight * pages !== totalHeight) {
+    throw new ResourceLimitError("IMAGE_METADATA_INVALID");
+  }
+  if (width > LIMITS.maxImageDimension || frameHeight > LIMITS.maxImageDimension) {
+    throw new ResourceLimitError("IMAGE_DIMENSION_EXCEEDED", { width, height: frameHeight });
   }
   const pixels = imageDecodedPixels(metadata);
   if (pixels > LIMITS.maxImagePixels) {
