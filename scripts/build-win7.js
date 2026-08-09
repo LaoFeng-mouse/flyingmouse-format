@@ -132,6 +132,9 @@ function assertNoReparsePoints(sourcePath, projectPaths, label) {
   if (sourceStat.isSymbolicLink()) {
     throw new Error(`${label} contains a reparse point: ${sourcePath}`);
   }
+  if (!sourceStat.isDirectory() && !sourceStat.isFile()) {
+    throw new Error(`Unsupported staging source type: ${sourcePath}`);
+  }
   const canonicalSource = fs.realpathSync.native(sourcePath);
   if (
     !pathsEqual(canonicalSource, projectPaths.canonicalRoot) &&
@@ -144,6 +147,27 @@ function assertNoReparsePoints(sourcePath, projectPaths, label) {
       assertNoReparsePoints(path.join(sourcePath, child), projectPaths, label);
     }
   }
+}
+
+function copyStagingTree(source, destination, label) {
+  const sourceStat = fs.lstatSync(source);
+  if (sourceStat.isSymbolicLink()) {
+    throw new Error(`${label} contains a reparse point: ${source}`);
+  }
+  if (sourceStat.isDirectory()) {
+    fs.mkdirSync(destination, { recursive: true, mode: sourceStat.mode });
+    for (const child of fs.readdirSync(source)) {
+      copyStagingTree(path.join(source, child), path.join(destination, child), label);
+    }
+    return;
+  }
+  if (sourceStat.isFile()) {
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(source, destination);
+    fs.chmodSync(destination, sourceStat.mode);
+    return;
+  }
+  throw new Error(`Unsupported staging source type: ${source}`);
 }
 
 function copyStagingEntry(entry, projectRoot, stagePath) {
@@ -161,16 +185,9 @@ function copyStagingEntry(entry, projectRoot, stagePath) {
   if (!fs.existsSync(source)) throw new Error(`Staging source does not exist: ${source}`);
 
   assertExistingAncestorInsideRoot(source, projectPaths, `Staging source ${entry}`);
-  assertNoReparsePoints(source, projectPaths, `Staging source ${entry}`);
-  const sourceStat = fs.lstatSync(source);
-  if (sourceStat.isDirectory()) {
-    fs.cpSync(source, destination, { recursive: true, dereference: false });
-  } else if (sourceStat.isFile()) {
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.copyFileSync(source, destination);
-  } else {
-    throw new Error(`Unsupported staging source type: ${source}`);
-  }
+  const label = `Staging source ${entry}`;
+  assertNoReparsePoints(source, projectPaths, label);
+  copyStagingTree(source, destination, label);
 }
 
 function prepareWin7Stage(projectRoot = PROJECT_ROOT, options = {}) {
