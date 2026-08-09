@@ -200,6 +200,17 @@ test("build commands use only the installed local builder and stop after a faile
   calls.length = 0;
   assert.throws(
     () =>
+      runBuildCommands(temporaryStage, (...args) => {
+        calls.push(args);
+        return { status: 0 };
+      }, { ...buildOptions, packageJson: { ...stagedPackage, unexpected: true } }),
+    /does not match the expected derived manifest/i
+  );
+  assert.equal(calls.length, 0, "npm ran with a manifest different from the expected profile");
+
+  calls.length = 0;
+  assert.throws(
+    () =>
       runBuildCommands(
         temporaryStage,
         (command, args, options) => {
@@ -228,8 +239,6 @@ test("build commands use only the installed local builder and stop after a faile
         temporaryStage,
         "node_modules",
         "electron-builder",
-        "out",
-        "cli",
         "cli.js"
       );
       fs.mkdirSync(path.dirname(localBuilderCli), { recursive: true });
@@ -246,7 +255,7 @@ test("build commands use only the installed local builder and stop after a faile
   assert.ok(fs.statSync(expectedLocalBuilder).isFile());
   assert.equal(calls[1].command, process.execPath);
   assert.deepEqual(calls[1].args, [
-    path.join(temporaryStage, "node_modules", "electron-builder", "out", "cli", "cli.js"),
+    path.join(temporaryStage, "node_modules", "electron-builder", "cli.js"),
     "--win",
     "nsis",
     "--x64"
@@ -260,6 +269,10 @@ test("build commands use only the installed local builder and stop after a faile
       extraResources: [{ from: path.join(temporaryRoot, "bin", "missing.exe"), to: "missing.exe" }]
     }
   };
+  fs.writeFileSync(
+    path.join(temporaryStage, "package.json"),
+    JSON.stringify(missingResourcePackage)
+  );
   assert.throws(
     () =>
       runBuildCommands(
@@ -273,6 +286,164 @@ test("build commands use only the installed local builder and stop after a faile
     /extraResources\[0\].*does not exist/i
   );
   assert.equal(calls.length, 1, "electron-builder ran before extraResources validation");
+});
+
+test("build commands bind validation to unchanged staged manifest and lock bytes", (t) => {
+  const { runBuildCommands } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-stage-snapshot-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const npmCliPath = path.join(temporaryRoot, "npm-cli.js");
+  const packageJson = {
+    name: "flyingmouse-format-win7",
+    version: "0.3.2",
+    dependencies: { sharp: "0.32.6" },
+    devDependencies: { electron: "22.3.27" },
+    build: { extraResources: [] }
+  };
+  const lockfile = {
+    name: packageJson.name,
+    version: packageJson.version,
+    lockfileVersion: 3,
+    packages: {
+      "": {
+        name: packageJson.name,
+        version: packageJson.version,
+        dependencies: packageJson.dependencies,
+        devDependencies: packageJson.devDependencies
+      }
+    }
+  };
+  fs.mkdirSync(path.join(temporaryStage, "node_modules", ".bin"), { recursive: true });
+  fs.mkdirSync(path.join(temporaryStage, "node_modules", "electron-builder"), { recursive: true });
+  fs.writeFileSync(path.join(temporaryStage, "package.json"), JSON.stringify(packageJson));
+  fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(lockfile));
+  fs.writeFileSync(npmCliPath, "npm CLI");
+  fs.writeFileSync(
+    path.join(
+      temporaryStage,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
+    ),
+    "builder shim"
+  );
+  fs.writeFileSync(
+    path.join(temporaryStage, "node_modules", "electron-builder", "cli.js"),
+    "builder CLI"
+  );
+  const externalResource = path.join(temporaryRoot, "..", "outside-resource.exe");
+  const calls = [];
+
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (command, args, options) => {
+          calls.push({ command, args, options });
+          if (calls.length === 1) {
+            fs.writeFileSync(
+              path.join(temporaryStage, "package.json"),
+              JSON.stringify({
+                ...packageJson,
+                build: { extraResources: [{ from: externalResource, to: "outside.exe" }] }
+              })
+            );
+          }
+          return { status: 0 };
+        },
+        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+      ),
+    /package.*changed during npm ci|does not match.*expected/i
+  );
+  assert.equal(calls.length, 1, "electron-builder ran after the staged manifest changed");
+
+  fs.writeFileSync(path.join(temporaryStage, "package.json"), JSON.stringify(packageJson));
+  fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(lockfile));
+  calls.length = 0;
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (command, args, options) => {
+          calls.push({ command, args, options });
+          if (calls.length === 1) {
+            fs.writeFileSync(
+              path.join(temporaryStage, "package-lock.json"),
+              `${JSON.stringify(lockfile)}\n`
+            );
+          }
+          return { status: 0 };
+        },
+        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+      ),
+    /package lock changed during npm ci/i
+  );
+  assert.equal(calls.length, 1, "electron-builder ran after staged lock bytes changed");
+});
+
+test("build commands reject a junctioned local builder CLI before executing it", (t) => {
+  const { runBuildCommands } = require("../scripts/build-win7");
+  const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-builder-root-");
+  const externalBuilder = createTemporaryRoot(t, "flyingmouse-win7-builder-target-");
+  const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
+  const npmCliPath = path.join(temporaryRoot, "npm-cli.js");
+  const packageJson = {
+    name: "flyingmouse-format-win7",
+    version: "0.3.2",
+    dependencies: { sharp: "0.32.6" },
+    devDependencies: { electron: "22.3.27" },
+    build: { extraResources: [] }
+  };
+  const lockfile = {
+    name: packageJson.name,
+    version: packageJson.version,
+    lockfileVersion: 3,
+    packages: {
+      "": {
+        name: packageJson.name,
+        version: packageJson.version,
+        dependencies: packageJson.dependencies,
+        devDependencies: packageJson.devDependencies
+      }
+    }
+  };
+  fs.mkdirSync(path.join(temporaryStage, "node_modules", ".bin"), { recursive: true });
+  fs.writeFileSync(path.join(temporaryStage, "package.json"), JSON.stringify(packageJson));
+  fs.writeFileSync(path.join(temporaryStage, "package-lock.json"), JSON.stringify(lockfile));
+  fs.writeFileSync(npmCliPath, "npm CLI");
+  fs.writeFileSync(
+    path.join(
+      temporaryStage,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
+    ),
+    "builder shim"
+  );
+  fs.mkdirSync(path.join(externalBuilder, "out", "cli"), { recursive: true });
+  fs.writeFileSync(path.join(externalBuilder, "cli.js"), "external builder CLI");
+  fs.writeFileSync(path.join(externalBuilder, "out", "cli", "cli.js"), "external old CLI");
+  const sentinel = path.join(externalBuilder, "do-not-touch.txt");
+  fs.writeFileSync(sentinel, "external content");
+  const builderJunction = path.join(temporaryStage, "node_modules", "electron-builder");
+  if (!createJunctionOrSkip(t, externalBuilder, builderJunction)) return;
+  const calls = [];
+
+  assert.throws(
+    () =>
+      runBuildCommands(
+        temporaryStage,
+        (...args) => {
+          calls.push(args);
+          return { status: 0 };
+        },
+        { npmCliPath, projectRoot: temporaryRoot, packageJson }
+      ),
+    /builder.*reparse|reparse.*builder|builder.*canonical/i
+  );
+  assert.equal(calls.length, 1, "junctioned electron-builder CLI was executed");
+  assert.equal(fs.readFileSync(sentinel, "utf8"), "external content");
+  fs.unlinkSync(builderJunction);
 });
 
 test("Win7 lock validation fails closed before npm when the lock is missing or mismatched", (t) => {
