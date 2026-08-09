@@ -75,3 +75,22 @@ test("batch byte and PDF page budgets use separate stable errors", () => {
     (error) => error instanceof ResourceLimitError && error.errorCode === "OCR_PDF_PAGES_EXCEEDED"
   );
 });
+
+test("malformed image, batch and page metadata fail closed", () => {
+  assert.throws(
+    () => assertImageMetadata({ width: "100", height: 100 }),
+    (error) => error instanceof ResourceLimitError && error.errorCode === "IMAGE_METADATA_INVALID"
+  );
+  assert.throws(
+    () => assertBatchBytes([{ size: "2048" }]),
+    (error) => error instanceof ResourceLimitError && error.errorCode === "BATCH_FILE_SIZE_INVALID"
+  );
+  assert.throws(
+    () => assertBatchBytes([{ size: -1 }]),
+    (error) => error instanceof ResourceLimitError && error.errorCode === "BATCH_FILE_SIZE_INVALID"
+  );
+  assert.throws(
+    () => assertPdfPages(0),
+    (error) => error instanceof ResourceLimitError && error.errorCode === "PDF_PAGE_COUNT_INVALID"
+  );
+});

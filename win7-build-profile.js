@@ -11,6 +11,8 @@ const REQUIRED_RUNTIME_FILES = [
   "electron-security.js",
   "preload.js",
   "server.js",
+  "resource-policy.js",
+  "text-conversion.js",
   "logger.js",
   "settings-store.js",
   "ncm-format.js",

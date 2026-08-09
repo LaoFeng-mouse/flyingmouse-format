@@ -37,3 +37,8 @@ test("CSV parser rejects inconsistent record lengths instead of dropping data", 
     /CSV.*列数|CSV.*column/i
   );
 });
+
+test("CSV parser rejects duplicate and object-prototype header names", () => {
+  assert.throws(() => csvToJsonObjects("name,name\nfirst,second\n"), /CSV.*重复|CSV.*duplicate/i);
+  assert.throws(() => csvToJsonObjects("__proto__,value\nunsafe,1\n"), /CSV.*表头|CSV.*header/i);
+});

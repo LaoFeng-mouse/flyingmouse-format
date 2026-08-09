@@ -28,6 +28,14 @@ const MESSAGES = Object.freeze({
     zhCN: "本批文件总大小超过 2GB，请分批转换。",
     enUS: "This batch exceeds the 2 GB limit. Convert the files in smaller batches."
   },
+  BATCH_FILE_SIZE_INVALID: {
+    zhCN: "无法确认批量文件大小，已停止处理以保护系统资源。",
+    enUS: "A batch file size is invalid. Processing stopped to protect system resources."
+  },
+  PDF_PAGE_COUNT_INVALID: {
+    zhCN: "无法读取 PDF 页数，请确认 PDF 文件完整且未损坏。",
+    enUS: "The PDF page count could not be read. Make sure the PDF is valid."
+  },
   PDF_PAGES_EXCEEDED: {
     zhCN: "PDF 超过 500 页限制，请拆分后重试。",
     enUS: "The PDF exceeds the 500 page limit. Split it and try again."
@@ -53,8 +61,7 @@ class ResourceLimitError extends Error {
 }
 
 function positiveInteger(value) {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? number : 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
 function imageDecodedPixels(metadata) {
@@ -92,7 +99,14 @@ function assertImagePdfBudget(metadataList) {
 }
 
 function assertBatchBytes(files) {
-  const total = (files || []).reduce((sum, file) => sum + Math.max(0, Number(file?.size) || 0), 0);
+  let total = 0;
+  for (const file of files || []) {
+    if (typeof file?.size !== "number" || !Number.isSafeInteger(file.size) || file.size < 0) {
+      throw new ResourceLimitError("BATCH_FILE_SIZE_INVALID");
+    }
+    total += file.size;
+    if (!Number.isSafeInteger(total)) throw new ResourceLimitError("BATCH_FILE_SIZE_INVALID");
+  }
   if (total > LIMITS.maxBatchBytes) {
     throw new ResourceLimitError("BATCH_BYTES_EXCEEDED", { bytes: total });
   }
@@ -101,8 +115,9 @@ function assertBatchBytes(files) {
 
 function assertPdfPages(pageCount, { ocr = false } = {}) {
   const count = positiveInteger(pageCount);
+  if (!count) throw new ResourceLimitError("PDF_PAGE_COUNT_INVALID");
   const maximum = ocr ? LIMITS.maxOcrPdfPages : LIMITS.maxPdfPages;
-  if (!count || count > maximum) {
+  if (count > maximum) {
     throw new ResourceLimitError(ocr ? "OCR_PDF_PAGES_EXCEEDED" : "PDF_PAGES_EXCEEDED", { pages: count });
   }
   return count;
@@ -117,4 +132,3 @@ module.exports = {
   assertBatchBytes,
   assertPdfPages
 };
-
