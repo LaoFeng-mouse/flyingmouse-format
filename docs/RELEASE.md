@@ -43,7 +43,9 @@ node scripts/build-win7.js --prepare-only
 - 解包应用：`output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe`
 - 发布安装包：`dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`
 
-固定运行时为 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`。标准版继续使用根 manifest 的当前依赖。Win7 staging 内只运行本地安装的 electron-builder；构建脚本拒绝越界路径、junction 和符号链接，不得用手工复制的旧 `node_modules` 代替 staging 安装。
+固定运行时为 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`。标准版继续使用根 manifest 的当前依赖。Win7 staging 使用仓库专用 `win7-package-lock.json` 和 `npm ci`，不得用 `npm install` 或手工复制的旧 `node_modules` 代替锁定安装。
+
+构建脚本在 npm 执行前后按原始字节和 SHA-256 绑定 staging 的 `package.json` / `package-lock.json`，并再次比对实际 manifest 与预期 profile。只允许运行 staging 内经 regular-file 与 canonical containment 检查的 electron-builder；所有 `extraResources` 也必须 canonical 地位于各自允许的项目根或 staging 根内，且路径链和递归内容不得包含 junction、符号链接或其他 reparse point。
 
 检查目标 OS 字段时必须读取内层应用 EXE：
 
@@ -65,7 +67,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - 检查 EXE 的 ProductVersion 与发布版本一致。
 - 计算安装包 SHA-256 并写入交接记录和 Release。
 - 安装包当前未签名，发布说明必须保留 SmartScreen 提示。
-- Win7 兼容包还必须记录主线测试（本次基线为 119 项：117 通过、2 跳过）、staging 测试、3 个真实 NCM/AV3A 源文件不变、PE 5.2、ASAR/资源/图标、当前 Windows 12 秒冒烟，以及主线 0 漏洞和 Win7 旧依赖 2 个 high 的审计结果。PDF.js 2.16 必须保持 `isEvalSupported: false`；Sharp 0.32 的遗留漏洞无法在保留 Electron 22/Win7 的同时直接升级，Release 说明必须建议离线处理可信文件。
+- Win7 兼容包还必须记录主线测试（本次基线为 124 项：122 通过、2 跳过）、staging 运行时测试、3 个真实 NCM/AV3A 源文件不变、PE 5.2、ASAR/资源/图标、当前 Windows 12 秒冒烟，以及主线 0 漏洞和 Win7 旧依赖 2 个 high 的审计结果。PDF.js 2.16 必须保持 `isEvalSupported: false`；Sharp 0.32 的遗留漏洞无法在保留 Electron 22/Win7 的同时直接升级，Release 说明必须建议离线处理可信文件。
 - PE 5.2 和当前 Windows 冒烟不能代替真实 Windows 7 SP1 x64 设备验收；未在真实设备运行时必须明确写“待验收”。
 
 ## 桌面快捷方式
