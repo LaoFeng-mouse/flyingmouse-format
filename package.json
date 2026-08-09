@@ -11,12 +11,13 @@
     "desktop": "electron .",
     "dist": "electron-builder --win nsis",
     "dist:win7": "node scripts/build-win7.js",
-    "test": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
-    "test:ci": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
+    "test": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
+    "test:ci": "node --test tests/av3a-format.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "csv-parse": "5.6.0",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "mammoth": "^1.12.0",
