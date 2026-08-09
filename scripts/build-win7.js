@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { createHash, randomBytes } = require("node:crypto");
+const { isDeepStrictEqual } = require("node:util");
 
 const { createWin7BuildProfile } = require("../win7-build-profile");
 
@@ -243,25 +244,36 @@ function validateWin7Lockfile(lockfile, packageJson, label = "Win7 package lock"
   return lockfile;
 }
 
-function readAndValidateWin7Lockfile(lockPath, packageJson, label, projectPaths) {
-  const lockStat = fs.lstatSync(lockPath, { throwIfNoEntry: false });
-  if (!lockStat) throw new Error(`${label} is missing: ${lockPath}`);
-  if (!lockStat.isFile() || lockStat.isSymbolicLink()) {
-    throw new Error(`${label} must be a regular file, not a reparse point: ${lockPath}`);
+function hashBytes(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function readRegularJsonSnapshot(filePath, allowedPaths, label) {
+  const resolvedFile = path.resolve(filePath);
+  if (!pathIsStrictlyInside(resolvedFile, allowedPaths.resolvedRoot)) {
+    throw new Error(`${label} path escapes its allowed root: ${resolvedFile}`);
   }
-  if (projectPaths) {
-    assertNotReparsePoint(lockPath, projectPaths, label);
-    assertExistingAncestorInsideRoot(lockPath, projectPaths, label);
+  const fileStat = fs.lstatSync(resolvedFile, { throwIfNoEntry: false });
+  if (!fileStat) throw new Error(`${label} is missing: ${resolvedFile}`);
+  if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file, not a reparse point: ${resolvedFile}`);
   }
-  const bytes = fs.readFileSync(lockPath);
-  let lockfile;
+  assertNotReparsePoint(resolvedFile, allowedPaths, label);
+  assertExistingAncestorInsideRoot(resolvedFile, allowedPaths, label);
+  const bytes = fs.readFileSync(resolvedFile);
+  let value;
   try {
-    lockfile = JSON.parse(bytes.toString("utf8"));
+    value = JSON.parse(bytes.toString("utf8"));
   } catch (error) {
     throw new Error(`${label} contains invalid JSON: ${error.message}`);
   }
-  validateWin7Lockfile(lockfile, packageJson, label);
-  return { bytes, lockfile };
+  return { bytes, hash: hashBytes(bytes), value };
+}
+
+function readAndValidateWin7Lockfile(lockPath, packageJson, label, projectPaths) {
+  const snapshot = readRegularJsonSnapshot(lockPath, projectPaths, label);
+  validateWin7Lockfile(snapshot.value, packageJson, label);
+  return { ...snapshot, lockfile: snapshot.value };
 }
 
 function validateExtraResources(extraResources, projectRoot, stagePath) {
@@ -291,23 +303,30 @@ function validateExtraResources(extraResources, projectRoot, stagePath) {
   });
 }
 
-function readStagePackageJson(stagePath, stagePaths) {
+function readStagePackageSnapshot(stagePath, stagePaths) {
   const packagePath = path.join(stagePath, "package.json");
-  if (!pathIsStrictlyInside(packagePath, stagePath)) {
-    throw new Error(`Staged Win7 package path escapes staging: ${packagePath}`);
+  return readRegularJsonSnapshot(packagePath, stagePaths, "Staged Win7 package");
+}
+
+function assertSnapshotUnchanged(before, after, label) {
+  if (before.hash !== after.hash || !before.bytes.equals(after.bytes)) {
+    throw new Error(`${label} changed during npm ci.`);
   }
-  const packageStat = fs.lstatSync(packagePath, { throwIfNoEntry: false });
-  if (!packageStat) throw new Error(`Staged Win7 package is missing: ${packagePath}`);
-  if (!packageStat.isFile() || packageStat.isSymbolicLink()) {
-    throw new Error(`Staged Win7 package must be a regular file, not a reparse point: ${packagePath}`);
+}
+
+function assertRegularFileInside(filePath, allowedPaths, label) {
+  const resolvedFile = path.resolve(filePath);
+  if (!pathIsStrictlyInside(resolvedFile, allowedPaths.resolvedRoot)) {
+    throw new Error(`${label} path escapes staging: ${resolvedFile}`);
   }
-  assertNotReparsePoint(packagePath, stagePaths, "Staged Win7 package");
-  assertExistingAncestorInsideRoot(packagePath, stagePaths, "Staged Win7 package");
-  try {
-    return JSON.parse(fs.readFileSync(packagePath, "utf8"));
-  } catch (error) {
-    throw new Error(`Staged Win7 package contains invalid JSON: ${error.message}`);
+  const fileStat = fs.lstatSync(resolvedFile, { throwIfNoEntry: false });
+  if (!fileStat) throw new Error(`${label} was not installed: ${resolvedFile}`);
+  if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+    throw new Error(`${label} must be a regular file, not a reparse point: ${resolvedFile}`);
   }
+  assertNotReparsePoint(resolvedFile, allowedPaths, label);
+  assertExistingAncestorInsideRoot(resolvedFile, allowedPaths, label);
+  return resolvedFile;
 }
 
 function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
@@ -317,15 +336,20 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
     resolvedRoot: safeStagePath,
     canonicalRoot: fs.realpathSync.native(safeStagePath)
   };
-  const stagedPackageJson = readStagePackageJson(safeStagePath, stagePaths);
-  const packageJson = options.packageJson || stagedPackageJson;
+  const packageBefore = readStagePackageSnapshot(safeStagePath, stagePaths);
+  const expectedPackageJson = JSON.parse(
+    JSON.stringify(options.packageJson || packageBefore.value)
+  );
+  if (!isDeepStrictEqual(packageBefore.value, expectedPackageJson)) {
+    throw new Error("Staged Win7 package does not match the expected derived manifest.");
+  }
   const stageLockPath = path.join(safeStagePath, "package-lock.json");
   if (!pathIsStrictlyInside(stageLockPath, safeStagePath)) {
     throw new Error(`Staged Win7 package lock path escapes staging: ${stageLockPath}`);
   }
-  readAndValidateWin7Lockfile(
+  const lockBefore = readAndValidateWin7Lockfile(
     stageLockPath,
-    packageJson,
+    expectedPackageJson,
     "Staged Win7 package lock",
     stagePaths
   );
@@ -337,27 +361,31 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
     safeStagePath,
     runner
   );
-  validateExtraResources(packageJson.build?.extraResources, projectRoot, safeStagePath);
-  const localBuilder = path.join(
+  const packageAfter = readStagePackageSnapshot(safeStagePath, stagePaths);
+  const lockAfter = readAndValidateWin7Lockfile(
+    stageLockPath,
+    expectedPackageJson,
+    "Staged Win7 package lock",
+    stagePaths
+  );
+  assertSnapshotUnchanged(packageBefore, packageAfter, "Staged Win7 package");
+  assertSnapshotUnchanged(lockBefore, lockAfter, "Staged Win7 package lock");
+  if (!isDeepStrictEqual(packageAfter.value, expectedPackageJson)) {
+    throw new Error("Staged Win7 package does not match the expected derived manifest after npm ci.");
+  }
+  validateExtraResources(packageAfter.value.build?.extraResources, projectRoot, safeStagePath);
+  assertRegularFileInside(path.join(
     safeStagePath,
     "node_modules",
     ".bin",
     process.platform === "win32" ? "electron-builder.cmd" : "electron-builder"
-  );
-  if (!fs.statSync(localBuilder, { throwIfNoEntry: false })?.isFile()) {
-    throw new Error(`Local electron-builder executable was not installed: ${localBuilder}`);
-  }
-  const localBuilderCli = path.join(
+  ), stagePaths, "Local electron-builder executable");
+  const localBuilderCli = assertRegularFileInside(path.join(
     safeStagePath,
     "node_modules",
     "electron-builder",
-    "out",
-    "cli",
     "cli.js"
-  );
-  if (!fs.statSync(localBuilderCli, { throwIfNoEntry: false })?.isFile()) {
-    throw new Error(`Local electron-builder CLI was not installed: ${localBuilderCli}`);
-  }
+  ), stagePaths, "Local electron-builder CLI");
   runChecked(
     process.execPath,
     [localBuilderCli, "--win", "nsis", "--x64"],
