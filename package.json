@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -37,6 +37,7 @@
     "sql.js": "^1.14.1",
     "tesseract.js": "^7.0.0",
     "turndown": "^7.2.4",
+    "yauzl": "^2.10.0",
     "yazl": "^3.3.1"
   },
   "overrides": {

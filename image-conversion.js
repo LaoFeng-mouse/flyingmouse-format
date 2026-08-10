@@ -53,6 +53,21 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
     return { warnings };
   }
 
+  if (animated && normalizedTarget === "gif") {
+    await sharp(inputPath, { animated: true, limitInputPixels: maxPixels })
+      .rotate()
+      .gif()
+      .toFile(outputPath);
+    const outputMetadata = await sharp(outputPath, { animated: true, limitInputPixels: maxPixels }).metadata();
+    if (Number(outputMetadata.pages || 1) !== pages) {
+      throw animationError(
+        "ANIMATION_PRESERVATION_FAILED",
+        "Animated GIF output did not preserve the input frame count."
+      );
+    }
+    return { warnings };
+  }
+
   const image = sharp(inputPath, {
     page: 0,
     pages: 1,

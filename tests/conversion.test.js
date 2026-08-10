@@ -304,6 +304,110 @@ test("converts a PDF to DOCX with extracted text and tables", async () => {
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+test("converts a video to an animated GIF", async () => {
+  const sourcePath = path.join(scratchRoot, "clip.mp4");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=128x96:rate=10", "-pix_fmt", "yuv420p", sourcePath]);
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "clip.mp4", "gif", "video/mp4");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "clip.gif");
+  const outputPath = await downloadResult(body, "clip.gif");
+  const header = fs.readFileSync(outputPath).subarray(0, 6).toString("latin1");
+  assert.strictEqual(header, "GIF89a", "video GIF must start with GIF89a");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts an animated WebP to GIF preserving frames", async () => {
+  const sourcePath = path.join(scratchRoot, "anim-in.webp");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=96x72:rate=8", "-lossless", "0", "-loop", "0", sourcePath]);
+
+  const { response, body } = await uploadConvert(sourcePath, "anim-in.webp", "gif", "image/webp");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "anim-in.gif");
+  const outputPath = await downloadResult(body, "anim-in.gif");
+  const header = fs.readFileSync(outputPath).subarray(0, 6).toString("latin1");
+  assert.strictEqual(header, "GIF89a", "animated WebP GIF must start with GIF89a");
+});
+
+test("converts XLSX to legacy XLS via LibreOffice", async () => {
+  const sourcePath = path.join(scratchRoot, "legacy-source.xlsx");
+  const ExcelJS = require("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Sheet1");
+  sheet.addRow(["a", "b"]);
+  sheet.addRow([1, 2]);
+  await workbook.xlsx.writeFile(sourcePath);
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "legacy-source.xlsx", "xls", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "legacy-source.xls");
+  const outputPath = await downloadResult(body, "legacy-source.xls");
+  const header = fs.readFileSync(outputPath).subarray(0, 4).toString("hex");
+  assert.strictEqual(header, "d0cf11e0", "XLS must be an OLE2 compound document");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts a ZIP of images to a single PDF", async () => {
+  const yazl = require("yazl");
+  const first = path.join(scratchRoot, "zip-a.png");
+  const second = path.join(scratchRoot, "zip-b.png");
+  await createImage(first, "green", 80, 60);
+  await createImage(second, "blue", 80, 60);
+  const zipPath = path.join(scratchRoot, "images.zip");
+  await new Promise((resolve, reject) => {
+    const archive = new yazl.ZipFile();
+    archive.addFile(first, "a.png");
+    archive.addFile(second, "b.png");
+    const output = fs.createWriteStream(zipPath);
+    archive.outputStream.pipe(output);
+    output.on("close", resolve);
+    output.on("error", reject);
+    archive.end();
+  });
+
+  const { response, body } = await uploadConvert(zipPath, "images.zip", "pdf", "application/zip");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "images.pdf");
+  const outputPath = await downloadResult(body, "images.pdf");
+  assertPdf(outputPath);
+});
+
+test("rejects PDF encryption with a clear unavailable error", async () => {
+  const sourcePath = path.join(scratchRoot, "encrypt-source.pdf");
+  await createTextPdf(sourcePath);
+
+  const form = new FormData();
+  form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "application/pdf" }), "encrypt-source.pdf");
+  form.append("targetFormat", "pdf");
+  form.append("pdfAction", "encrypt");
+  form.append("password", "secret123");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await parseBody(response);
+
+  assert.strictEqual(response.status, 500);
+  assert.strictEqual(body.errorCode, "PDF_ENCRYPT_UNAVAILABLE");
+  assert.match(body.error, /加密/);
+});
+
+test("PDF table OCR quality gate rejects low-confidence scans with a clear reason", async () => {
+  const { assertPdfTableOcrQuality } = require("../server");
+  assert.doesNotThrow(() => assertPdfTableOcrQuality({
+    summary: [{ pageNumber: 1, source: "text", tableCount: 3, confidence: 0.9 }]
+  }));
+  assert.throws(
+    () => assertPdfTableOcrQuality({
+      summary: [{ pageNumber: 1, source: "ocr", tableCount: 1, confidence: 0.51 }]
+    }),
+    (error) => error.code === "PDF_TABLE_OCR_LOW_QUALITY" && /置信度/.test(error.messages.zhCN)
+  );
+});
+
 test("rejects an animated GIF targeting TIFF with a stable error code", async () => {
   const sourcePath = path.join(scratchRoot, "anim-tiff.gif");
   execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);
