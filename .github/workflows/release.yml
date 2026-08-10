@@ -72,3 +72,93 @@ jobs:
             dist/*Setup-*-x64.exe
             dist/*Setup-*-win7-x64.exe
           if-no-files-found: error
+
+  validate-and-build-macos:
+    name: macOS ${{ matrix.arch }} validated DMG
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x64
+            runner: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Assert native runner architecture
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Restore SHA-pinned native engines
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          brew install zstd
+          key="darwin-${{ matrix.arch }}"
+          asset="$(node -p "require('./ci-engines-v1.json').assets['$key'].assetName")"
+          root="$PWD/bin/engines/$key"
+          mkdir -p output "$root"
+          gh release download ci-engines-v1 --repo "${{ github.repository }}" --pattern "$asset" --dir output
+          zstd -dc "output/$asset" | tar -xf - -C "$root"
+          node scripts/validate-ci-engines.js --platform darwin --arch "${{ matrix.arch }}" --root "$root" --bundle "output/$asset"
+          file "$root/runtime/bin/ffmpeg" "$root/runtime/bin/pdftoppm" "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice"
+
+      - name: Run macOS full conversions and real engine probes
+        env:
+          FLYINGMOUSE_FFMPEG_PATH: bin/engines/darwin-${{ matrix.arch }}/runtime/bin/ffmpeg
+          FLYINGMOUSE_LIBREOFFICE_PATH: bin/engines/darwin-${{ matrix.arch }}/libreoffice/LibreOffice.app/Contents/MacOS/soffice
+          FLYINGMOUSE_PDFTOPPM_PATH: bin/engines/darwin-${{ matrix.arch }}/runtime/bin/pdftoppm
+          FLYINGMOUSE_TESSDATA_PATH: bin/engines/darwin-${{ matrix.arch }}/tessdata
+        run: |
+          npm test
+          "$FLYINGMOUSE_FFMPEG_PATH" -version
+          "$FLYINGMOUSE_PDFTOPPM_PATH" -v
+          "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+
+      - name: Build unsigned macOS DMG
+        run: npm run dist:mac:${{ matrix.arch }}
+
+      - name: Mount and inspect DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="$(find dist -maxdepth 1 -name "FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg" -print -quit)"
+          test -n "$dmg"
+          attach="$(hdiutil attach -readonly -nobrowse "$dmg")"
+          mount="$(printf '%s\n' "$attach" | awk '/\/Volumes\// { sub(/^.*\/Volumes\//, "/Volumes/"); print; exit }')"
+          test -n "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          app="$(find "$mount" -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app"
+          file "$app/Contents/MacOS/FlyingMouse Format"
+          file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/ffmpeg"
+          file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/pdftoppm"
+          codesign --verify --deep "$app" || test "$(codesign -dv "$app" 2>&1 | grep -c 'Signature=adhoc')" -gt 0
+          "$app/Contents/MacOS/FlyingMouse Format" >"$RUNNER_TEMP/flyingmouse-smoke.log" 2>&1 &
+          pid=$!
+          sleep 12
+          kill -0 "$pid"
+          kill "$pid"
+          wait "$pid" || true
+
+      - name: Upload validated DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: flyingmouse-format-${{ github.ref_name }}-mac-${{ matrix.arch }}
+          path: dist/FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg
+          if-no-files-found: error

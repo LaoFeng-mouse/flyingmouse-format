@@ -10,5 +10,43 @@
     "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
     "tessdata/eng.traineddata.gz",
     "tessdata/chi_sim.traineddata.gz"
-  ]
+  ],
+  "assets": {
+    "win32-x64": {
+      "available": true,
+      "assetName": "ci-engines-v1.tar.zst",
+      "sha256": "823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a",
+      "requiredFiles": [
+        "ffmpeg/ffmpeg.exe",
+        "poppler/Library/bin/pdftoppm.exe",
+        "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
+        "tessdata/eng.traineddata.gz",
+        "tessdata/chi_sim.traineddata.gz"
+      ]
+    },
+    "darwin-arm64": {
+      "available": false,
+      "assetName": "ci-engines-v1-darwin-arm64.tar.zst",
+      "sha256": null,
+      "requiredFiles": [
+        "runtime/bin/ffmpeg",
+        "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
+        "runtime/bin/pdftoppm",
+        "tessdata/eng.traineddata.gz",
+        "tessdata/chi_sim.traineddata.gz"
+      ]
+    },
+    "darwin-x64": {
+      "available": false,
+      "assetName": "ci-engines-v1-darwin-x64.tar.zst",
+      "sha256": null,
+      "requiredFiles": [
+        "runtime/bin/ffmpeg",
+        "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
+        "runtime/bin/pdftoppm",
+        "tessdata/eng.traineddata.gz",
+        "tessdata/chi_sim.traineddata.gz"
+      ]
+    }
+  }
 }

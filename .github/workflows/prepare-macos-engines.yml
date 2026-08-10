@@ -1,0 +1,78 @@
+name: Prepare macOS engine candidates
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [v0.3.4-quality-macos]
+    paths:
+      - ".github/workflows/prepare-macos-engines.yml"
+      - "ci-engines-v1.json"
+      - "package-lock.json"
+      - "scripts/validate-ci-engines.js"
+
+permissions:
+  contents: read
+
+jobs:
+  build-engine-candidate:
+    name: macOS ${{ matrix.arch }} engine candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x64
+            runner: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Assert native runner architecture
+        run: |
+          test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+          uname -m
+
+      - name: Install locked JavaScript resources
+        run: npm ci
+
+      - name: Install packaging tools and LibreOffice
+        run: |
+          brew install micromamba zstd
+          brew install --cask libreoffice
+
+      - name: Assemble relocatable engine candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/engine-darwin-${{ matrix.arch }}"
+          rm -rf "$root"
+          mkdir -p "$root/libreoffice" "$root/tessdata" output
+          micromamba create -y -p "$root/runtime" -c conda-forge ffmpeg poppler
+          cp -R /Applications/LibreOffice.app "$root/libreoffice/LibreOffice.app"
+          cp node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz "$root/tessdata/eng.traineddata.gz"
+          cp node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int/chi_sim.traineddata.gz "$root/tessdata/chi_sim.traineddata.gz"
+          "$root/runtime/bin/ffmpeg" -version
+          "$root/runtime/bin/pdftoppm" -v
+          "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
+          file "$root/runtime/bin/ffmpeg" "$root/runtime/bin/pdftoppm" "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice"
+          node scripts/validate-ci-engines.js --platform darwin --arch "${{ matrix.arch }}" --root "$root" --prepare true
+          archive="output/ci-engines-v1-darwin-${{ matrix.arch }}.tar.zst"
+          tar -C "$root" -cf - runtime libreoffice tessdata | zstd -T0 -19 -o "$archive"
+          shasum -a 256 "$archive" | tee "${archive}.sha256"
+
+      - name: Upload candidate and SHA-256
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-engines-v1-darwin-${{ matrix.arch }}
+          path: |
+            output/ci-engines-v1-darwin-${{ matrix.arch }}.tar.zst
+            output/ci-engines-v1-darwin-${{ matrix.arch }}.tar.zst.sha256
+          if-no-files-found: error
+          compression-level: 0

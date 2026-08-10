@@ -111,3 +111,17 @@ test("routes only decrypted AV3A M4A audio through the helper", async (t) => {
   assert.equal(result, path.join(scratch, "decoded.wav"));
   assert.equal(await prepareDecryptedAudio({ nativePath, format: "mp3", tempDir: scratch }), nativePath);
 });
+
+test("rejects AV3A on macOS with a stable bilingual platform error", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-av3a-mac-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const nativePath = path.join(scratch, "audio.m4a");
+  await fsp.writeFile(nativePath, makeMp4().data);
+
+  await assert.rejects(
+    prepareDecryptedAudio({ nativePath, format: "m4a", tempDir: scratch }, { platform: "darwin" }),
+    (error) => error.code === "AV3A_UNSUPPORTED_PLATFORM"
+      && /Windows/.test(error.messages.zhCN)
+      && /Windows/.test(error.messages.enUS)
+  );
+});

@@ -5,7 +5,8 @@ const state = {
   converted: null,
   batchResults: [],
   isConverting: false,
-  progressValue: 0
+  progressValue: 0,
+  settings: { schemaVersion: 2, targetBySource: {} }
 };
 
 /* --- 渲染进程日志：转发到主进程 debug.log --- */
@@ -60,14 +61,22 @@ const progressTrack = document.querySelector(".progress-track");
 const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
+const diagnosticsButton = document.querySelector("#diagnosticsButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
-const { rememberTarget, preferredTarget } = window.FlyingMouseConversionPreferences;
-const { createI18n } = window.FlyingMouseI18n;
+const {
+  STORAGE_KEY: LEGACY_TARGET_STORAGE_KEY,
+  readPreferences,
+  rememberTarget,
+  preferredTarget
+} = window.FlyingMouseConversionPreferences;
+const { LANGUAGE_STORAGE_KEY, createI18n } = window.FlyingMouseI18n;
 
 const messages = {
   "zh-CN": {
     "workspace.aria": "文件转换工作台", "brand.title": "鼠鼠帮你把文件转成需要的格式",
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
+    "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
+    "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
@@ -76,6 +85,8 @@ const messages = {
     "action.save": "保存", "action.saveAll": "保存全部", "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
+    "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
+    "formats.av3aMac": "macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows。",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
@@ -88,6 +99,8 @@ const messages = {
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
+    "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
+    "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
@@ -96,6 +109,8 @@ const messages = {
     "action.save": "Save", "action.saveAll": "Save all", "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
+    "formats.experimental": "Experimental/unverified inputs: {formats}",
+    "formats.av3aMac": "Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows.",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
@@ -323,6 +338,14 @@ function renderFormatTable() {
       createTextElement("p", "", `${i18n.language === "en-US" ? "Input" : "输入"}${pairSeparator}${group.inputs.join(", ")}`),
       createTextElement("p", "", `${i18n.language === "en-US" ? "Output" : "输出"}${pairSeparator}${group.targets.join(", ")}`)
     );
+    if (Array.isArray(group.experimentalInputs) && group.experimentalInputs.length) {
+      article.append(createTextElement("p", "format-note", t("formats.experimental", {
+        formats: group.experimentalInputs.join(", ")
+      })));
+    }
+    if (key === "audio" && state.capabilities?.platform?.av3a === false) {
+      article.append(createTextElement("p", "format-note", t("formats.av3aMac")));
+    }
     return article;
   });
   formatTable.replaceChildren(...entries);
@@ -490,7 +513,7 @@ async function acceptFiles(fileList) {
       targetSelect.append(option);
     }
 
-    const rememberedTarget = preferredTarget(localStorage, files.map((file) => extensionOf(file.name)), targets);
+    const rememberedTarget = preferredTarget(state.settings.targetBySource, files.map((file) => extensionOf(file.name)), targets);
     if (rememberedTarget) targetSelect.value = rememberedTarget;
 
     targetSelect.disabled = false;
@@ -531,6 +554,21 @@ function responseErrorMessage(result, status) {
   return localized || result?.error || (i18n.language === "en-US" ? `Server returned ${status}` : `服务器返回 ${status}`);
 }
 
+function responseError(result, status) {
+  const errorCode = result?.errorCode ? String(result.errorCode) : "";
+  const message = responseErrorMessage(result, status);
+  const error = new Error(errorCode ? `${message} [${errorCode}]` : message);
+  error.errorCode = errorCode;
+  return error;
+}
+
+function localizedWarnings(result) {
+  return (Array.isArray(result?.warnings) ? result.warnings : []).map((warning) => {
+    const localized = i18n.language === "en-US" ? warning?.messages?.enUS : warning?.messages?.zhCN;
+    return localized || warning?.code || "";
+  }).filter(Boolean);
+}
+
 async function convertOneFile(file, targetFormat) {
   const form = new FormData();
   form.append("file", file);
@@ -546,7 +584,7 @@ async function convertOneFile(file, targetFormat) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(responseErrorMessage(result, response.status));
+    throw responseError(result, response.status);
   }
   return result;
 }
@@ -571,7 +609,7 @@ async function convertImagesToPdf(files) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(responseErrorMessage(result, response.status));
+    throw responseError(result, response.status);
   }
   return result;
 }
@@ -643,7 +681,7 @@ async function convertPdfsToMerged(files) {
   const result = await parseResponse(response);
 
   if (!response.ok) {
-    throw new Error(responseErrorMessage(result, response.status));
+    throw responseError(result, response.status);
   }
   return result;
 }
@@ -734,6 +772,8 @@ async function convertCurrentFiles() {
       if (targetFormat === "zip" && result.compressionRatio != null) {
         detail += `（${formatSize(result.originalBytes || 0)} → ${formatSize(result.compressedBytes || 0)}，压缩 ${result.compressionRatio}%）`;
       }
+      const warnings = localizedWarnings(result);
+      if (warnings.length) detail += ` — ${warnings.join("；")}`;
       setBatchResult(index, { status: "success", detail, result });
     } catch (error) {
       failCount += 1;
@@ -874,28 +914,82 @@ batchList.addEventListener("click", async (event) => {
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
-languageSelect.addEventListener("change", () => {
-  i18n.setLanguage(languageSelect.value);
+languageSelect.addEventListener("change", async () => {
+  i18n.setLanguage(languageSelect.value, { persist: false });
+  if (typeof logBridge.updateSettings === "function") {
+    state.settings = await logBridge.updateSettings({ language: i18n.language });
+  }
   refreshLanguage();
 });
-targetSelect.addEventListener("change", () => {
+targetSelect.addEventListener("change", async () => {
   syncZipCompressionField();
   syncPdfExcelHint();
-  rememberTarget(localStorage, state.files.map((file) => extensionOf(file.name)), targetSelect.value);
+  const targetBySource = rememberTarget(
+    state.settings.targetBySource,
+    state.files.map((file) => extensionOf(file.name)),
+    targetSelect.value
+  );
+  if (typeof logBridge.updateSettings === "function") {
+    state.settings = await logBridge.updateSettings({ targetBySource });
+  } else {
+    state.settings.targetBySource = targetBySource;
+  }
 });
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
+diagnosticsButton.addEventListener("click", async () => {
+  if (typeof logBridge.exportDiagnostics !== "function") return;
+  diagnosticsButton.disabled = true;
+  try {
+    const result = await logBridge.exportDiagnostics();
+    setStatus(result?.canceled
+      ? t("diagnostics.canceled")
+      : t("diagnostics.saved", { path: result.filePath }), result?.canceled ? "" : "success");
+  } catch (error) {
+    setStatus(t("diagnostics.failed", { message: error.message || "unknown" }), "error");
+    rendererLog("error", "导出诊断失败", error);
+  } finally {
+    diagnosticsButton.disabled = false;
+  }
+});
 
-fetchCapabilities().catch((error) => {
+async function initializeDurableSettings() {
+  const legacy = {
+    targetBySource: readPreferences(localStorage),
+    language: (() => {
+      try { return localStorage.getItem(LANGUAGE_STORAGE_KEY); } catch { return null; }
+    })()
+  };
+  if (typeof logBridge.migrateLegacySettings === "function") {
+    state.settings = await logBridge.migrateLegacySettings(legacy);
+    try {
+      localStorage.removeItem(LEGACY_TARGET_STORAGE_KEY);
+      localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+    } catch {
+      // A blocked origin store must not prevent startup after main settings load.
+    }
+  } else if (typeof logBridge.getSettings === "function") {
+    state.settings = await logBridge.getSettings();
+  } else {
+    state.settings.targetBySource = legacy.targetBySource;
+  }
+  i18n.setLanguage(state.settings.language || navigator.language, { persist: false });
+}
+
+async function initializeApp() {
+  await initializeDurableSettings();
+  applyStaticTranslations();
+  setMouseState("upload");
+  setWorkflowStep("select");
+  await fetchCapabilities();
+}
+
+initializeApp().catch((error) => {
   setMouseState("error");
   toolHealth.textContent = t("health.failed");
   setStatus(error.message, "error");
   rendererLog("error", "能力检测失败", error);
 });
-
-applyStaticTranslations();
-setMouseState("upload");
-setWorkflowStep("select");
 
 const sponsorToggle = document.querySelector("#sponsorToggle");
 const sponsorPanel = document.querySelector("#sponsorPanel");

@@ -213,7 +213,11 @@ test("package pins the expected Electron version and includes the security modul
 test("package bundles the AV3A helper and configures its runtime path", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   const main = readRoot("electron-main.js");
-  const avs3Resources = packageJson.build.extraResources.filter((item) => item.to === "avs3");
+  const runtimePaths = readRoot("runtime-paths.js");
+  const platformResources = packageJson.name === "flyingmouse-format"
+    ? packageJson.build.win.extraResources
+    : packageJson.build.extraResources;
+  const avs3Resources = platformResources.filter((item) => item.to === "avs3");
   assert.strictEqual(avs3Resources.length, 1);
   if (packageJson.name === "flyingmouse-format") {
     assert.strictEqual(avs3Resources[0].from, "bin/avs3");
@@ -225,7 +229,8 @@ test("package bundles the AV3A helper and configures its runtime path", () => {
     assert.fail(`unexpected package name: ${packageJson.name}`);
   }
   assert.match(main, /FLYINGMOUSE_AVS3_DECODER_PATH/);
-  assert.match(main, /avs3RM0Decoder\.exe/);
+  assert.match(runtimePaths, /avs3RM0Decoder\.exe/);
+  assert.match(runtimePaths, /avs3Decoder:\s*null/);
 });
 
 test("save dialogs restore and update the last successful directory", () => {
@@ -238,4 +243,30 @@ test("save dialogs restore and update the last successful directory", () => {
   assert.match(main, /defaultPath: lastSaveDirectory/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, path\.dirname\(result\.filePath\)\)/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, directory\)/);
+});
+
+test("trusted IPC owns durable renderer settings", () => {
+  const main = readRoot("electron-main.js");
+  const preload = readRoot("preload.js");
+  for (const channel of ["get-settings", "update-settings", "migrate-legacy-settings"]) {
+    assert.match(main, new RegExp(`ipcMain\\.handle\\(\\"${channel}\\"`));
+  }
+  assert.match(main, /assertTrustedIpc\(event\)/);
+  assert.match(preload, /getSettings/);
+  assert.match(preload, /updateSettings/);
+  assert.match(preload, /migrateLegacySettings/);
+});
+
+test("trusted IPC exports a sanitized diagnostics report to the remembered directory", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  const preload = readRoot("preload.js");
+  assert.ok(packageJson.build.files.includes("diagnostics.js"));
+  assert.match(main, /ipcMain\.handle\("export-diagnostics"/);
+  assert.match(main, /buildDiagnosticsReport/);
+  assert.match(main, /readLastSaveDirectory/);
+  assert.match(main, /writeLastSaveDirectory/);
+  assert.match(main, /fs\.promises\.writeFile/);
+  assert.match(preload, /exportDiagnostics/);
+  assert.match(preload, /ipcRenderer\.invoke\("export-diagnostics"/);
 });

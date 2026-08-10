@@ -10,6 +10,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const { normalizeNcmMetadata } = require("./ncm-metadata");
 
 const CORE_KEY = Buffer.from("687A4852416D736F356B496E62617857", "hex");
 const META_KEY = Buffer.from("2331346C6A6B5F215C5D2630553C2728", "hex");
@@ -53,6 +54,13 @@ function detectAudioFormat(buf) {
   if (buf.length > 11 && buf.subarray(4, 8).toString("latin1") === "ftyp") return "m4a";
   if (buf.length > 1 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return "mp3";
   return "unknown";
+}
+
+function detectCoverFormat(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 4) return null;
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[buf.length - 2] === 0xff && buf[buf.length - 1] === 0xd9) return "jpg";
+  return null;
 }
 
 function decodeMeta(metaData) {
@@ -111,13 +119,15 @@ function tryDecrypt(buf, keyLenOff, keyStart) {
     audioOff += 4;
   }
   if (coverLen < 0 || coverLen > buf.length - audioOff) return null;
+  const coverData = coverLen > 0 ? Buffer.from(buf.subarray(audioOff, audioOff + coverLen)) : null;
+  const coverFormat = detectCoverFormat(coverData);
   audioOff += coverLen;
   if (audioOff >= buf.length) return null;
 
   const audioData = ncmDecrypt(rc4key, buf.subarray(audioOff));
   const format = detectAudioFormat(audioData);
   if (format === "unknown") return null;
-  return { audioData, format, meta };
+  return { audioData, format, meta, coverData: coverFormat ? coverData : null, coverFormat };
 }
 
 async function convertNcm(inputPath) {
@@ -141,10 +151,22 @@ async function convertNcm(inputPath) {
       const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ncm-"));
       const nativePath = path.join(tempDir, `native.${result.format}`);
       await fsp.writeFile(nativePath, result.audioData);
-      return { nativePath, format: result.format, tempDir, meta: result.meta };
+      let coverPath = null;
+      if (result.coverData && result.coverFormat) {
+        coverPath = path.join(tempDir, `cover.${result.coverFormat}`);
+        await fsp.writeFile(coverPath, result.coverData);
+      }
+      return {
+        nativePath,
+        format: result.format,
+        tempDir,
+        meta: result.meta,
+        metadata: normalizeNcmMetadata(result.meta),
+        coverPath
+      };
     }
   }
   throw new Error("NCM 解密失败：文件可能不是官方网易云客户端下载的标准 NCM。");
 }
 
-module.exports = { convertNcm, detectAudioFormat };
+module.exports = { convertNcm, detectAudioFormat, detectCoverFormat };
