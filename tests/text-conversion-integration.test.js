@@ -6,7 +6,7 @@ const { after, before, test } = require("node:test");
 
 const runtimeDir = path.join(os.tmpdir(), `flyingmouse-text-integration-${process.pid}`);
 process.env.FLYINGMOUSE_RUNTIME_DIR = runtimeDir;
-const { startServer } = require("../server");
+const { startServer, platformCapabilities } = require("../server");
 
 let server;
 let baseUrl;
@@ -87,12 +87,28 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
     maxPdfPages: 500,
     maxOcrPdfPages: 100
   });
+  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"]);
+  assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
+  assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
+  assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
+  assert.deepEqual(capabilities.groups.audio.experimentalInputs, ["kgg"]);
+  assert.equal(capabilities.platform.standardNcm, true);
+  assert.equal(capabilities.platform.av3a, process.platform === "win32");
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.doesNotMatch(serverSource, /limitInputPixels\s*:\s*false/);
   assert.match(serverSource, /assertImagePdfBudget\(metadataList\)/);
   assert.match(serverSource, /assertPdfPages\(pdf\.numPages\)/);
   assert.match(serverSource, /"-cropbox"/);
   assert.match(serverSource, /async function\* pages\(\)/);
+});
+
+test("platform capabilities keep standard NCM cross-platform and AV3A Windows-only", () => {
+  assert.deepEqual(platformCapabilities("darwin", "arm64"), {
+    os: "darwin", arch: "arm64", standardNcm: true, av3a: false
+  });
+  assert.deepEqual(platformCapabilities("win32", "x64"), {
+    os: "win32", arch: "x64", standardNcm: true, av3a: true
+  });
 });
 
 test("packaging and Win7 staging include the new runtime modules", () => {

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   STORAGE_KEY,
   normalizeExtension,
+  readPreferences,
   rememberTarget,
   preferredTarget
 } = require("../public/conversion-preferences");
@@ -25,40 +26,38 @@ test("normalizes equivalent source extensions", () => {
 });
 
 test("remembers and restores a target independently for each source extension", () => {
-  const storage = memoryStorage();
-  rememberTarget(storage, ["mp3"], "wav");
-  rememberTarget(storage, ["ncm"], "mp3");
+  let preferences = {};
+  preferences = rememberTarget(preferences, ["mp3"], "wav");
+  preferences = rememberTarget(preferences, ["ncm"], "mp3");
 
-  assert.equal(preferredTarget(storage, ["mp3"], ["wav", "flac"]), "wav");
-  assert.equal(preferredTarget(storage, ["ncm"], ["mp3", "wav"]), "mp3");
+  assert.equal(preferredTarget(preferences, ["mp3"], ["wav", "flac"]), "wav");
+  assert.equal(preferredTarget(preferences, ["ncm"], ["mp3", "wav"]), "mp3");
 });
 
 test("manual changes overwrite the previous default and ignore unavailable targets", () => {
-  const storage = memoryStorage();
-  rememberTarget(storage, ["mp3"], "wav");
-  rememberTarget(storage, ["mp3"], "flac");
+  let preferences = {};
+  preferences = rememberTarget(preferences, ["mp3"], "wav");
+  preferences = rememberTarget(preferences, ["mp3"], "flac");
 
-  assert.equal(preferredTarget(storage, ["mp3"], ["wav", "flac"]), "flac");
-  assert.equal(preferredTarget(storage, ["mp3"], ["wav"]), null);
+  assert.equal(preferredTarget(preferences, ["mp3"], ["wav", "flac"]), "flac");
+  assert.equal(preferredTarget(preferences, ["mp3"], ["wav"]), null);
 });
 
 test("mixed uploads restore only a target shared by every source extension", () => {
-  const storage = memoryStorage();
-  rememberTarget(storage, ["jpg", "png"], "pdf");
-  assert.equal(preferredTarget(storage, ["jpg", "png"], ["pdf", "zip"]), "pdf");
+  let preferences = rememberTarget({}, ["jpg", "png"], "pdf");
+  assert.equal(preferredTarget(preferences, ["jpg", "png"], ["pdf", "zip"]), "pdf");
 
-  rememberTarget(storage, ["png"], "zip");
-  assert.equal(preferredTarget(storage, ["jpg", "png"], ["pdf", "zip"]), null);
+  preferences = rememberTarget(preferences, ["png"], "zip");
+  assert.equal(preferredTarget(preferences, ["jpg", "png"], ["pdf", "zip"]), null);
 });
 
-test("damaged or unavailable localStorage silently falls back", () => {
+test("damaged or unavailable legacy localStorage silently falls back", () => {
   const corrupt = memoryStorage({ [STORAGE_KEY]: "not-json" });
-  assert.equal(preferredTarget(corrupt, ["mp3"], ["wav"]), null);
+  assert.deepEqual(readPreferences(corrupt), {});
 
   const blocked = {
     getItem() { throw new Error("blocked"); },
     setItem() { throw new Error("blocked"); }
   };
-  assert.doesNotThrow(() => rememberTarget(blocked, ["mp3"], "wav"));
-  assert.equal(preferredTarget(blocked, ["mp3"], ["wav"]), null);
+  assert.deepEqual(readPreferences(blocked), {});
 });

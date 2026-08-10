@@ -25,28 +25,24 @@
     }
   }
 
-  function rememberTarget(storage, extensions, target) {
-    const normalizedTarget = String(target || "").trim().toLowerCase();
+  function rememberTarget(preferences, extensions, target) {
+    const next = { ...(preferences || {}) };
+    const normalizedTarget = normalizeExtension(target);
     const normalizedExtensions = [...new Set((extensions || []).map(normalizeExtension).filter(Boolean))];
-    if (!normalizedTarget || normalizedExtensions.length === 0) return;
-    try {
-      const preferences = readPreferences(storage);
-      for (const extension of normalizedExtensions) preferences[extension] = normalizedTarget;
-      storage?.setItem(STORAGE_KEY, JSON.stringify(preferences));
-    } catch {
-      // A blocked/full localStorage must not prevent conversion.
-    }
+    if (!normalizedTarget || normalizedExtensions.length === 0) return next;
+    for (const extension of normalizedExtensions) next[extension] = normalizedTarget;
+    return next;
   }
 
-  function preferredTarget(storage, extensions, availableTargets) {
+  function preferredTarget(preferences, extensions, availableTargets) {
+    const values = preferences && typeof preferences === "object" ? preferences : {};
     const normalizedExtensions = [...new Set((extensions || []).map(normalizeExtension).filter(Boolean))];
     if (normalizedExtensions.length === 0) return null;
-    const preferences = readPreferences(storage);
-    const remembered = normalizedExtensions.map((extension) => preferences[extension]);
+    const remembered = normalizedExtensions.map((extension) => values[extension]);
     if (remembered.some((target) => !target) || !remembered.every((target) => target === remembered[0])) return null;
     const available = new Set((availableTargets || []).map((target) => String(target).toLowerCase()));
     return available.has(remembered[0]) ? remembered[0] : null;
   }
 
-  return { STORAGE_KEY, normalizeExtension, rememberTarget, preferredTarget };
+  return { STORAGE_KEY, normalizeExtension, readPreferences, rememberTarget, preferredTarget };
 }));

@@ -214,12 +214,28 @@ async function buildPdfTableWorkbook(pages, dependencies) {
   for await (const page of pages) {
     let words = pdfTextContentToWords({ textContent: page.textContent, viewport: page.viewport });
     let source = "pdf-text";
-    if (!hasEffectiveText(words) && ocrPage) {
-      const ocrWords = normalizeOcrResult(await ocrPage(page));
-      if (ocrWords.length) {
-        words = ocrWords;
-        source = "ocr";
+    if (!hasEffectiveText(words)) {
+      if (!ocrPage) {
+        const error = new Error("PDF table extraction requires OCR for this scanned page.");
+        error.code = "PDF_TABLE_OCR_REQUIRED";
+        error.messages = {
+          zhCN: "此页是扫描图片，PDF 表格提取需要 OCR 引擎；请确认完整版资源完整后重试。",
+          enUS: "This page is a scanned image. PDF table extraction requires the OCR engine; verify the full engine bundle and try again."
+        };
+        throw error;
       }
+      const ocrWords = normalizeOcrResult(await ocrPage(page));
+      if (!hasEffectiveText(ocrWords)) {
+        const error = new Error("OCR did not return usable words for PDF table extraction.");
+        error.code = "PDF_TABLE_OCR_EMPTY";
+        error.messages = {
+          zhCN: "OCR 未能从此扫描页识别出可用文字，未生成可能误导的 Excel；请提高扫描清晰度后重试。",
+          enUS: "OCR found no usable text on this scanned page, so no misleading Excel file was generated. Try a clearer scan."
+        };
+        throw error;
+      }
+      words = ocrWords;
+      source = "ocr";
     }
     const raw = page.raw || (renderPage ? await renderPage(page) : null);
     const lines = raw ? await detectLines(raw) : [];

@@ -206,6 +206,15 @@ async function prepareDecryptedAudio(decrypted, options = {}) {
   if (!decrypted || decrypted.format !== "m4a") return decrypted.nativePath;
   const data = await fs.readFile(decrypted.nativePath);
   if (inspectMp4Audio(data).codec !== "av3a") return decrypted.nativePath;
+  if ((options.platform || process.platform) !== "win32") {
+    const error = new Error("Audio Vivid AV3A NCM currently requires Windows.");
+    error.code = "AV3A_UNSUPPORTED_PLATFORM";
+    error.messages = {
+      zhCN: "此 NCM 使用 Audio Vivid AV3A 音轨，目前仅支持 Windows；macOS 仍可转换标准 NCM。",
+      enUS: "This NCM uses an Audio Vivid AV3A track, which currently requires Windows. Standard NCM remains supported on macOS."
+    };
+    throw error;
+  }
   const decode = options.decode || decodeAv3aM4a;
   return decode(decrypted.nativePath, decrypted.tempDir, options);
 }

@@ -10,11 +10,20 @@ const {
   isAllowedExternalUrl
 } = require("./electron-security");
 const logger = require("./logger");
-const { readLastSaveDirectory, writeLastSaveDirectory } = require("./settings-store");
+const { buildDiagnosticsReport } = require("./diagnostics");
+const { resolveRuntimePaths } = require("./runtime-paths");
+const {
+  mergeLegacySettings,
+  readLastSaveDirectory,
+  readSettings,
+  updateSettings,
+  writeLastSaveDirectory
+} = require("./settings-store");
 
 let mainWindow = null;
 let server = null;
 let serverUrl = "";
+let serverRuntime = null;
 const settingsPath = path.join(app.getPath("userData"), "settings.json");
 
 // Route all logging (including from server.js and renderer-forwarded IPC
@@ -28,21 +37,6 @@ function log(message, error) {
   } else {
     logger.info(message);
   }
-}
-
-function bundledFfmpegPath() {
-  const resourcesPath = process.resourcesPath || "";
-  return path.join(resourcesPath, "ffmpeg", "ffmpeg.exe");
-}
-
-function bundledAvs3DecoderPath() {
-  const resourcesPath = process.resourcesPath || "";
-  return path.join(resourcesPath, "avs3", "avs3RM0Decoder.exe");
-}
-
-function bundledLibreOfficePath() {
-  const resourcesPath = process.resourcesPath || "";
-  return path.join(resourcesPath, "libreoffice", "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com");
 }
 
 function createWindow(url) {
@@ -80,16 +74,21 @@ function createWindow(url) {
 async function boot() {
   log("Boot started");
   process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
-  process.env.FLYINGMOUSE_FFMPEG_PATH = bundledFfmpegPath();
-  process.env.FLYINGMOUSE_AVS3_DECODER_PATH = bundledAvs3DecoderPath();
-  process.env.FLYINGMOUSE_LIBREOFFICE_PATH = bundledLibreOfficePath();
+  const runtimePaths = resolveRuntimePaths({ resourcesPath: process.resourcesPath });
+  process.env.FLYINGMOUSE_FFMPEG_PATH = runtimePaths.ffmpeg;
+  process.env.FLYINGMOUSE_LIBREOFFICE_PATH = runtimePaths.libreoffice;
+  process.env.FLYINGMOUSE_PDFTOPPM_PATH = runtimePaths.pdftoppm;
+  process.env.FLYINGMOUSE_TESSDATA_PATH = runtimePaths.tessdata;
+  if (runtimePaths.avs3Decoder) process.env.FLYINGMOUSE_AVS3_DECODER_PATH = runtimePaths.avs3Decoder;
+  else delete process.env.FLYINGMOUSE_AVS3_DECODER_PATH;
   log(`Runtime dir: ${process.env.FLYINGMOUSE_RUNTIME_DIR}`);
   log(`FFmpeg path: ${process.env.FLYINGMOUSE_FFMPEG_PATH}`);
-  log(`AV3A decoder path: ${process.env.FLYINGMOUSE_AVS3_DECODER_PATH}`);
+  log(`AV3A decoder path: ${process.env.FLYINGMOUSE_AVS3_DECODER_PATH || "unavailable"}`);
   log(`LibreOffice path: ${process.env.FLYINGMOUSE_LIBREOFFICE_PATH}`);
-  const { startServer } = require("./server");
+  log(`Poppler path: ${process.env.FLYINGMOUSE_PDFTOPPM_PATH}`);
+  serverRuntime = require("./server");
 
-  const started = await startServer(0);
+  const started = await serverRuntime.startServer(0);
   server = started.server;
   serverUrl = started.url;
   console.log(`FlyingMouse Format started at ${started.url}`);
@@ -152,6 +151,59 @@ function uniqueDestination(directory, fileName) {
 
   return candidate;
 }
+
+ipcMain.handle("get-settings", async (event) => {
+  assertTrustedIpc(event);
+  return readSettings(settingsPath);
+});
+
+ipcMain.handle("update-settings", async (event, patch) => {
+  assertTrustedIpc(event);
+  return updateSettings(settingsPath, patch);
+});
+
+ipcMain.handle("migrate-legacy-settings", async (event, legacy) => {
+  assertTrustedIpc(event);
+  return mergeLegacySettings(settingsPath, legacy);
+});
+
+function packageType() {
+  if (!app.isPackaged) return "development";
+  if (process.windowsStore) return "microsoft-store-appx";
+  if (process.platform === "darwin") return "github-dmg";
+  return "github-nsis";
+}
+
+ipcMain.handle("export-diagnostics", async (event) => {
+  assertTrustedIpc(event);
+  const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "导出诊断报告 / Export diagnostics",
+    defaultPath: path.join(lastSaveDirectory, "FlyingMouse-Format-diagnostics.txt"),
+    buttonLabel: "保存 / Save"
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  const logText = await fs.promises.readFile(logger.getLogFile(), "utf8").catch(() => "");
+  const engines = serverRuntime?.getToolDiagnostics
+    ? await serverRuntime.getToolDiagnostics()
+    : {};
+  const report = buildDiagnosticsReport({
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    release: os.release(),
+    arch: process.arch,
+    packageType: packageType(),
+    engines,
+    logText,
+    userHome: os.homedir(),
+    environment: process.env
+  });
+  await fs.promises.writeFile(result.filePath, report, "utf8");
+  await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
+    .catch((error) => log("Failed to remember diagnostics directory", error));
+  return { canceled: false, filePath: result.filePath };
+});
 
 ipcMain.handle("save-converted-file", async (event, payload) => {
   assertTrustedIpc(event);
