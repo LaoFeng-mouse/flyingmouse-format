@@ -139,7 +139,7 @@ test("a damaged multirow product-name cell is recovered without merging sequence
     pageNumber: 1, width: 100, height: 100, source: "ocr", lines: [...horizontal, ...vertical],
     words: [
       word("序号", 5, 2), word("产品名称", 55, 2),
-      word("1", 5, 22), word("A005", 55, 42),
+      word("1", 5, 22), word("A005", 55, 42), word("(6支装)", 55, 62),
       word("2", 5, 42), word("3", 5, 62), word("4", 5, 82)
     ]
   }).tables[0];
@@ -149,24 +149,26 @@ test("a damaged multirow product-name cell is recovered without merging sequence
 
 test("OCR product tables repair unit price and quantity only when totals prove the arithmetic", () => {
   const xs = [0, 70, 140, 210];
-  const ys = [0, 30, 60, 90, 120];
+  const ys = [0, 30, 60, 90, 120, 150];
   const page = detectTablesOnPage({
-    pageNumber: 1, width: 210, height: 120, source: "ocr",
+    pageNumber: 1, width: 210, height: 150, source: "ocr",
     lines: [
       ...ys.map((y) => ({ x1: 0, y1: y, x2: 210, y2: y })),
-      ...xs.map((x) => ({ x1: x, y1: 0, x2: x, y2: 120 }))
+      ...xs.map((x) => ({ x1: x, y1: 0, x2: x, y2: 150 }))
     ],
     words: [
       word("单价", 5, 5), word("数量", 75, 5), word("金额", 145, 5),
       word("53", 5, 35), word("120", 75, 35), word("3816", 145, 35),
       word("53", 5, 65), word("7120", 75, 65), word("3816", 145, 65),
-      word("8.95", 5, 95), word("1152", 75, 95), word("4550.4", 145, 95)
+      word("8.95", 5, 95), word("1152", 75, 95), word("4550.4", 145, 95),
+      word("53", 5, 125), word("2 40", 75, 125), word("1212", 145, 125)
     ]
   });
   assert.deepEqual(page.tables[0].rows.slice(1), [
     ["5.3", "720", "3816"],
     ["5.3", "720", "3816"],
-    ["3.95", "1152", "4550.4"]
+    ["3.95", "1152", "4550.4"],
+    ["5.3", "240", "1272"]
   ]);
   assert.match(page.warnings.join("\n"), /arithmetic consistency/i);
 });
@@ -235,6 +237,32 @@ test("continued OCR tables apply arithmetic repair using the first-page header",
   assert.equal(model.sheets.length, 1);
   assert.deepEqual(model.sheets[0].rows.at(-1), ["CODE-X3", "5.3", "720", "3816"]);
   assert.match(model.warnings.join("\n"), /arithmetic consistency/i);
+});
+
+test("OCR arithmetic repair rejects internally consistent decimal and leading-digit outliers", () => {
+  const rows = [
+    ["SKU", "Price", "Quantity", "Amount"],
+    ["CODE-1", "4.1", "1152", "4723.2"],
+    ["CODE-2", "5.3", "6000", "31800"],
+    ["CODE-3", "5.3", "960", "5088"],
+    ["CODE-4", "5.3", "1440", "7632"],
+    ["CODE-5", "5.3", "720", "3816"],
+    ["CODE-6", "5.3", "480", "2544"],
+    ["CODE-7", "53", "240", "12720"],
+    ["CODE-8", "5.3", "720", "3816"],
+    ["CODE-9", "5.3", "720", "3816"],
+    ["CODE-10", "5", "40", "200"]
+  ];
+  const model = buildWorkbookModel([{
+    pageNumber: 1, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [{
+      kind: "grid", rows, merges: [], confidence: 0.7, pages: [1],
+      cellConfidence: rows.map((row, rowIndex) => row.map(() => rowIndex >= 7 ? 0.45 : 0.9)),
+      columnAnchors: [0, 50, 100, 150, 200], bounds: { left: 0, top: 0, right: 200, bottom: 200 }
+    }]
+  }]);
+  assert.deepEqual(model.sheets[0].rows[7].slice(1), ["5.3", "240", "1272"]);
+  assert.deepEqual(model.sheets[0].rows[10].slice(1), ["5.3", "240", "1272"]);
+  assert.deepEqual(model.sheets[0].rows[1].slice(1), ["4.1", "1152", "4723.2"]);
 });
 
 test("a dominant sequential index repairs OCR noise after page continuation", () => {

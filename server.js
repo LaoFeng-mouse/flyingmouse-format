@@ -490,6 +490,7 @@ function ocrAvailable() {
     && fs.existsSync(paths.langPath)
     && fs.existsSync(path.join(paths.langPath, "eng.traineddata.gz"))
     && fs.existsSync(path.join(paths.langPath, "chi_sim.traineddata.gz"))
+    && fs.existsSync(path.join(paths.langPath, "tha.traineddata.gz"))
     && fs.existsSync(paths.corePath)
     && fs.existsSync(paths.workerPath)
   );
@@ -601,7 +602,7 @@ async function createOcrWorker() {
 
   const { createWorker } = loadTesseract();
   const paths = ocrRuntimePaths();
-  const worker = await createWorker("eng+chi_sim", 1, {
+  const worker = await createWorker("eng+chi_sim+tha", 1, {
     langPath: paths.langPath,
     corePath: paths.corePath,
     workerPath: paths.workerPath,
@@ -1526,7 +1527,7 @@ async function getToolDiagnostics() {
     poppler: { enabled: tools.poppler, executable: PDFTOPPM_PATH },
     ocr: { enabled: tools.ocr, version: require("tesseract.js/package.json").version },
     pdfjs: { enabled: tools.pdf, version: require("pdfjs-dist/package.json").version },
-    sharp: { enabled: tools.sharp, version: require("sharp/package.json").version }
+    sharp: { enabled: tools.sharp, version: sharp.versions.sharp }
   };
 }
 

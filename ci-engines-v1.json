@@ -33,7 +33,8 @@
         "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
         "runtime/bin/pdftoppm",
         "tessdata/eng.traineddata.gz",
-        "tessdata/chi_sim.traineddata.gz"
+        "tessdata/chi_sim.traineddata.gz",
+        "tessdata/tha.traineddata.gz"
       ]
     },
     "darwin-x64": {
@@ -45,7 +46,8 @@
         "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
         "runtime/bin/pdftoppm",
         "tessdata/eng.traineddata.gz",
-        "tessdata/chi_sim.traineddata.gz"
+        "tessdata/chi_sim.traineddata.gz",
+        "tessdata/tha.traineddata.gz"
       ]
     }
   }

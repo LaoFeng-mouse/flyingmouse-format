@@ -19,6 +19,7 @@
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/tha": "1.0.0",
     "csv-parse": "5.6.0",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
@@ -103,6 +104,10 @@
         {
           "from": "bin/tessdata",
           "to": "tessdata"
+        },
+        {
+          "from": "node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz",
+          "to": "tessdata/tha.traineddata.gz"
         },
         {
           "from": "node_modules/tesseract.js-core",

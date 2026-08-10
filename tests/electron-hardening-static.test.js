@@ -270,3 +270,9 @@ test("trusted IPC exports a sanitized diagnostics report to the remembered direc
   assert.match(preload, /exportDiagnostics/);
   assert.match(preload, /ipcRenderer\.invoke\("export-diagnostics"/);
 });
+
+test("runtime diagnostics read Sharp's supported runtime version API", () => {
+  const server = readRoot("server.js");
+  assert.doesNotMatch(server, /require\(["']sharp\/package\.json["']\)/);
+  assert.match(server, /sharp\.versions\.sharp/);
+});
