@@ -408,6 +408,17 @@ test("PDF table OCR quality gate rejects low-confidence scans with a clear reaso
   );
 });
 
+test("rejects a silent video targeting audio with a stable error code", async () => {
+  const sourcePath = path.join(scratchRoot, "silent.mp4");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=96x64:rate=10", "-pix_fmt", "yuv420p", sourcePath]);
+
+  const { response, body } = await uploadConvert(sourcePath, "silent.mp4", "wav", "video/mp4");
+
+  assert.strictEqual(response.status, 422);
+  assert.strictEqual(body.errorCode, "MEDIA_NO_AUDIO_TRACK");
+  assert.match(body.messages.zhCN, /音频轨道/);
+});
+
 test("rejects an animated GIF targeting TIFF with a stable error code", async () => {
   const sourcePath = path.join(scratchRoot, "anim-tiff.gif");
   execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);

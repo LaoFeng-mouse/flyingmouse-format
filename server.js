@@ -1661,12 +1661,32 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
   }
 }
 
+async function probeAudioTrack(inputPath) {
+  try {
+    const { stderr } = await run(FFMPEG_PATH, ["-hide_banner", "-i", inputPath], { timeout: 30000 });
+    return /Stream #\d+:\d+.*Audio/i.test(stderr);
+  } catch (error) {
+    return /Stream #\d+:\d+.*Audio/i.test(String(error.message || ""));
+  }
+}
+
 async function convertMedia(inputPath, outputPath, target, category, options = {}) {
   const args = ["-hide_banner", "-y", "-i", inputPath];
   for (const extraInput of options.extraInputs || []) args.push("-i", extraInput);
 
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
-    if (!(options.extraInputs || []).length) args.push("-vn");
+    if (!(options.extraInputs || []).length) {
+      args.push("-vn");
+      if (!(await probeAudioTrack(inputPath))) {
+        const error = new Error("该视频没有音频轨道，无法转换为音频格式。");
+        error.code = "MEDIA_NO_AUDIO_TRACK";
+        error.messages = {
+          zhCN: "该视频没有音频轨道，无法转换为音频格式。",
+          enUS: "This video has no audio track, so it cannot be converted to an audio format."
+        };
+        throw error;
+      }
+    }
     if (target === "mp3") args.push("-codec:a", "libmp3lame", "-q:a", "2");
     if (target === "m4a") args.push("-codec:a", "aac", "-b:a", "192k");
     if (target === "ogg") args.push("-codec:a", "libopus", "-b:a", "160k");
@@ -2099,7 +2119,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "CSV_PARSE_FAILED",
       "AV3A_UNSUPPORTED_PLATFORM",
       "PDF_TABLE_OCR_REQUIRED",
-      "PDF_TABLE_OCR_EMPTY"
+      "PDF_TABLE_OCR_EMPTY",
+      "MEDIA_NO_AUDIO_TRACK"
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
