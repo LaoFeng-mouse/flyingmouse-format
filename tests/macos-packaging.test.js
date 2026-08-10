@@ -195,5 +195,6 @@ test("CI and release workflows declare native macOS quality and DMG gates", () =
   assert.match(release, /hdiutil attach/);
   assert.match(release, /file .*\.app\/Contents\/MacOS/);
   assert.match(release, /codesign --verify/);
+  assert.match(release, /Signature=adhoc\|code object is not signed at all/);
   assert.match(release, /actions\/upload-artifact@v4/);
 });

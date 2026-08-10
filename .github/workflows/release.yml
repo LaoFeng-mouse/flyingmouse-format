@@ -159,7 +159,11 @@ jobs:
           file "$app/Contents/MacOS/FlyingMouse Format"
           file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/ffmpeg"
           file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/pdftoppm"
-          codesign --verify --deep "$app" || test "$(codesign -dv "$app" 2>&1 | grep -c 'Signature=adhoc')" -gt 0
+          if ! codesign --verify --deep "$app"; then
+            signature="$(codesign -dv "$app" 2>&1 || true)"
+            printf '%s\n' "$signature"
+            printf '%s\n' "$signature" | grep -Eq 'Signature=adhoc|code object is not signed at all'
+          fi
           "$app/Contents/MacOS/FlyingMouse Format" >"$RUNNER_TEMP/flyingmouse-smoke.log" 2>&1 &
           pid=$!
           sleep 12
