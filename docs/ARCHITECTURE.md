@@ -21,6 +21,10 @@ Electron 保存对话框 → 用户选择的目录
 | `electron-main.js` | Electron 生命周期、本地服务、资源路径、保存 IPC、日志 |
 | `preload.js` | 向渲染进程暴露最小化的保存接口 |
 | `server.js` | 上传、格式识别、目标格式计算、转换调度和结果下载 |
+| `resource-policy.js` | 统一资源预算、图片元数据预检和双语资源错误 |
+| `text-conversion.js` | HTML/Office Markdown 与严格 CSV 解析 |
+| `pdf-table-extractor.js` | 表格线、空白分隔、文字对齐、合并区域和跨页模型 |
+| `pdf-table-runtime.js` | PDF.js 文字坐标、OCR blocks、表格线检测和工作簿调度 |
 | `ncm-format.js` | 常规 NCM 解密、元数据和封面处理 |
 | `av3a-format.js` | 从 NCM 中识别并准备 Audio Vivid（AV3A）音频 |
 | `kgg-format.js` | KGG 输入处理 |
@@ -31,7 +35,7 @@ Electron 保存对话框 → 用户选择的目录
 
 ## 本地接口
 
-- `GET /api/capabilities`：返回当前可用引擎能力。
+- `GET /api/capabilities`：返回当前可用引擎能力和 `limits` 资源策略。
 - `POST /api/targets`：根据文件列表计算可选目标格式。
 - `POST /api/convert`：转换单个文件。
 - `POST /api/convert-images-to-pdf`：将多张图片合并为 PDF。
@@ -59,6 +63,19 @@ Electron 保存对话框 → 用户选择的目录
 | 图片 | Sharp |
 
 这些大型二进制不提交到 Git 仓库；正式安装包通过 `extraResources` 打入应用。
+
+## 资源与文本质量策略
+
+- 单图最多 50MP，单边最多 16384px；Sharp 解码保持像素保护，并在生成 RGB/RGBA Raw Buffer 前预检。
+- 图片合并 PDF 的总解码预算为 100MP；批量选择总计最多 2GB。
+- PDF 最多 500 页；OCR 最多 100 页。拒绝响应保留 `error`，同时提供稳定 `errorCode` 和中英文消息。
+- HTML 与 Office 文档转 Markdown 共用 ATX/Fenced Turndown helper。CSV 由精确锁定的 `csv-parse 5.6.0` 解析 BOM、转义引号和字段内换行，并对非法列数 fail closed。
+
+## PDF 智能表格提取
+
+PDF.js 先读取电子文字及坐标，Poppler 以固定 DPI 渲染页面；无有效文本时，Tesseract `blocks` 提供文字、边界框和置信度。提取器结合表格线、连续区域、空白分隔与文字对齐识别有框和无框表格，并统一处理旋转、同页多表、跨页续接、跨行跨列与合并单元格。
+
+每张表使用 `P001-T01` 形式的独立页签；只有列边界和表头匹配的相邻页面才续接。未识别出表格的页面保留为 `Pxxx-Raw`；“识别说明”页记录来源、页码、数量、置信度和警告，低置信单元格使用批注提示。该能力仍属于启发式提取，扫描件、复杂表头和不规则合并区域可能不完整。
 
 ## NCM 兼容边界
 

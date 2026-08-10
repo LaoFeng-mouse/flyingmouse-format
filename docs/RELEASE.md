@@ -2,95 +2,68 @@
 
 ## 发布前
 
-1. 确认版本号在 `package.json`、`package-lock.json` 和 README 中一致。
-2. 确认 `build/icon.png` 由 `public/assets/mouse-format/mouse-idle.png` 生成，不能使用旧橙色闪电图标。
-3. 准备 `bin/` 下的 FFmpeg、AVS3、LibreOffice、Poppler 与 Tesseract 资源。
-4. 若需要运行真实转换测试，设置对应路径：
+1. 确认 `package.json`、`package-lock.json`、`win7-package-lock.json` 与文档版本一致。
+2. 确认 `build/icon.png` 仍由 `public/assets/mouse-format/mouse-idle.png` 生成。
+3. 准备 `bin/` 的 FFmpeg、AVS3、LibreOffice、Poppler 与 Tesseract；本地完整测试运行 `npm test`。
+4. 运行 `npm run test:ci`、真实 NCM/AV3A 回归、`npm audit --omit=dev` 和 `git diff --check`。
+5. PDF 智能表格固定样本必须满足：电子 PDF 单元格准确率不低于 95%，扫描 PDF 不低于 85%，表格数量、页签和明确合并区域 100% 正确。
 
-```powershell
-$env:FLYINGMOUSE_FFMPEG_PATH = 'D:\34615\飞鼠格式\bin\ffmpeg\ffmpeg.exe'
-$env:FLYINGMOUSE_AVS3_DECODER_PATH = 'D:\34615\飞鼠格式\bin\avs3\avs3RM0Decoder.exe'
-$env:FLYINGMOUSE_LIBREOFFICE_PATH = 'D:\34615\飞鼠格式\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
-$env:FLYINGMOUSE_PDFTOPPM_PATH = 'D:\34615\飞鼠格式\bin\poppler\Library\bin\pdftoppm.exe'
-npm test
-```
-
-## 构建
+## 标准 Windows 10/11 x64 构建
 
 ```powershell
 npm run dist
 ```
 
-NSIS 安装包输出为 `dist/FlyingMouse Format-Setup-<version>-x64.exe`，解包目录为 `dist/win-unpacked/`。构建前若出现 `EBUSY`，只关闭目标路径为当前 `FlyingMouse Format.exe` 的进程，不要批量结束其他 Electron 应用。
+输出：`dist/FlyingMouse Format-Setup-<version>-x64.exe` 和 `dist/win-unpacked/`。验收 ProductVersion、安装包哈希、ASAR 白名单、转换资源、内嵌鼠鼠图标和当前 Windows 12 秒冒烟。
 
-### Windows 7 SP1 x64 兼容包
-
-Win7 构建从当前源码派生独立 staging，不修改根 `package.json`、根 `node_modules` 或标准安装包。完整构建只需：
+## Windows 7 SP1 x64 Legacy 构建
 
 ```powershell
 npm run dist:win7
 ```
 
-推荐在 Node.js 22 LTS 运行。脚本只接受构建主机 Node.js 18–22；其他主版本会在修改 staging 或运行 npm 前失败。构建子进程固定使用当前 Node，staging 复制支持中文等 Unicode 路径。
+- 只允许 Node.js 18–22，推荐官方 Node.js 22 LTS。构建在任何 staging 写入前 fail closed，npm、Electron runtime probe 和 builder 子进程绑定当前 Node。
+- 独立 profile 固定 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`，使用专用 `win7-package-lock.json` 和 `npm ci`，不修改根 manifest、lock 或 `node_modules`。
+- staging 固定为 `output/win7-stage/`；复制支持 Unicode 路径并拒绝 reparse point、特殊文件和越界资源。
+- npm 前后按原始字节和 SHA-256 绑定 staging manifest/lock；本地 builder 和 `extraResources` 必须通过 regular-file、canonical containment 与递归 reparse 检查。
+- Electron runtime probe 在 builder 前验证 staging PDF.js、Turndown ATX/Fenced 转换与运行时版本。
 
-若只需生成 staging 进行依赖或文件检查，可单独运行下列命令；它不会打包，后续完整构建仍会重新准备 staging：
+检查命令：
 
 ```powershell
 node scripts/build-win7.js --prepare-only
-```
-
-输出：
-
-- 可重建 staging：`output/win7-stage/`（完整测试中的安全性用例可能清理它，需要时重新执行 prepare/build）
-- 解包应用：`output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe`
-- 发布安装包：`dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`
-
-固定运行时为 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`。标准版继续使用根 manifest 的当前依赖。Win7 staging 使用仓库专用 `win7-package-lock.json` 和 `npm ci`，不得用 `npm install` 或手工复制的旧 `node_modules` 代替锁定安装。
-
-构建脚本在 npm 执行前后按原始字节和 SHA-256 绑定 staging 的 `package.json` / `package-lock.json`，并再次比对实际 manifest 与预期 profile。只允许运行 staging 内经 regular-file 与 canonical containment 检查的 electron-builder；所有 `extraResources` 也必须 canonical 地位于各自允许的项目根或 staging 根内，且路径链和递归内容不得包含 junction、符号链接或其他 reparse point。
-
-检查目标 OS 字段时必须读取内层应用 EXE：
-
-```powershell
-node scripts/inspect-pe.js "output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe"
-node scripts/inspect-pe.js "dist/FlyingMouse Format-Setup-0.3.2-win7-x64.exe"
 npm test --prefix output\win7-stage
 npm audit --omit=dev --prefix output\win7-stage
+node scripts/inspect-pe.js "output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe"
+node scripts/inspect-pe.js "dist/FlyingMouse Format-Setup-<version>-win7-x64.exe"
 ```
 
-内层应用的 PE 检查器预期输出 `format: "PE32+"`、`majorOperatingSystemVersion: 5`、`minorOperatingSystemVersion: 2`；外层安装器输出 `format: "PE32"`、OS `4.0`，不能用它代替应用本体的兼容性证据。本次最终锁定 staging 在 Node.js 22 下为 83/83 通过；遗留生产依赖审计为 2 个 high。
+内层应用必须为 PE32+、目标 OS `5.2`；NSIS 外壳为 PE32、OS `4.0`，不能代替内层兼容性证据。Release 必须披露未签名、Electron 22 EOL、Win7 Legacy 审计风险和“真实 Windows 7 SP1 x64 设备待验收”。
 
-## 验收
+## 固定引擎 Release CI
 
-- `npm test` 全部通过。
-- `git diff --check` 无错误。
-- 启动 `dist/win-unpacked/FlyingMouse Format.exe`，确认鼠鼠 UI、中文/English、转换和保存可用。
-- 从成品 EXE 提取关联图标，确认是鼠鼠图标；只查看源 PNG 不算成品验收。
-- 检查 EXE 的 ProductVersion 与发布版本一致。
-- 计算安装包 SHA-256 并写入交接记录和 Release。
-- 安装包当前未签名，发布说明必须保留 SmartScreen 提示。
-- Win7 兼容包还必须记录主线测试（本次最终基线为 128/128）、Node.js 22 staging 测试（83/83）、3 个真实 NCM/AV3A 源文件不变、PE 5.2、ASAR/资源/图标、当前 Windows 12 秒冒烟，以及主线 0 漏洞和 Win7 旧依赖 2 个 high 的审计结果。PDF.js 2.16 必须保持 `isEvalSupported: false`；Sharp 0.32 的遗留漏洞无法在保留 Electron 22/Win7 的同时直接升级，Release 说明必须建议离线处理可信文件。
-- PE 5.2 和当前 Windows 冒烟不能代替真实 Windows 7 SP1 x64 设备验收；未在真实设备运行时必须明确写“待验收”。
+- `ci-engines-v1.json` 固定引擎资产名、Release tag、SHA-256 与必需文件。
+- `.github/workflows/release.yml` 使用 `actions/cache` 缓存 `output/ci-engines-v1.tar.zst`；缓存未命中才从 `ci-engines-v1` Release 下载。
+- `scripts/restore-ci-engines.ps1` 必须先比对 SHA-256，再解包并检查 FFmpeg、Poppler、LibreOffice、OCR 数据和 AVS3 文件。
+- 标签工作流执行 `npm ci`、完整 `npm test`、生产审计、标准包与 Win7 包构建、产物存在性和 PE 检查。超时上限为 180 分钟。
 
-## 桌面快捷方式
+## v0.3.3 当前基线
 
-桌面快捷方式应满足：
+- 主线：169 项，167 通过、2 个预期 skip、0 失败；CI 子集 138/138。
+- Node.js 22 Win7 staging：90/90。
+- 根生产审计：0；Win7 Legacy：2 high、0 critical。
+- 3 个真实 NCM/AV3A 样本转换成功且源文件不变。
+- 标准安装包：548,633,801 字节，SHA-256 `2823d680cb8573bb21cc3a9537c0f6983ee06c280def5d2877cff6c8738f041b`。
+- Win7 安装包：517,687,142 字节，SHA-256 `d06e8c3cf5a0acec204ed94e26ff4500923f5e448064c520e42b31f24682ef4a`。
 
-- 名称：`FlyingMouse Format.lnk`
-- 目标：当前发布目录或正式安装目录下的 `FlyingMouse Format.exe`
-- 图标：`FlyingMouse Format.exe,0`
+## GitHub 发布顺序
 
-替换同路径 EXE 后应调用 Windows Shell 图标刷新，并用真实桌面截图确认；不要仅依据快捷方式属性判断。
-
-## GitHub
-
-1. 提交范围只包含 FlyingMouse Format。
-2. 推送 `main` 和对应 `v<version>` 标签。
-3. 创建 GitHub Release 并上传 NSIS 安装包。
-4. 回读远端 Release，核对标签、文件名、文件大小、SHA-256 摘要和下载链接。
-
-为既有 v0.3.2 补充 Win7 兼容包时，只追加新资产和说明：不得覆盖标准安装包，不得移动 `v0.3.2` 标签。上传后必须回读远端，确认标准 x64 与 `-win7-x64` 两个文件同时存在，并核对 Win7 资产的大小和 SHA-256；未回读前不得写成远端已验证。
+1. 先发布并回读固定 `ci-engines-v1.tar.zst` 资产，确认大小与 digest。
+2. 推送 `main`，创建并推送新的 `v0.3.3` 标签；不得移动或覆盖 v0.3.2。
+3. 等待标签 Release workflow 全部通过；任一测试、审计、构建或产物门禁失败都不得创建 v0.3.3 Release。
+4. 创建 GitHub v0.3.3 Release，上传标准 x64 和 `win7-x64` 两个 NSIS 安装包。
+5. 回读标签、资产文件名、大小、SHA-256/digest 和下载链接，再把远端证据写回 `HANDOFF.md`。
 
 ## Microsoft Store
 
-商店包必须从当前鼠鼠 UI 版本重新构建并重新截图。Partner Center 的审核状态属于外部状态，未经实时查看不得写成“当前已通过”或“正在审核”。详情见 [微软商店上架清单](微软商店上架清单.md)。
+商店包必须从当前鼠鼠 UI 版本重新构建并重新截图。Partner Center 审核属于外部状态，未经实时查看不得写成已通过或正在审核。

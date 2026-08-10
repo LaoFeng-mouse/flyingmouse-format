@@ -16,6 +16,9 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `public/i18n.js`：`zh-CN` / `en-US` 语言状态与持久化。
 - `public/conversion-preferences.js`：按规范化源扩展名记忆目标格式。
 - `settings-store.js`：在 Electron `userData/settings.json` 中原子保存最近目录。
+- `resource-policy.js`：统一图片、批量、PDF 与 OCR 资源上限和稳定错误码。
+- `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
+- `pdf-table-extractor.js` / `pdf-table-runtime.js`：复杂 PDF 表格几何识别、OCR 回退与工作簿模型。
 - `ncm-format.js`、`av3a-format.js`、`kgg-format.js`：专有音频容器处理。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
 - `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
@@ -37,7 +40,9 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 
 ## Conversion boundaries
 
-- PDF → XLSX 是文本表格提取，不是扫描表格布局重建。
+- PDF → XLSX 是“智能表格提取”：优先 PDF.js 电子文字坐标，无有效文字时使用 Poppler + Tesseract blocks；支持有框/无框、多表、跨页续接、旋转、合并区域、低置信批注与 Raw 回退，但扫描件和复杂排版仍可能不完整。
+- HTML / Office → Markdown 必须共用 ATX 标题、fenced 代码块的 Turndown helper；CSV 使用锁定的 `csv-parse 5.6.0`，禁止退回按换行拆分的简易解析器。
+- 资源上限固定为：单图 50MP、单边 16384px、图片合并 PDF 总解码量 100MP、批量选择 2GB、PDF 500 页、OCR 100 页；Sharp 不得使用无约束 `limitInputPixels: false`。
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR。
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
@@ -85,7 +90,7 @@ npm audit --omit=dev --prefix output\win7-stage
 
 沙箱限制 Node 子进程时可能出现 `spawn EPERM`；这不是转换代码失败。真实转换测试和打包应在普通 Windows PowerShell、cmd 或 CI 中运行。
 
-完整本地测试依赖 `bin/` 引擎；GitHub Actions 只运行不依赖大型引擎的 `npm run test:ci`。
+完整本地测试依赖 `bin/` 引擎。Release workflow 会按 `ci-engines-v1.json` 校验 SHA-256、缓存并恢复固定引擎资产，执行 `npm test`、审计和标准/Win7 双构建；普通 CI 仍运行 `npm run test:ci`。
 
 ## Packaging and release
 
@@ -97,6 +102,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
 - Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
 - Windows 7 发布证据必须同时记录：主线测试、staging 测试、真实 NCM/AV3A、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
+- Win7 staging 测试只运行能在 staging 内自洽执行的 90 项；根专属真实引擎/打包管线测试由主线执行，不得把根测试文件复制进 staging 后制造假失败。
 - GitHub remote：`https://github.com/LaoFeng-mouse/flyingmouse-format.git`。
 
 ## Documentation map

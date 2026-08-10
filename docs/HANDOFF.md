@@ -1,80 +1,62 @@
-# FlyingMouse Format v0.3.2 交接
+# FlyingMouse Format v0.3.3 交接
 
-更新时间：2026-08-09
+更新时间：2026-08-10
 
 ## 项目边界
 
-- 仓库：`D:\34615\飞鼠格式`
+- 本地原仓库：`D:\34615\飞鼠格式`
 - GitHub：`https://github.com/LaoFeng-mouse/flyingmouse-format`
-- 产品：鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）
-- 排除项：`鼠鼠打印` 是另一个项目，本次没有修改
+- 产品：原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；`鼠鼠打印` 是另一个项目，本版没有修改。
+- v0.3.3 使用同一套源码分别生成 Electron 43 的 Windows 10/11 标准包和 Electron 22 的 Windows 7 Legacy 包，不覆盖 v0.3.2。
 
-## 标准 Windows 10/11 x64 包（既有证据）
+## v0.3.3 功能
 
-- 版本：`0.3.2`
-- 安装包：`dist\FlyingMouse Format-Setup-0.3.2-x64.exe`
-- GitHub 现有资产：`FlyingMouse.Format-Setup-0.3.2-x64.exe`
-- 安装包大小：548,510,595 字节
-- SHA-256：`5df0eb6b8223333a7c2198906dd6171207f1693c34584a037106d696473284e6`
-- 解包 EXE ProductVersion：`0.3.2.0`
-- GitHub Release：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.2`（Latest）
-- GitHub main：`c896a58311a3550ecea3668eeb1a758f465be45c`
-- 签名：未签名，SmartScreen 可能提示
+- 单图 50MP / 16384px、图片合并 PDF 总解码量 100MP、批量 2GB、PDF 500 页、OCR 100 页；Sharp 不再取消像素保护。
+- `/api/capabilities` 返回 `limits`；资源拒绝包含稳定 `errorCode` 和中英文消息。
+- HTML / Office → Markdown 共用 ATX/Fenced Turndown；CSV 精确锁定 `csv-parse 5.6.0`，支持 BOM、转义引号和字段内换行。
+- PDF → Excel（智能表格提取）支持电子文字坐标、扫描页 OCR、有框/无框表格、旋转、多表、跨页续接、合并区域、低置信批注和 Raw 回退。扫描件、复杂表头和不规则合并区域仍可能不完整。
+- 鼠鼠 UI、按源格式记忆目标格式、保存路径记忆、中英文界面、NCM/AV3A 路径均保留。
 
-## Windows 7 SP1 x64 兼容包
+## 标准 Windows 10/11 x64 成品
 
-- 最终锁定安装包：`dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe`
-- 安装包大小：517,754,235 字节
-- 安装包 SHA-256：`74481cf3340772eee8e46dca7c1a317099d032668de74e051aa2b86143a03d8d`
-- 解包 EXE 大小：157,639,168 字节
-- 解包 EXE ProductVersion：`0.3.2.0`
-- 解包 EXE SHA-256：`080bcf023e624b78008724bcb6a16a7dc0d8876da0b4b0f9d85318e190418faa`
-- 解包 EXE：PE32+，目标 OS `5.2`
-- NSIS 外壳：PE32，目标 OS `4.0`（不是应用兼容性判断对象）
-- 锁定运行时：Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`
-- 签名：未签名（`NotSigned`）
-- GitHub Release：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.2`
-- GitHub 资产：`FlyingMouse.Format-Setup-0.3.2-win7-x64.exe`（GitHub 发布时自动将本地文件名中的空格规范化为点，未改变本地 `dist` 文件名）
-- 远端回读：大小 517,754,235 字节，SHA-256/digest 与本地 `74481cf3340772eee8e46dca7c1a317099d032668de74e051aa2b86143a03d8d` 一致；既有标准资产 `FlyingMouse.Format-Setup-0.3.2-x64.exe` 未改变。
+- 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-x64.exe`
+- 大小：548,633,801 字节
+- SHA-256：`2823d680cb8573bb21cc3a9537c0f6983ee06c280def5d2877cff6c8738f041b`
+- ProductVersion：`0.3.3.0`
+- NSIS：PE32，目标 OS `4.0`
+- ASAR SHA-256：`385107c8b9b15e24348b929ee0988168bffbd06987389b25f42a097d8334f030`
+- 签名：`NotSigned`
+- GitHub 资产：待 v0.3.3 Release 发布后回读补记。
 
-## 功能结果
+## Windows 7 SP1 x64 Legacy 成品
 
-- 恢复并保留鼠鼠 UI，没有改成闲鱼交付版。
-- 常规 NCM 和 Audio Vivid（AV3A）NCM 转换路径已整合。
-- 目标格式按源扩展名分别记忆，用户改选后更新默认值。
-- 保存目录会在下次保存时继续使用。
-- 支持中文/English，用户选择会被记住。
-- 打包图标已从旧橙色闪电改为鼠鼠，并增加回归测试。
-- 桌面 `FlyingMouse Format.lnk` 指向 v0.3.2 解包 EXE，图标来源为 EXE 内置图标。
+- 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-win7-x64.exe`
+- 大小：517,687,142 字节
+- SHA-256：`d06e8c3cf5a0acec204ed94e26ff4500923f5e448064c520e42b31f24682ef4a`
+- ProductVersion：`0.3.3.0`
+- NSIS 外壳：PE32，目标 OS `4.0`；内层应用：PE32+，目标 OS `5.2`
+- ASAR SHA-256：`8edd988a7543fd417070ac3d640199ff71c367a2df8e7c829f3d004452e06673`
+- 运行时：Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`
+- 签名：`NotSigned`
+- GitHub 资产：待 v0.3.3 Release 发布后回读补记。
 
-## 验证证据
+## 最终验证证据
 
-### 标准版既有发布验证（2026-08-08）
+- 主线 `npm test`：169 项，167 通过、2 个预期 fixture skip、0 失败；`npm run test:ci`：138/138。
+- Node.js 22 Win7 staging：90/90；构建使用官方 `node-v22.17.1-win-x64.zip`（35,526,030 字节，SHA-256 `b1fdb5635ba860f6bf71474f2ca882459a582de49b1d869451e3ad188e3943eb`），归档与解压文件数均为 2,447，npm `10.9.2`。
+- 固定 CI 引擎资产：`ci-engines-v1.tar.zst`，434,427,088 字节，SHA-256 `823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a`；恢复脚本先验哈希再解包，并校验必需文件。
+- 真实 NCM/AV3A：用户提供的 3 个样本均转换为可完整解码、ID3 可读的 MP3，源文件 SHA-256 未变化。
+- 审计：根生产依赖 0 漏洞；Win7 staging 为 2 个 high、0 critical（PDF.js 与 Sharp 的 Legacy 风险）。PDF.js 保持 `isEvalSupported: false`；Win7 包仅建议离线处理可信文件。
+- 标准包与 Win7 包的 ASAR 白名单、FFmpeg、LibreOffice、Poppler、Tesseract、AVS3 等资源均已核对。
+- 两个最终 EXE 的内嵌鼠鼠图标均已提取和目视确认；图标文件 SHA-256 相同：`f1eae8e5b0117d9d526f2e3b2f447c3127a82cff79736ef74bed7312c719a5c6`。
+- 当前 Windows 各持续冒烟 12 秒：标准包和 Win7 包均有 4 个精确同路径 Electron 进程响应，结束后残留为 0。
+- 真实 Windows 7 SP1 x64 设备仍待验收；自动化、PE 5.2 和当前 Windows 冒烟不能冒充实机验收。
 
-- 自动化测试：72/72 通过。
-- NSIS 构建：成功。
-- 成品 EXE 内嵌图标：已提取并目视确认是鼠鼠。
-- 桌面快捷方式：已刷新并通过真实桌面截图确认显示鼠鼠图标。
-- 标准版 GitHub 资产：既有上传已完成，远端大小与 SHA-256 和本地标准安装包一致。
+## 发布与风险
 
-### Win7 最终锁定构建验证（2026-08-09）
+- 两个安装包均未签名，SmartScreen 可能提示未知发布者。
+- NCM 仅保证兼容 `music.163.com` 对应网易云客户端生成的文件；其他同扩展名来源不在保证范围。
+- GitHub v0.3.3 只有在固定引擎资产、Release workflow 和双安装包远端回读全部通过后才写成“已发布”。
+- Microsoft Store 状态未在本轮实时登录 Partner Center 核验；商店材料不能声称已审核。
 
-- 构建主机：官方 Node.js `22.17.1`，归档 `node-v22.17.1-win-x64.zip`，SHA-256 `b1fdb5635ba860f6bf71474f2ca882459a582de49b1d869451e3ad188e3943eb`。脚本允许 Node.js 18–22、绑定子进程到当前 Node，并在 Node.js 26 下于 staging 变更前 fail closed。
-- 锁定构建管线：专用 `win7-package-lock.json` 经 `npm ci` 重建 staging；npm 前后校验 staging manifest/lockfile 原始字节和 SHA-256；Unicode 路径复制通过；本地 builder 与 `extraResources` 通过 canonical/reparse 边界检查。
-- 主线自动化：128/128 通过；根 `npm audit --omit=dev` 为 0。
-- Node.js 22 锁定 staging：83/83 通过，无跳过、无失败；生产依赖审计为 2 个 high（PDF.js、Sharp）。
-- 真实 NCM/AV3A：用户提供的 3 个样本均完成 AV3A → WAV → MP3，ID3 可读，FFmpeg 退出码为 0，源文件 SHA-256 均未改变。
-- ASAR/资源：ASAR 内 `server.js` 与源码 SHA-256 均为 `10bf9d3a01a6595265811abf3cdec545980c306281e55f11067aa1414baee8f8`；AV3A/AVS3、FFmpeg、LibreOffice、Poppler、tessdata 与 Tesseract core 资源齐全。
-- 成品内层与图标：使用 7za 从最终安装包提取内层 EXE，SHA-256 仍为 `080bcf023e624b78008724bcb6a16a7dc0d8876da0b4b0f9d85318e190418faa`；System.Drawing 导出的 32×32 内嵌图标已目视确认为鼠鼠，与 `build/icon.png` 同尺寸 premultiplied RGBA 像素 MAE 为 0（4,096 字节）。
-- 当前 Windows 冒烟：Microsoft Windows 11 家庭版 中文版，x64，Version `10.0.26200` / Build `26200`；解包 EXE 持续运行 12 秒，4 个精确同路径 Electron 进程均响应，测试后残留为 0。
-- Win7 设备验收：尚未在真实 Windows 7 SP1 x64 机器运行，仍为待验收，不得写成已完成。
-
-## 仍需注意
-
-- NCM 仅保证兼容 `music.163.com` 对应网易云音乐客户端的文件；其他来源的同扩展名文件不在兼容范围。
-- Git 仓库不包含大型转换引擎，源码开发环境需自行准备 `bin/`；普通用户应使用 Release 安装包。
-- Microsoft Store 的历史提交状态没有在本次实时登录 Partner Center 核验；更新商店时必须使用当前鼠鼠 UI 重新打包和截图。
-- 正式公开分发前建议配置可信代码签名。
-- Win7 staging 的 2 个 high 中，PDF.js 动态执行已通过 `isEvalSupported: false` 缓解；Sharp 0.32 的 libvips 风险仍存在，Win7 包只建议离线处理可信文件。
-
-发布与验证步骤见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+发布步骤见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
