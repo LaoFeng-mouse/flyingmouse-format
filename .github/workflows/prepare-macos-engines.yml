@@ -58,6 +58,7 @@ jobs:
           cp -R /Applications/LibreOffice.app "$root/libreoffice/LibreOffice.app"
           cp node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz "$root/tessdata/eng.traineddata.gz"
           cp node_modules/@tesseract.js-data/chi_sim/4.0.0_best_int/chi_sim.traineddata.gz "$root/tessdata/chi_sim.traineddata.gz"
+          cp node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz "$root/tessdata/tha.traineddata.gz"
           "$root/runtime/bin/ffmpeg" -version
           "$root/runtime/bin/pdftoppm" -v
           "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version

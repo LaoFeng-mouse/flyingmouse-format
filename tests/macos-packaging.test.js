@@ -44,7 +44,8 @@ test("manifest accepts only an explicit bootstrap or SHA-pinned macOS asset stat
       "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
       "runtime/bin/pdftoppm",
       "tessdata/eng.traineddata.gz",
-      "tessdata/chi_sim.traineddata.gz"
+      "tessdata/chi_sim.traineddata.gz",
+      "tessdata/tha.traineddata.gz"
     ]) {
       assert.ok(asset.requiredFiles.includes(required), `${arch} missing ${required}`);
     }
@@ -146,6 +147,7 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
   assert.match(workflow, /micromamba create/);
   assert.match(workflow, /ffmpeg poppler/);
   assert.match(workflow, /brew install --cask libreoffice/);
+  assert.match(workflow, /@tesseract\.js-data\/tha\/4\.0\.0_best_int\/tha\.traineddata\.gz/);
   assert.match(workflow, /node scripts\/validate-ci-engines\.js/);
   assert.match(workflow, /file .*runtime\/bin\/(?:ffmpeg|pdftoppm)/);
   assert.match(workflow, /sha256/);
@@ -153,6 +155,19 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
   assert.match(workflow, /actions\/download-artifact@v4/);
   assert.match(workflow, /sha256sum/);
   assert.match(workflow, /gh release upload ci-engines-v1/);
+});
+
+test("Thai OCR is locked and packaged across standard, Win7, and macOS builds", () => {
+  const packageJson = require("../package.json");
+  const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  assert.equal(packageJson.dependencies["@tesseract.js-data/tha"], "1.0.0");
+  assert.match(JSON.stringify(packageJson.build.win.extraResources), /tha\.traineddata\.gz/);
+  assert.match(server, /createWorker\("eng\+chi_sim\+tha"/);
+  assert.match(server, /tha\.traineddata\.gz/);
+
+  const win7Lock = require("../win7-package-lock.json");
+  assert.equal(win7Lock.packages[""].dependencies["@tesseract.js-data/tha"], "1.0.0");
+  assert.equal(win7Lock.packages["node_modules/@tesseract.js-data/tha"].version, "1.0.0");
 });
 
 test("CI and release workflows declare native macOS quality and DMG gates", () => {

@@ -257,6 +257,7 @@ function makeGridTable(words, lines, pageNumber) {
   const rows = Array.from({ length: rowCount }, () => Array(columnCount).fill(""));
   const cellConfidence = Array.from({ length: rowCount }, () => Array(columnCount).fill(0));
   const merges = [];
+  const damagedMergeCandidates = [];
   for (const cells of groups.values()) {
     const startRow = Math.min(...cells.map((cell) => cell.row));
     const endRow = Math.max(...cells.map((cell) => cell.row));
@@ -270,12 +271,29 @@ function makeGridTable(words, lines, pageNumber) {
       cellConfidence[startRow][startCol] = confidenceOfWords(entries);
       if (cells.length > 1) merges.push({ startRow, startCol, endRow, endCol });
     } else {
+      if (rectangular && cells.length > 1) {
+        damagedMergeCandidates.push({ cells, startRow, endRow, startCol, endCol, populatedCells });
+      }
       for (const cell of cells) {
         const entries = cellWords[cell.row][cell.column].sort((a, b) => a.y - b.y || a.x - b.x);
         rows[cell.row][cell.column] = entries.map((entry) => entry.text).join(" ");
         cellConfidence[cell.row][cell.column] = confidenceOfWords(entries);
       }
     }
+  }
+  for (const candidate of damagedMergeCandidates) {
+    const span = candidate.endRow - candidate.startRow + 1;
+    const header = String(rows[0]?.[candidate.startCol] || "").toLocaleLowerCase().replace(/\s+/g, "");
+    const isProductName = /名称|品名|productname|itemname/.test(header);
+    if (candidate.startCol !== candidate.endCol || span < 3 || !isProductName || candidate.populatedCells > Math.ceil(span / 2)) continue;
+    const entries = candidate.cells.flatMap((cell) => cellWords[cell.row][cell.column]).sort((a, b) => a.y - b.y || a.x - b.x);
+    rows[candidate.startRow][candidate.startCol] = entries.map((entry) => entry.text).join(" ");
+    cellConfidence[candidate.startRow][candidate.startCol] = confidenceOfWords(entries);
+    for (let row = candidate.startRow + 1; row <= candidate.endRow; row += 1) {
+      rows[row][candidate.startCol] = "";
+      cellConfidence[row][candidate.startCol] = 0;
+    }
+    merges.push({ startRow: candidate.startRow, startCol: candidate.startCol, endRow: candidate.endRow, endCol: candidate.endCol });
   }
   return {
     rows,
@@ -285,6 +303,11 @@ function makeGridTable(words, lines, pageNumber) {
     pages: [pageNumber],
     columnAnchors: xs,
     bounds: { left: xs[0], top: ys[0], right: xs[xs.length - 1], bottom: ys[ys.length - 1] },
+    damagedMergeCandidates: damagedMergeCandidates.map((candidate) => ({
+      startRow: candidate.startRow, endRow: candidate.endRow,
+      startCol: candidate.startCol, endCol: candidate.endCol,
+      populatedCells: candidate.populatedCells
+    })),
     wordIds: words.filter((entry) => {
       const centerX = entry.x + entry.width / 2;
       const centerY = entry.y + entry.height / 2;
@@ -330,28 +353,117 @@ function arithmeticPair(row, priceIndex, quantityIndex, totalIndex) {
   const total = Number(rawTotal);
   if (!rawPrice || !rawQuantity || !Number.isFinite(total) || total <= 0) return null;
   const candidates = [];
-  const add = (price, quantity) => {
-    if (!Number.isFinite(price) || price <= 0 || price > 1_000_000 || !Number.isInteger(quantity) || quantity <= 0) return;
+  const add = (price, quantity, candidateTotal, penalty = 0) => {
+    if (!Number.isFinite(price) || price <= 0 || price > 1_000_000 || !Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(candidateTotal)) return;
     const priceText = formatDecimal(price);
     const quantityText = String(quantity);
-    candidates.push({ priceText, quantityText, score: editDistance(priceText, rawPrice) + editDistance(quantityText, rawQuantity) });
+    const totalText = formatDecimal(candidateTotal);
+    candidates.push({
+      priceText, quantityText, totalText, penalty,
+      score: editDistance(priceText, rawPrice) + editDistance(quantityText, rawQuantity) + editDistance(totalText, rawTotal) + penalty
+    });
   };
   const priceCandidates = new Set([Number(rawPrice)]);
   if (!rawPrice.includes(".")) {
     if (rawPrice.length >= 2) priceCandidates.add(Number(rawPrice) / 10);
     if (rawPrice.length >= 3) priceCandidates.add(Number(rawPrice) / 100);
   }
-  for (const price of priceCandidates) {
-    const quantity = total / price;
-    if (Math.abs(quantity - Math.round(quantity)) <= 0.001) add(price, Math.round(quantity));
-  }
   const quantity = Number(rawQuantity);
   if (Number.isInteger(quantity) && quantity > 0) {
-    const price = total / quantity;
-    if (Math.abs(price * quantity - total) <= 0.01 && Math.abs(price * 100 - Math.round(price * 100)) <= 0.001) add(price, quantity);
+    for (const price of priceCandidates) add(price, quantity, price * quantity);
   }
-  candidates.sort((a, b) => a.score - b.score || Number(a.priceText) - Number(b.priceText));
+  for (const price of priceCandidates) {
+    const inferredQuantity = total / price;
+    if (Math.abs(inferredQuantity - Math.round(inferredQuantity)) <= 0.001) add(price, Math.round(inferredQuantity), total, 1);
+  }
+  if (Number.isInteger(quantity) && quantity > 0) {
+    const price = total / quantity;
+    if (Math.abs(price * quantity - total) <= 0.01 && Math.abs(price * 100 - Math.round(price * 100)) <= 0.001) add(price, quantity, total, 1);
+  }
+  candidates.sort((a, b) => a.score - b.score || a.penalty - b.penalty || Number(a.priceText) - Number(b.priceText));
   return candidates[0] && candidates[0].score <= 3 ? candidates[0] : null;
+}
+
+function greatestCommonDivisor(left, right) {
+  let a = Math.abs(Math.trunc(left));
+  let b = Math.abs(Math.trunc(right));
+  while (b) [a, b] = [b, a % b];
+  return a;
+}
+
+function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, totalIndex) {
+  const dataRows = table.rows.slice(1).filter((row) => {
+    const price = Number(numericText(row[priceIndex]));
+    const quantity = Number(numericText(row[quantityIndex]).replaceAll(".", ""));
+    const total = Number(numericText(row[totalIndex]));
+    return price > 0 && Number.isInteger(quantity) && quantity > 0 && total > 0;
+  });
+  if (dataRows.length < 6) return 0;
+  const explicitPrices = [...new Set(dataRows
+    .map((row) => numericText(row[priceIndex]))
+    .filter((value) => value.includes("."))
+    .map((value) => formatDecimal(Number(value))))];
+  const canonicalPrice = (row) => {
+    const raw = numericText(row[priceIndex]);
+    const normalized = formatDecimal(Number(raw));
+    if (raw.includes(".")) return normalized;
+    const decimalCandidate = explicitPrices
+      .map((value) => ({ value, distance: editDistance(value, raw) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    return decimalCandidate && decimalCandidate.distance <= 1 ? decimalCandidate.value : normalized;
+  };
+  const priceCounts = new Map();
+  for (const row of dataRows) {
+    const value = canonicalPrice(row);
+    priceCounts.set(value, (priceCounts.get(value) || 0) + 1);
+  }
+  const [dominantPriceText, dominantCount] = [...priceCounts].sort((a, b) => b[1] - a[1])[0] || [];
+  if (!dominantPriceText || dominantCount < Math.max(4, Math.ceil(dataRows.length * 0.5))) return 0;
+  const dominantPrice = Number(dominantPriceText);
+  const trustedQuantities = dataRows
+    .filter((row) => canonicalPrice(row) === dominantPriceText)
+    .map((row) => Number(numericText(row[quantityIndex]).replaceAll(".", "")))
+    .filter((value) => Number.isInteger(value) && value > 0);
+  const quantityStep = trustedQuantities.reduce((step, value) => step ? greatestCommonDivisor(step, value) : value, 0);
+  if (quantityStep < 2) return 0;
+  const maximumQuantity = Math.max(...trustedQuantities, quantityStep) * 2;
+  const candidateQuantities = [];
+  for (let quantity = quantityStep; quantity <= maximumQuantity; quantity += quantityStep) candidateQuantities.push(quantity);
+
+  let corrected = 0;
+  table.rows.slice(1).forEach((row, offset) => {
+    const rowIndex = offset + 1;
+    const rawPrice = numericText(row[priceIndex]);
+    const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+    const rawTotal = numericText(row[totalIndex]);
+    if (!rawPrice || !rawQuantity || !rawTotal || formatDecimal(Number(rawPrice)) === dominantPriceText) return;
+    const priceDistance = editDistance(dominantPriceText, rawPrice);
+    if (priceDistance > 2) return;
+    const candidates = candidateQuantities.map((quantity) => {
+      const quantityText = String(quantity);
+      const totalText = formatDecimal(dominantPrice * quantity);
+      return {
+        quantityText,
+        totalText,
+        quantityDistance: editDistance(quantityText, rawQuantity),
+        totalDistance: editDistance(totalText, rawTotal)
+      };
+    }).sort((a, b) => (a.quantityDistance + a.totalDistance) - (b.quantityDistance + b.totalDistance));
+    const best = candidates[0];
+    if (!best || best.quantityDistance > 1 || best.totalDistance > 4) return;
+    const confidence = [priceIndex, quantityIndex, totalIndex]
+      .map((column) => Number(table.cellConfidence?.[rowIndex]?.[column]))
+      .filter(Number.isFinite);
+    const isLowConfidenceTriple = confidence.length === 3 && Math.max(...confidence) <= 0.6;
+    if (best.totalDistance > 1 && !isLowConfidenceTriple) return;
+    for (const [column, value] of [[priceIndex, dominantPriceText], [quantityIndex, best.quantityText], [totalIndex, best.totalText]]) {
+      if (String(row[column] || "").trim() === value) continue;
+      row[column] = value;
+      if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);
+      corrected += 1;
+    }
+  });
+  return corrected;
 }
 
 function repairArithmeticColumns(table) {
@@ -363,13 +475,13 @@ function repairArithmeticColumns(table) {
   let totalIndex = header.findIndex((value) => /金额|合计|total|amount/.test(value));
   if (totalIndex < 0 && quantityIndex + 1 < header.length) totalIndex = quantityIndex + 1;
   if (totalIndex < 0 || new Set([priceIndex, quantityIndex, totalIndex]).size < 3) return 0;
+  let corrected = repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, totalIndex);
   const repairs = table.rows.slice(1).map((row) => arithmeticPair(row, priceIndex, quantityIndex, totalIndex));
-  if (repairs.filter(Boolean).length < 3) return 0;
-  let corrected = 0;
+  if (repairs.filter(Boolean).length < 3) return corrected;
   repairs.forEach((pair, index) => {
     if (!pair) return;
     const rowIndex = index + 1;
-    for (const [column, value] of [[priceIndex, pair.priceText], [quantityIndex, pair.quantityText]]) {
+    for (const [column, value] of [[priceIndex, pair.priceText], [quantityIndex, pair.quantityText], [totalIndex, pair.totalText]]) {
       if (String(table.rows[rowIndex][column] || "").trim() === value) continue;
       table.rows[rowIndex][column] = value;
       if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);
@@ -400,6 +512,42 @@ function repairSequentialIndex(table) {
     corrected += 1;
   });
   return corrected;
+}
+
+function recoverProductNameMerges(table) {
+  if (table.kind !== "grid" || !Array.isArray(table.damagedMergeCandidates)) return 0;
+  let recovered = 0;
+  for (const candidate of table.damagedMergeCandidates) {
+    const span = candidate.endRow - candidate.startRow + 1;
+    const header = String(table.rows[0]?.[candidate.startCol] || "").toLocaleLowerCase().replace(/\s+/g, "");
+    if (candidate.startCol !== candidate.endCol || span < 3 || !/名称|品名|productname|itemname/.test(header)) continue;
+    if (candidate.populatedCells > Math.ceil(span / 2)) continue;
+    if (table.merges.some((merge) => merge.startRow === candidate.startRow && merge.startCol === candidate.startCol && merge.endRow === candidate.endRow && merge.endCol === candidate.endCol)) continue;
+    const values = [];
+    for (let row = candidate.startRow; row <= candidate.endRow; row += 1) {
+      const value = String(table.rows[row]?.[candidate.startCol] || "").trim();
+      if (value) values.push(value);
+      if (row > candidate.startRow) {
+        table.rows[row][candidate.startCol] = "";
+        if (table.cellConfidence[row]) table.cellConfidence[row][candidate.startCol] = 0;
+      }
+    }
+    table.rows[candidate.startRow][candidate.startCol] = values.join(" ");
+    table.merges.push({ startRow: candidate.startRow, startCol: candidate.startCol, endRow: candidate.endRow, endCol: candidate.endCol });
+    recovered += 1;
+  }
+  return recovered;
+}
+
+function removeUnsafeOcrDataMerges(table) {
+  if (table.kind !== "grid" || !table.rows[0]) return 0;
+  const original = table.merges.length;
+  table.merges = table.merges.filter((merge) => {
+    if (merge.startRow <= 0 || merge.endRow <= merge.startRow || merge.startCol !== merge.endCol) return true;
+    const header = String(table.rows[0][merge.startCol] || "").toLocaleLowerCase().replace(/\s+/g, "");
+    return !/单价|数量|金额|合计|price|qty|quantity|amount|total|否.*是|是.*否|包.*邮/.test(header);
+  });
+  return original - table.merges.length;
 }
 
 function detectTablesOnPage(input = {}) {
@@ -514,7 +662,8 @@ function cloneTableAsSheet(table, name, source) {
     bounds: { ...table.bounds },
     pageWidth: table.pageWidth || 0,
     pageHeight: table.pageHeight || 0,
-    kind: table.kind || "unknown"
+    kind: table.kind || "unknown",
+    damagedMergeCandidates: (table.damagedMergeCandidates || []).map((candidate) => ({ ...candidate }))
   };
 }
 
@@ -554,6 +703,13 @@ function buildWorkbookModel(pages = []) {
           startCol: merge.startCol,
           endCol: merge.endCol
         })));
+        continuation.damagedMergeCandidates.push(...(table.damagedMergeCandidates || [])
+          .filter((candidate) => candidate.startRow >= firstDataRow)
+          .map((candidate) => ({
+            ...candidate,
+            startRow: candidate.startRow + rowOffset,
+            endRow: candidate.endRow + rowOffset
+          })));
         continuation.pages.push(page.pageNumber);
         continuation.confidence = Math.min(continuation.confidence, table.confidence);
         continuation.bounds = { ...table.bounds };
@@ -578,6 +734,10 @@ function buildWorkbookModel(pages = []) {
     }
   }
   for (const sheet of sheets.filter((candidate) => !candidate.name.endsWith("-Raw"))) {
+    const recoveredMerges = sheet.source === "ocr" ? recoverProductNameMerges(sheet) : 0;
+    if (recoveredMerges) warnings.push(`${sheet.name}: ${recoveredMerges} product-name merge recovered from damaged grid lines`);
+    const removedMerges = sheet.source === "ocr" ? removeUnsafeOcrDataMerges(sheet) : 0;
+    if (removedMerges) warnings.push(`${sheet.name}: ${removedMerges} unsafe data merges removed`);
     const corrected = sheet.source === "ocr" ? repairArithmeticColumns(sheet) : 0;
     if (corrected) warnings.push(`${sheet.name}: ${corrected} numeric cells corrected by arithmetic consistency`);
     const sequenceCorrected = sheet.source === "ocr" ? repairSequentialIndex(sheet) : 0;
