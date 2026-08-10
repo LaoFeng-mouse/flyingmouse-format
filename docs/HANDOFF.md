@@ -22,7 +22,7 @@
 - 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-x64.exe`
 - 大小：548,633,801 字节
 - SHA-256：`2823d680cb8573bb21cc3a9537c0f6983ee06c280def5d2877cff6c8738f041b`
-- ProductVersion：`0.3.3.0`
+- 内层应用 EXE ProductVersion：`0.3.3.0`（NSIS 安装器文件版本显示为 `0.3.3`）
 - NSIS：PE32，目标 OS `4.0`
 - ASAR SHA-256：`385107c8b9b15e24348b929ee0988168bffbd06987389b25f42a097d8334f030`
 - 签名：`NotSigned`
@@ -33,7 +33,7 @@
 - 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-win7-x64.exe`
 - 大小：517,687,142 字节
 - SHA-256：`d06e8c3cf5a0acec204ed94e26ff4500923f5e448064c520e42b31f24682ef4a`
-- ProductVersion：`0.3.3.0`
+- 内层应用 EXE ProductVersion：`0.3.3.0`
 - NSIS 外壳：PE32，目标 OS `4.0`；内层应用：PE32+，目标 OS `5.2`
 - ASAR SHA-256：`8edd988a7543fd417070ac3d640199ff71c367a2df8e7c829f3d004452e06673`
 - 运行时：Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`
