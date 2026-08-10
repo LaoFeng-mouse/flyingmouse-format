@@ -34,3 +34,60 @@ jobs:
 
       - name: Production dependency audit
         run: npm audit --omit=dev
+
+  macos-test:
+    name: macOS ${{ matrix.arch }} engine and code gates
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-26
+          - arch: x64
+            runner: macos-26-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Assert native runner architecture
+        run: test "$(node -p 'process.arch')" = "${{ matrix.arch }}"
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Restore SHA-pinned native engines
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          brew install zstd
+          key="darwin-${{ matrix.arch }}"
+          asset="$(node -p "require('./ci-engines-v1.json').assets['$key'].assetName")"
+          root="$PWD/bin/engines/$key"
+          mkdir -p output "$root"
+          gh release download ci-engines-v1 --repo "${{ github.repository }}" --pattern "$asset" --dir output
+          zstd -dc "output/$asset" | tar -xf - -C "$root"
+          node scripts/validate-ci-engines.js --platform darwin --arch "${{ matrix.arch }}" --root "$root" --bundle "output/$asset"
+          file "$root/runtime/bin/ffmpeg" "$root/runtime/bin/pdftoppm" "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice"
+
+      - name: Run macOS full conversion suite and engine probes
+        env:
+          FLYINGMOUSE_FFMPEG_PATH: bin/engines/darwin-${{ matrix.arch }}/runtime/bin/ffmpeg
+          FLYINGMOUSE_LIBREOFFICE_PATH: bin/engines/darwin-${{ matrix.arch }}/libreoffice/LibreOffice.app/Contents/MacOS/soffice
+          FLYINGMOUSE_PDFTOPPM_PATH: bin/engines/darwin-${{ matrix.arch }}/runtime/bin/pdftoppm
+          FLYINGMOUSE_TESSDATA_PATH: bin/engines/darwin-${{ matrix.arch }}/tessdata
+        run: |
+          npm test
+          "$FLYINGMOUSE_FFMPEG_PATH" -version
+          "$FLYINGMOUSE_PDFTOPPM_PATH" -v
+          "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev

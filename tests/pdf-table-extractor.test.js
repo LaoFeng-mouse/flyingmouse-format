@@ -107,6 +107,29 @@ test("workbook model continues matching tables across pages and removes repeated
   assert.deepEqual(model.sheets[0].pages, [1, 2]);
 });
 
+test("workbook model continues numbered ruled rows when the next page omits the header", () => {
+  const table = (rows, top, bottom) => ({
+    rows,
+    merges: [],
+    cellConfidence: rows.map((row) => row.map(() => 0.9)),
+    confidence: 0.9,
+    pages: [1],
+    columnAnchors: [10, 40, 80, 140],
+    bounds: { left: 10, top, right: 140, bottom }
+  });
+  const model = buildWorkbookModel([
+    { pageNumber: 1, width: 150, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      table([["序", "产品", "数量"], ["11", "Circus Girl", "480"], ["12", "Christmas", "480"]], 40, 190)
+    ] },
+    { pageNumber: 2, width: 150, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      table([["13", "Ocean", "720"], ["14", "Halloween", "960"]], 2, 80)
+    ] }
+  ]);
+  assert.equal(model.sheets.length, 1);
+  assert.deepEqual(model.sheets[0].rows.map((row) => row[0]), ["序", "11", "12", "13", "14"]);
+  assert.deepEqual(model.sheets[0].pages, [1, 2]);
+});
+
 test("workbook model keeps different headers separate", () => {
   const first = detectTablesOnPage({
     pageNumber: 1, width: 200, height: 100, source: "text",

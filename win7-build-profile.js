@@ -15,12 +15,18 @@ const REQUIRED_RUNTIME_FILES = [
   "server.js",
   "resource-policy.js",
   "text-conversion.js",
+  "office-engine.js",
+  "office-quality.js",
+  "diagnostics.js",
+  "runtime-paths.js",
+  "image-conversion.js",
   "pdf-table-extractor.js",
   "pdf-table-runtime.js",
   "ci-engines-v1.json",
   "logger.js",
   "settings-store.js",
   "ncm-format.js",
+  "ncm-metadata.js",
   "av3a-format.js",
   "kgg-format.js"
 ];
@@ -48,12 +54,12 @@ function validateBasePackage(basePackage, projectRoot) {
     throw new Error("build.files must be an array of strings.");
   }
   if (!isObject(basePackage.build.win)) throw new Error("build.win must be an object.");
-  if (!Array.isArray(basePackage.build.extraResources)) {
-    throw new Error("build.extraResources must be an array.");
+  if (!Array.isArray(basePackage.build.win.extraResources)) {
+    throw new Error("build.win.extraResources must be an array.");
   }
-  basePackage.build.extraResources.forEach((item, index) => {
+  basePackage.build.win.extraResources.forEach((item, index) => {
     if (!isObject(item) || typeof item.from !== "string") {
-      throw new Error(`build.extraResources[${index}].from must be a string.`);
+      throw new Error(`build.win.extraResources[${index}].from must be a string.`);
     }
   });
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
@@ -106,12 +112,14 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
-  profile.build.extraResources = profile.build.extraResources.map((item) => ({
+  profile.build.extraResources = profile.build.win.extraResources.map((item) => ({
     ...item,
     from: item.from.startsWith("bin/")
       ? path.join(projectRoot, ...item.from.split("/"))
       : item.from
   }));
+  delete profile.build.win.extraResources;
+  delete profile.build.mac;
 
   return profile;
 }

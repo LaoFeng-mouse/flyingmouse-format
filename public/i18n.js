@@ -44,9 +44,9 @@
     return {
       get language() { return language; },
       t(key, params) { return translate(messages, language, key, params); },
-      setLanguage(value) {
+      setLanguage(value, options = {}) {
         language = normalizeLanguage(value);
-        saveLanguage(storage, language);
+        if (options.persist !== false) saveLanguage(storage, language);
         return language;
       }
     };

@@ -344,11 +344,23 @@ function sameColumns(left, right) {
   return a.every((value, index) => Math.abs(value / leftWidth - b[index] / rightWidth) <= 0.04);
 }
 
+function firstInteger(row) {
+  const match = String(row?.[0] || "").trim().match(/^\d+$/);
+  return match ? Number(match[0]) : null;
+}
+
+function hasSequentialRows(previous, table) {
+  const previousIndex = firstInteger(previous.rows?.[previous.rows.length - 1]);
+  const nextIndex = firstInteger(table.rows?.[0]);
+  return Number.isInteger(previousIndex) && Number.isInteger(nextIndex) && nextIndex === previousIndex + 1;
+}
+
 function canContinue(previous, table, page) {
-  if (!sameHeader(previous, table) || !sameColumns(previous, table)) return false;
+  if (!sameColumns(previous, table)) return false;
   const previousHeight = Math.max(1, previous.pageHeight || previous.bounds?.bottom || 1);
   const currentHeight = Math.max(1, page.height || table.bounds?.bottom || 1);
-  return previous.bounds?.bottom >= previousHeight * 0.75 && table.bounds?.top <= currentHeight * 0.25;
+  const touchesPageBreak = previous.bounds?.bottom >= previousHeight * 0.75 && table.bounds?.top <= currentHeight * 0.25;
+  return touchesPageBreak && (sameHeader(previous, table) || hasSequentialRows(previous, table));
 }
 
 function cloneTableAsSheet(table, name, source) {
@@ -393,10 +405,11 @@ function buildWorkbookModel(pages = []) {
       const continuation = candidates.find((sheet) => !continued.has(sheet) && canContinue(sheet, table, page));
       if (continuation) {
         continued.add(continuation);
-        const rowOffset = continuation.rows.length - 1;
-        continuation.rows.push(...table.rows.slice(1).map((row) => [...row]));
-        continuation.cellConfidence.push(...table.cellConfidence.slice(1).map((row) => [...row]));
-        continuation.merges.push(...table.merges.filter((merge) => merge.startRow > 0).map((merge) => ({
+        const firstDataRow = sameHeader(continuation, table) ? 1 : 0;
+        const rowOffset = continuation.rows.length - firstDataRow;
+        continuation.rows.push(...table.rows.slice(firstDataRow).map((row) => [...row]));
+        continuation.cellConfidence.push(...table.cellConfidence.slice(firstDataRow).map((row) => [...row]));
+        continuation.merges.push(...table.merges.filter((merge) => merge.startRow >= firstDataRow).map((merge) => ({
           startRow: merge.startRow + rowOffset,
           endRow: merge.endRow + rowOffset,
           startCol: merge.startCol,

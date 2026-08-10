@@ -8,9 +8,13 @@ const path = require("path");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
 const { PDFDocument, StandardFonts } = require("pdf-lib");
-const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
+const isolatedRuntimeRoot = path.join(scratchRoot, "empty-runtime");
+if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
+  process.env.FLYINGMOUSE_RUNTIME_DIR = isolatedRuntimeRoot;
+}
+const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 const FFMPEG_BIN = path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
 let server;
 let baseUrl;
@@ -157,6 +161,19 @@ function assertPdf(filePath) {
     assert.strictEqual(header.toString("latin1"), "%PDF-");
   } finally {
     fs.closeSync(fd);
+  }
+}
+
+function sofficeProcessIds() {
+  if (process.platform !== "win32") return new Set();
+  try {
+    const output = execFileSync("tasklist.exe", ["/FI", "IMAGENAME eq soffice*", "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true
+    });
+    return new Set([...output.matchAll(/"soffice(?:\.exe|\.bin)"\s*,\s*"(\d+)"/gi)].map((match) => match[1]));
+  } catch {
+    return new Set();
   }
 }
 
@@ -722,8 +739,9 @@ test("converts a DOCX to plain text without LibreOffice txt export", async () =>
 
 test("converts a DOCX to PDF via LibreOffice", async () => {
   const sourcePath = path.join(scratchRoot, "文档转PDF.docx");
-  await createMinimalDocx(sourcePath, "PDF content here");
+  await createMinimalDocx(sourcePath, "Fresh isolated profile PDF content 2026");
   const beforeHash = hashFile(sourcePath);
+  const processesBefore = sofficeProcessIds();
 
   const { response, body } = await uploadConvert(sourcePath, "文档转PDF.docx", "pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 
@@ -732,6 +750,11 @@ test("converts a DOCX to PDF via LibreOffice", async () => {
   const outputPath = await downloadResult(body, "文档转PDF.pdf");
   assertPdf(outputPath);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const leakedProcesses = [...sofficeProcessIds()].filter((pid) => !processesBefore.has(pid));
+  assert.deepStrictEqual(leakedProcesses, [], `LibreOffice left child processes behind: ${leakedProcesses.join(", ")}`);
+  const runtimeEntries = await fsp.readdir(isolatedRuntimeRoot).catch(() => []);
+  assert.deepStrictEqual(runtimeEntries.filter((name) => name.startsWith("office-")), [], "isolated Office profiles must be removed");
 });
 
 test("decrypts a standard NetEase NCM file to MP3 (real fixture required)", async (t) => {

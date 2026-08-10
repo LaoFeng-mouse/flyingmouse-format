@@ -59,9 +59,9 @@ test("consumes PDF pages from an async iterable one page at a time", async () =>
   let yielded = 0;
   async function* pages() {
     yielded += 1;
-    yield { pageNumber: 1, width: 10, height: 10, textContent: { items: [] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
+    yield { pageNumber: 1, width: 10, height: 10, textContent: { items: [{ str: "Page one", transform: [1, 0, 0, 1, 1, 5], width: 4, height: 1 }] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
     yielded += 1;
-    yield { pageNumber: 2, width: 10, height: 10, textContent: { items: [] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
+    yield { pageNumber: 2, width: 10, height: 10, textContent: { items: [{ str: "Page two", transform: [1, 0, 0, 1, 1, 5], width: 4, height: 1 }] }, viewport: { transform: [1, 0, 0, -1, 0, 10], scale: 1 } };
   }
   const seen = [];
   const model = await buildPdfTableWorkbook(pages(), {
@@ -110,4 +110,28 @@ test("uses OCR when a scanned page contains only ineffective embedded noise text
   });
   assert.equal(detected.source, "ocr");
   assert.equal(detected.words[0].text, "Mouse");
+});
+
+test("fails closed when a scanned page needs OCR but OCR is unavailable", async () => {
+  await assert.rejects(
+    buildPdfTableWorkbook([{
+      pageNumber: 1, width: 100, height: 80,
+      textContent: { items: [{ str: "7", transform: [1, 0, 0, 8, 4, 20], width: 2, height: 8 }] },
+      viewport: { transform: [1, 0, 0, -1, 0, 80], scale: 1, rotation: 0 }
+    }], {}),
+    (error) => error.code === "PDF_TABLE_OCR_REQUIRED"
+      && /OCR/.test(error.messages.zhCN)
+      && /OCR/.test(error.messages.enUS)
+  );
+});
+
+test("fails closed when OCR returns no usable words", async () => {
+  await assert.rejects(
+    buildPdfTableWorkbook([{
+      pageNumber: 1, width: 100, height: 80,
+      textContent: { items: [] },
+      viewport: { transform: [1, 0, 0, -1, 0, 80], scale: 1, rotation: 0 }
+    }], { ocrPage: async () => ({ data: { words: [] } }) }),
+    (error) => error.code === "PDF_TABLE_OCR_EMPTY" && /OCR/.test(error.messages.enUS)
+  );
 });
