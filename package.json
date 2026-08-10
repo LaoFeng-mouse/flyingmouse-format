@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "desktop": "electron .",
-    "dist": "electron-builder --win nsis",
+    "dist": "electron-builder --win nsis --publish never",
     "dist:win7": "node scripts/build-win7.js",
     "test": "node --test tests/av3a-format.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
     "test:ci": "node --test tests/av3a-format.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"

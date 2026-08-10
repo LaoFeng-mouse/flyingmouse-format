@@ -481,7 +481,7 @@ function runBuildCommands(stagePath, runner = spawnSync, options = {}) {
   runWin7RuntimeProbe(safeStagePath, projectRoot, runner);
   runChecked(
     process.execPath,
-    [localBuilderCli, "--win", "nsis", "--x64"],
+    [localBuilderCli, "--win", "nsis", "--x64", "--publish", "never"],
     "electron-builder",
     safeStagePath,
     runner
