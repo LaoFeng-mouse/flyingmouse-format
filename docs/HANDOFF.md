@@ -1,66 +1,50 @@
-# FlyingMouse Format v0.3.3 交接
+# FlyingMouse Format v0.3.4 交接
 
 更新时间：2026-08-10
 
 ## 项目边界
 
-- 本地原仓库：`D:\34615\飞鼠格式`
-- GitHub：`https://github.com/LaoFeng-mouse/flyingmouse-format`
-- 产品：原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；`鼠鼠打印` 是另一个项目，本版没有修改。
-- v0.3.3 使用同一套源码分别生成 Electron 43 的 Windows 10/11 标准包和 Electron 22 的 Windows 7 Legacy 包，不覆盖 v0.3.2。
+- GitHub：<https://github.com/LaoFeng-mouse/flyingmouse-format>
+- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.4>
+- 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
+- v0.3.4 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
 
-## v0.3.3 功能
+## v0.3.4 质量改进
 
-- 单图 50MP / 16384px、图片合并 PDF 总解码量 100MP、批量 2GB、PDF 500 页、OCR 100 页；Sharp 不再取消像素保护。
-- `/api/capabilities` 返回 `limits`；资源拒绝包含稳定 `errorCode` 和中英文消息。
-- HTML / Office → Markdown 共用 ATX/Fenced Turndown；CSV 精确锁定 `csv-parse 5.6.0`，支持 BOM、转义引号和字段内换行。
-- PDF → Excel（智能表格提取）支持电子文字坐标、扫描页 OCR、有框/无框表格、旋转、多表、跨页续接、合并区域、低置信批注和 Raw 回退。扫描件、复杂表头和不规则合并区域仍可能不完整。
-- 鼠鼠 UI、按源格式记忆目标格式、保存路径记忆、中英文界面、NCM/AV3A 路径均保留。
+- 资源保护：单图 50MP / 16384px、图片合并 PDF 总解码量 100MP、批量选择 2GB、PDF 500 页、OCR 100 页；Sharp 恢复像素保护并在 Raw Buffer 前预检。
+- HTML / Office 到 Markdown 共用 ATX/Fenced Turndown；CSV 精确锁定 `csv-parse 5.6.0`，支持 BOM、转义引号和字段内换行。
+- PDF 到 Excel 使用电子文字坐标、Poppler 页面渲染与 OCR blocks，支持有框/无框、多表、旋转、跨页、合并区域、低置信批注和 Raw 回退。扫描件、复杂表头及不规则合并区域仍可能不完整。
+- 修复 OCR 高置信折扣、少数异价和合法合并区域被自动改写的问题，优先保证数据不被静默“纠正”。
+- 改进 Markdown、HTML 表格、嵌套 JSON、动图静态化、透明图片转 JPG、XLSX 到 CSV 提示、NCM 元数据与封面保留。
+- 保留按源格式记忆目标格式、保存路径记忆、中英文界面和鼠鼠 UI。
 
-## 标准 Windows 10/11 x64 成品
+## GitHub v0.3.4 成品
 
-- 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-x64.exe`
-- 大小：548,634,899 字节
-- SHA-256：`3f812a515d9ab899929d1a5d42c7ac0903ad7baab65690bef719757aa51bec79`
-- 内层应用 EXE ProductVersion：`0.3.3.0`（NSIS 安装器文件版本显示为 `0.3.3`）
-- NSIS：PE32，目标 OS `4.0`
-- 内层应用 EXE SHA-256：`883e0ebded950327481797ed7ac452e1c34f3fcbc636cce3af35c4f043ac727a`
-- ASAR SHA-256：`bcef5a6d72bb7f30e2b60e07f267da5f15322febb100e8a2581f4b9dfeafb28d`
-- 签名：`NotSigned`
-- GitHub 资产：`FlyingMouse.Format-Setup-0.3.3-x64.exe`，远端大小与 digest 已回读一致。
+| 平台 | 远端资产 | 字节 | SHA-256 |
+|---|---|---:|---|
+| Windows 10/11 x64 | `FlyingMouse.Format-Setup-0.3.4-x64.exe` | 551,347,778 | `7f30479b92d9050ccd2bff860d82fb5711a9dcfecd422f866f8dbdcb03e2b2e7` |
+| Windows 7 SP1 x64 | `FlyingMouse.Format-Setup-0.3.4-win7-x64.exe` | 520,603,262 | `6b2de37ba8d12acd5c5096c8b0a530cc32f93e60e94a6e80e5bdaf892d0f4df9` |
+| macOS Apple Silicon | `FlyingMouse.Format-Setup-0.3.4-mac-arm64.dmg` | 681,546,935 | `536c004425703d5b004d9b64035616adb7a602447c3a244fbac4babbf9151c3a` |
+| macOS Intel | `FlyingMouse.Format-Setup-0.3.4-mac-x64.dmg` | 716,918,325 | `8458943d5469e3c0c143c7544a01b254ff1f73fc74319493c1abd5e86c2b7fe6` |
 
-## Windows 7 SP1 x64 Legacy 成品
-
-- 本地文件：`dist\FlyingMouse Format-Setup-0.3.3-win7-x64.exe`
-- 大小：517,688,135 字节
-- SHA-256：`ee04bb1a22f56036d47f2ad98f6a20513c2430e619b98eec1ef098d52579726a`
-- 内层应用 EXE ProductVersion：`0.3.3.0`
-- NSIS 外壳：PE32，目标 OS `4.0`；内层应用：PE32+，目标 OS `5.2`
-- 内层应用 EXE SHA-256：`ebfd1b8fa368b060a8fbd486254e1a8ecdfacad47d1badffa71f2507b777ab01`
-- ASAR SHA-256：`418f91f71c30c7603b6dae057c03ebe8cf2d4a28fbc821d7752cdab33e9a2c3e`
-- 运行时：Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`
-- 签名：`NotSigned`
-- GitHub 资产：`FlyingMouse.Format-Setup-0.3.3-win7-x64.exe`，远端大小与 digest 已回读一致。
+四个资产均为 `state=uploaded`，远端大小和 `sha256:` digest 已回读，与本地产物完全一致。Release 已公开、不是 prerelease，并已设为 Latest。
 
 ## 最终验证证据
 
-- 主线 `npm test`：169 项，167 通过、2 个预期 fixture skip、0 失败；`npm run test:ci`：138/138。
-- Node.js 22 Win7 staging：90/90；构建使用官方 `node-v22.17.1-win-x64.zip`（35,526,030 字节，SHA-256 `b1fdb5635ba860f6bf71474f2ca882459a582de49b1d869451e3ad188e3943eb`），归档与解压文件数均为 2,447，npm `10.9.2`。
-- 固定 CI 引擎资产：`ci-engines-v1.tar.zst`，434,427,088 字节，SHA-256 `823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a`；恢复脚本先验哈希再解包，并校验必需文件。
-- 真实 NCM/AV3A：用户提供的 3 个样本均转换为可完整解码、ID3 可读的 MP3，源文件 SHA-256 未变化。
-- 审计：根生产依赖 0 漏洞；Win7 staging 为 2 个 high、0 critical（PDF.js 与 Sharp 的 Legacy 风险）。PDF.js 保持 `isEvalSupported: false`；Win7 包仅建议离线处理可信文件。
-- 标准包与 Win7 包的 ASAR 白名单、FFmpeg、LibreOffice、Poppler、Tesseract、AVS3 等资源均已核对。
-- 两个最终 EXE 的内嵌鼠鼠图标均已提取和目视确认；图标文件 SHA-256 相同：`f1eae8e5b0117d9d526f2e3b2f447c3127a82cff79736ef74bed7312c719a5c6`。
-- 当前 Windows 各持续冒烟 12 秒：标准包和 Win7 包均有 4 个精确同路径 Electron 进程响应，结束后残留为 0。
-- GitHub Release validation `31350567825`：11 分 56 秒完成，完整转换、审计、标准包、Win7 包、PE 检查和 artifact 上传全部通过。
-- 真实 Windows 7 SP1 x64 设备仍待验收；自动化、PE 5.2 和当前 Windows 冒烟不能冒充实机验收。
+- 合并提交和标签均指向 `e7a3508d451f301fc8ea113166cc67a16f304ae2`；PR：<https://github.com/LaoFeng-mouse/flyingmouse-format/pull/4>。
+- PR CI `31387412438`：Windows、macOS arm64、macOS x64 三条代码/引擎门禁全部通过。
+- 预发布全构建 `31387420825`：四个平台的真实转换、审计、构建、包检查和冒烟全部通过。
+- 标签全构建 `31396373271`：239 项，237 通过、2 个预期 fixture skip、0 失败；根生产依赖审计 0 漏洞。
+- Windows 10/11 与 Win7 安装包均成功构建；NSIS 外壳均为 PE32、目标 OS `4.0`。Win7 运行时继续固定 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`，并在独立 staging 中执行运行时探针。
+- macOS arm64/x64 均在原生 GitHub runner 恢复 SHA-256 锁定引擎，执行完整转换、生产审计、DMG 挂载/架构/包结构检查和 12 秒启动冒烟。
+- 用户提供的 3 个真实 NCM/AV3A 样本均解密并转为可解码 MP3，Title/Artist/Album/Cover 可读，源文件哈希未变化；私有样本和临时解密文件未提交 GitHub。
+- 用户提供的扫描 PDF 样本得分 85/95（89.47%），达到扫描 PDF 不低于 85% 的门槛；私有 PDF 和输出未提交 GitHub。
 
-## 发布与风险
+## 风险和未完成的外部验收
 
-- 两个安装包均未签名，SmartScreen 可能提示未知发布者。
-- NCM 仅保证兼容 `music.163.com` 对应网易云客户端生成的文件；其他同扩展名来源不在保证范围。
-- GitHub v0.3.3 已发布为 Latest：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.3`；两个资产均为 `state=uploaded`，远端大小与 `sha256:` digest 已回读一致。
-- Microsoft Store Submission 2 已于 2026-08-10 在 Partner Center 原浏览器中提交，Submission ID 为 `1152921505701615843`。上传的 `FlyingMouse Format-Setup-0.3.3-x64.appx` 为 778,257,594 字节，SHA-256 `bc152900e3116319e24fea4b029c453ac00852a79a329f57ea8936ed460f0f4a`，身份 `488B6338.354574AC174AD`，版本 `0.3.3.0`，x64；Partner Center 已完成包验证并替换草稿中的旧 v0.2.1 包。
-- 截至 2026-08-10 最后一次现场核验，产品更新显示 `In certification`，提交阶段为 `Pre-processing in progress`，Certification 与 Publishing 尚未开始；不能声称已通过认证或已在商店发布。产品 ID：`9NJKN37CR6HJ`。
+- Windows 安装包未签名，SmartScreen 可能提示；macOS DMG 未签名且未公证，Gatekeeper 可能提示。
+- 自动化、PE 检查和当前 runner 冒烟不能冒充真实 Windows 7 SP1 x64 或真实 Mac 设备验收；两项物理设备验收仍待完成。
+- NCM 仅保证网易云客户端 `music.163.com` 来源的标准文件；macOS 不支持依赖 Windows 专用解码器的 AV3A NCM。
+- Microsoft Store 仍是 v0.3.3 Submission 2（ID `1152921505701615843`）。最后现场状态为 `Pre-processing in progress` / `In certification`；本轮没有上传 v0.3.4 商店包，也不能声称已经通过认证或公开发布。
 
-发布步骤见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+发布流程见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
