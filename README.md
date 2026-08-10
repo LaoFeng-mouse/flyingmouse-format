@@ -23,12 +23,15 @@
 - 路径记忆：记住上次保存目录，下次保存时自动从该目录开始。
 - 中文/English 界面：首次启动跟随系统语言，手动选择后会记住设置。
 - 批量转换：显示逐文件进度、结果和失败原因，并可单独保存或保存全部。
+- 转换质量：HTML / Office 转 Markdown 保留标题、列表和代码块；CSV 支持 BOM、转义引号和字段内换行。
+- PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
+- 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 500 页、OCR 100 页。
 
 > NCM 说明：仅保证支持 `music.163.com` 对应客户端下载的音乐文件。其他网站或来源虽然扩展名也可能是 `.ncm`，但内部格式不同，不属于本项目的兼容范围。
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.3.2 x64 安装包。
+1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.3.3 x64 安装包。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -51,10 +54,10 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（推荐）**：下载 GitHub 现有标准资产 `FlyingMouse.Format-Setup-0.3.2-x64.exe`。它使用当前 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
-- **Windows 7 SP1 x64（兼容版）**：下载 GitHub 资产 `FlyingMouse.Format-Setup-0.3.2-win7-x64.exe`。它保留同一套鼠鼠 UI、NCM/AV3A、格式记忆、保存路径记忆和中英文功能，但使用 Electron 22.3.27 的独立构建环境。
+- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse.Format-Setup-0.3.3-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
+- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.3.3-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。自动化测试、PE 5.2 检查、当前 Windows 冒烟启动和 3 个真实 NCM 样本已经通过；真实 Windows 7 设备运行验收仍待完成。安装包未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.3.3 已通过主线 169 项、Node 22 staging 90 项、PE 5.2、当前 Windows 12 秒冒烟和 3 个真实 NCM/AV3A 样本回归；真实 Windows 7 SP1 x64 设备仍待验收。两个安装包均未签名，SmartScreen 可能提示。
 
 完整构建只需：
 
@@ -78,12 +81,15 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Remembers the last save directory for the next save dialog.
 - Chinese and English UI. The first launch follows the system language; a manual choice is remembered.
 - Batch conversion with per-file progress, results, error details, individual save, and Save All.
+- Higher-quality text conversion: structural HTML/Office Markdown plus standards-compliant quoted and multiline CSV parsing.
+- PDF → Excel smart table extraction for digital text and scanned pages, including multiple tables, continued pages, merged cells, confidence notes, and Raw fallback.
+- Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
 
 > NCM scope: compatibility is guaranteed only for files downloaded by the NetEase Cloud Music client associated with `music.163.com`. Files from other sites may use a different internal format despite sharing the `.ncm` extension.
 
 ### Quick start
 
-1. Download the v0.3.2 x64 installer from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+1. Download the v0.3.3 x64 installer from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -92,10 +98,10 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use the existing GitHub standard asset `FlyingMouse.Format-Setup-0.3.2-x64.exe`. It keeps the current Electron 43, Sharp 0.35, and PDF.js 6 runtime.
-- **Windows 7 SP1 x64 (compatibility build):** download the GitHub asset `FlyingMouse.Format-Setup-0.3.2-win7-x64.exe`. It contains the same mouse UI, NCM/AV3A support, per-source target memory, save-folder memory, and Chinese/English UI, built separately with Electron 22.3.27.
+- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse.Format-Setup-0.3.3-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.3.3-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. Automated tests, a PE 5.2 check, a current-Windows smoke launch, and three real NCM conversions passed; acceptance on a physical Windows 7 system is still pending. The installer is unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.3.3 passed 169 mainline tests, 90 Node 22 staging tests, a PE 5.2 check, a 12-second current-Windows smoke test, and three real NCM/AV3A regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both installers are unsigned and may trigger SmartScreen.
 
 The complete build requires only:
 
