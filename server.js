@@ -1748,7 +1748,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   if (!allTargets.has(requestedTarget)) {
     logger.warn(`Rejected convert request: unsupported target "${requestedTarget}" for "${originalName}"`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
-    res.status(400).json({ error: "目标格式暂不支持。" });
+    res.status(400).json({ error: "目标格式暂不支持。", errorCode: "UNSUPPORTED_TARGET" });
     return;
   }
 
@@ -1760,7 +1760,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   if (!allowedTargets.includes(requestedTarget)) {
     logger.warn(`Rejected convert request: ${category} file "${originalName}" cannot target ${requestedTarget}`);
     await fsp.rm(file.path, { force: true }).catch(() => {});
-    res.status(400).json({ error: "这个源文件暂时不能转换成所选格式。" });
+    res.status(400).json({ error: "这个源文件暂时不能转换成所选格式。", errorCode: "TARGET_UNAVAILABLE_FOR_SOURCE" });
     return;
   }
 
