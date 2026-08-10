@@ -99,5 +99,5 @@ jobs:
             expected="$(awk '{print $1}' "$archive.sha256")"
             actual="$(sha256sum "$archive" | awk '{print $1}')"
             test "$actual" = "$expected"
-            gh release upload ci-engines-v1 "$archive#$(basename "$archive")" --repo "${{ github.repository }}" --clobber
+            gh release upload ci-engines-v1 "$archive#$(basename "$archive")" --repo "${{ github.repository }}"
           done

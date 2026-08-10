@@ -84,3 +84,16 @@ test("alpha-capable PNG output preserves transparency", async (t) => {
   const pixel = await sharp(output).ensureAlpha().raw().toBuffer();
   assert.equal(pixel[3], 0);
 });
+
+test("alpha-capable TIFF output preserves transparency losslessly", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-image-tiff-alpha-"));
+  t.after(() => removeScratch(scratch));
+  const input = path.join(scratch, "transparent.png");
+  const output = path.join(scratch, "transparent-output.tiff");
+  await sharp({ create: { width: 3, height: 3, channels: 4, background: { r: 10, g: 20, b: 30, alpha: 0 } } }).png().toFile(input);
+  await convertRasterImage(input, output, "tiff", { maxPixels: 50_000_000 });
+  const metadata = await sharp(output).metadata();
+  const pixel = await sharp(output).ensureAlpha().raw().toBuffer();
+  assert.equal(metadata.hasAlpha, true);
+  assert.equal(pixel[3], 0);
+});

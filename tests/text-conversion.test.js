@@ -42,6 +42,29 @@ test("Markdown conversion rejects executable link protocols and raw HTML", () =>
   assert.match(html, /&lt;script&gt;/);
 });
 
+test("Markdown images keep safe local sources and reject executable, file, and remote URIs", () => {
+  const html = markdownToHtml(`![Local](./assets/mouse.png "Mouse")
+
+![Bare](images/icon.webp)
+
+![Embedded](data:image/png;base64,iVBORw0KGgo=)
+
+![Script](javascript:alert(1))
+
+![File](file:///C:/Windows/win.ini)
+
+![Remote](https://tracker.example/pixel.png)`);
+
+  assert.match(html, /<img src="\.\/assets\/mouse\.png" alt="Local" title="Mouse">/);
+  assert.match(html, /<img src="images\/icon\.webp" alt="Bare">/);
+  assert.match(html, /<img src="data:image\/png;base64,iVBORw0KGgo=" alt="Embedded">/);
+  assert.doesNotMatch(html, /javascript:|file:|tracker\.example/i);
+  assert.doesNotMatch(html, /alt="(?:Script|File|Remote)"/);
+  assert.match(html, /<p>Script<\/p>/);
+  assert.match(html, /<p>File<\/p>/);
+  assert.match(html, /<p>Remote<\/p>/);
+});
+
 test("HTML converts to structural ATX and fenced Markdown", () => {
   const markdown = htmlToMarkdown(`
     <h1>Hello</h1>
@@ -139,4 +162,13 @@ test("JSON to CSV column order is independent of object insertion order", () => 
 
   assert.equal(first, second);
   assert.match(first, /^"a","nested\.a","nested\.b","z"/);
+});
+
+test("JSON to CSV rejects collisions between literal dots and nested paths", () => {
+  assert.throws(
+    () => jsonToCsv('{"a":{"b":"nested"},"a.b":"literal"}'),
+    (error) => error?.code === "JSON_CSV_PATH_COLLISION"
+      && error?.path === "a.b"
+      && /a\.b/.test(error.message)
+  );
 });

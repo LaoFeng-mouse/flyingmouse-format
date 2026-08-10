@@ -46,12 +46,9 @@ function warning(code, messages, details, level = "warning") {
   return { code, level, messages, details };
 }
 
-function activeWorksheet(workbook) {
+function firstWorksheet(workbook) {
   const sheets = Array.isArray(workbook.worksheets) ? workbook.worksheets : [];
-  const activeTab = Number(workbook.views?.[0]?.activeTab);
-  return Number.isInteger(activeTab) && activeTab >= 0 && activeTab < sheets.length
-    ? sheets[activeTab]
-    : sheets[0];
+  return sheets[0];
 }
 
 function countFormulaCells(worksheets) {
@@ -69,7 +66,7 @@ async function inspectXlsxForCsv(inputPath, options = {}) {
   const workbook = new Workbook();
   await workbook.xlsx.readFile(inputPath);
   const worksheets = Array.isArray(workbook.worksheets) ? workbook.worksheets : [];
-  const exported = activeWorksheet(workbook);
+  const exported = firstWorksheet(workbook);
   if (!exported) {
     throw new OfficeQualityError("XLSX_CSV_NO_SHEET", {
       zhCN: "XLSX 转 CSV 失败：工作簿中没有可导出的工作表。",
@@ -83,8 +80,8 @@ async function inspectXlsxForCsv(inputPath, options = {}) {
   const warnings = [warning(
     "XLSX_CSV_EXPORTED_SHEET",
     {
-      zhCN: `CSV 将导出工作表“${exportedSheet}”。`,
-      enUS: `CSV will export worksheet "${exportedSheet}".`
+      zhCN: `LibreOffice 默认将第一张工作表“${exportedSheet}”导出为 CSV。`,
+      enUS: `By default, LibreOffice exports the first worksheet, "${exportedSheet}", to CSV.`
     },
     { exportedSheet },
     "info"
@@ -92,8 +89,8 @@ async function inspectXlsxForCsv(inputPath, options = {}) {
 
   if (ignoredSheets.length) {
     warnings.push(warning("XLSX_CSV_SHEETS_OMITTED", {
-      zhCN: `CSV 仅导出工作表“${exportedSheet}”；其余 ${ignoredSheets.length} 个工作表不会保留。`,
-      enUS: `CSV exports only worksheet "${exportedSheet}"; ${ignoredSheets.length} other worksheet(s) will not be preserved.`
+      zhCN: `CSV 仅导出第一张工作表“${exportedSheet}”；其余 ${ignoredSheets.length} 个工作表不会保留。`,
+      enUS: `CSV exports only the first worksheet, "${exportedSheet}"; ${ignoredSheets.length} other worksheet(s) will not be preserved.`
     }, { exportedSheet, ignoredSheets }));
   }
 

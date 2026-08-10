@@ -36,6 +36,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: .\scripts\restore-ci-engines.ps1
 
+      - name: Stage locked Thai OCR data for Windows tests
+        shell: powershell
+        run: |
+          $source = 'node_modules\@tesseract.js-data\tha\4.0.0_best_int\tha.traineddata.gz'
+          $destination = 'bin\tessdata\tha.traineddata.gz'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Locked Thai OCR data is missing.' }
+          Copy-Item -LiteralPath $source -Destination $destination -Force
+          $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+          $destinationHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+          if ($sourceHash -ne $destinationHash) { throw 'Thai OCR data copy failed hash validation.' }
+
       - name: Syntax checks
         run: |
           node --check server.js
