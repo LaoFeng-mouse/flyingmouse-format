@@ -12,7 +12,7 @@ permissions:
 jobs:
   validate-and-build:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -22,6 +22,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Cache fixed conversion engines
+        uses: actions/cache@v4
+        with:
+          path: output/ci-engines-v1.tar.zst
+          key: ci-engines-v1-${{ hashFiles('ci-engines-v1.json') }}
 
       - name: Install locked dependencies
         run: npm ci
