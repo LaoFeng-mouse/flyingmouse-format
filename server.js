@@ -952,7 +952,11 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
     await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10 });
     const convertedPath = await findConvertedFile(outDir, target);
     if (!convertedPath) {
-      throw new Error("文档转换失败，可能是不支持这个源格式或文件已损坏。");
+      throw new OfficeEngineError("OFFICE_CONVERSION_FAILED", {
+        exitCode: null,
+        signal: null,
+        reason: "no-output-file"
+      });
     }
     await fsp.copyFile(convertedPath, outputPath);
   } finally {
