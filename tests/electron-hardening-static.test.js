@@ -279,3 +279,10 @@ test("runtime diagnostics read Sharp's supported runtime version API", () => {
   assert.doesNotMatch(server, /require\(["']sharp\/package\.json["']\)/);
   assert.match(server, /sharp\.versions\.sharp/);
 });
+
+test("LibreOffice conversions without an output file surface the stable OFFICE_CONVERSION_FAILED code", () => {
+  const server = readRoot("server.js");
+  const branch = /if \(!convertedPath\) \{[\s\S]{0,200}?throw new OfficeEngineError\(\s*"OFFICE_CONVERSION_FAILED"/.exec(server);
+  assert.ok(branch, "findConvertedFile empty branch must throw the stable code");
+  assert.doesNotMatch(server, /throw new Error\(\s*"文档转换失败，可能是不支持这个源格式或文件已损坏。"/);
+});
