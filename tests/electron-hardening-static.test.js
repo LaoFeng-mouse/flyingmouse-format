@@ -76,18 +76,19 @@ test("PDF.js loader imports the modern layout when it resolves", async () => {
 
 test("PDF.js loader falls back to the legacy layout only when the modern entry is missing", async () => {
   const pdfjs = { getDocument() {} };
-  const packageRoot = "D:\\app\\node_modules\\pdfjs-dist";
+  const appRoot = path.resolve(path.sep, "app");
+  const packageRoot = path.join(appRoot, "node_modules", "pdfjs-dist");
   const modernEntry = path.join(packageRoot, "legacy", "build", "pdf.mjs");
   const legacyEntry = path.join(packageRoot, "legacy", "build", "pdf.js");
   const modernUrl = pathToFileURL(modernEntry).href;
   const legacyUrl = pathToFileURL(legacyEntry).href;
   const missing = Object.assign(
-    new Error(`Cannot find module '${modernEntry}' imported from D:\\app\\server.js`),
+    new Error(`Cannot find module '${modernEntry}' imported from ${path.join(appRoot, "server.js")}`),
     { code: "ERR_MODULE_NOT_FOUND", url: modernUrl }
   );
   const imports = [];
   const result = await loadPdfjsModule({
-    appRoot: "D:\\APP",
+    appRoot,
     packageJsonResolver(specifier) {
       assert.strictEqual(specifier, "pdfjs-dist/package.json");
       return path.join(packageRoot, "package.json");
@@ -105,9 +106,10 @@ test("PDF.js loader falls back to the legacy layout only when the modern entry i
 
 test("PDF.js loader rejects a package resolved outside the app root before importing", async () => {
   const imports = [];
+  const repositoryRoot = path.resolve(path.sep, "repo");
   const promise = loadPdfjsModule({
-    appRoot: "D:\\repo\\output\\win7-stage",
-    packageJsonResolver: () => "D:\\repo\\node_modules\\pdfjs-dist\\package.json",
+    appRoot: path.join(repositoryRoot, "output", "win7-stage"),
+    packageJsonResolver: () => path.join(repositoryRoot, "node_modules", "pdfjs-dist", "package.json"),
     async importer(specifier) {
       imports.push(specifier);
       return {};
@@ -138,11 +140,12 @@ test("PDF.js loader preserves a modern module runtime error without trying the l
 });
 
 test("PDF.js loader does not fall back when a dependency of the modern entry is missing", async () => {
+  const missingDependency = path.resolve(path.sep, "app", "node_modules", "canvas", "index.js");
   const dependencyError = Object.assign(
-    new Error("Cannot find package 'canvas' imported from D:\\app\\node_modules\\pdfjs-dist\\legacy\\build\\pdf.mjs"),
+    new Error(`Cannot find package 'canvas' imported from ${path.resolve(path.sep, "app", "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")}`),
     {
       code: "ERR_MODULE_NOT_FOUND",
-      url: "file:///D:/app/node_modules/canvas/index.js"
+      url: pathToFileURL(missingDependency).href
     }
   );
   const imports = [];

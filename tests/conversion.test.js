@@ -15,7 +15,7 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
   process.env.FLYINGMOUSE_RUNTIME_DIR = isolatedRuntimeRoot;
 }
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
-const FFMPEG_BIN = path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
+const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH;
 let server;
 let baseUrl;
 
