@@ -19,6 +19,12 @@ function createTurndownService() {
   return service;
 }
 
+let sharedTurndownService = null;
+function sharedTurndown() {
+  if (!sharedTurndownService) sharedTurndownService = createTurndownService();
+  return sharedTurndownService;
+}
+
 function isComplexTable(table) {
   if (table.querySelector("table")) return true;
   return Array.from(table.querySelectorAll("th, td"))
@@ -27,7 +33,7 @@ function isComplexTable(table) {
 
 function markdownTableCell(cell) {
   const html = cell.innerHTML.replace(/\r?\n/g, "<br>");
-  return createTurndownService()
+  return sharedTurndown()
     .turndown(html)
     .trim()
     .replace(/\\/g, "\\\\")
