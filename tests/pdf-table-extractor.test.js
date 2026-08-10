@@ -158,10 +158,10 @@ test("OCR product tables repair unit price and quantity only when totals prove t
     ],
     words: [
       word("单价", 5, 5), word("数量", 75, 5), word("金额", 145, 5),
-      word("53", 5, 35), word("120", 75, 35), word("3816", 145, 35),
-      word("53", 5, 65), word("7120", 75, 65), word("3816", 145, 65),
-      word("8.95", 5, 95), word("1152", 75, 95), word("4550.4", 145, 95),
-      word("53", 5, 125), word("2 40", 75, 125), word("1212", 145, 125)
+      word("53", 5, 35, 0.5), word("120", 75, 35, 0.5), word("3816", 145, 35, 0.5),
+      word("53", 5, 65, 0.5), word("7120", 75, 65, 0.5), word("3816", 145, 65, 0.5),
+      word("8.95", 5, 95, 0.5), word("1152", 75, 95, 0.5), word("4550.4", 145, 95, 0.5),
+      word("53", 5, 125, 0.5), word("2 40", 75, 125, 0.5), word("1212", 145, 125, 0.5)
     ]
   });
   assert.deepEqual(page.tables[0].rows.slice(1), [
@@ -221,9 +221,9 @@ test("workbook model continues a ruled product table when OCR loses row numbers 
 });
 
 test("continued OCR tables apply arithmetic repair using the first-page header", () => {
-  const make = (rows, top, bottom, pageNumber) => ({
+  const make = (rows, top, bottom, pageNumber, confidence = 0.8) => ({
     kind: "grid", rows, merges: [], confidence: 0.8, pages: [pageNumber],
-    cellConfidence: rows.map((row) => row.map(() => 0.8)),
+    cellConfidence: rows.map((row) => row.map(() => confidence)),
     columnAnchors: [0, 50, 100, 150, 200], bounds: { left: 0, top, right: 200, bottom }
   });
   const model = buildWorkbookModel([
@@ -231,7 +231,7 @@ test("continued OCR tables apply arithmetic repair using the first-page header",
       make([["SKU", "单价", "数量", "金额"], ["CODE-X1", "5.3", "480", "2544"], ["CODE-X2", "5.3", "720", "3816"]], 20, 195, 1)
     ] },
     { pageNumber: 2, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
-      make([["CODE-X3", "53", "120", "3816"]], 2, 60, 2)
+      make([["CODE-X3", "53", "120", "3816"]], 2, 60, 2, 0.5)
     ] }
   ]);
   assert.equal(model.sheets.length, 1);
@@ -263,6 +263,76 @@ test("OCR arithmetic repair rejects internally consistent decimal and leading-di
   assert.deepEqual(model.sheets[0].rows[7].slice(1), ["5.3", "240", "1272"]);
   assert.deepEqual(model.sheets[0].rows[10].slice(1), ["5.3", "240", "1272"]);
   assert.deepEqual(model.sheets[0].rows[1].slice(1), ["4.1", "1152", "4723.2"]);
+});
+
+test("high-confidence discounts and legitimate minority prices are never rewritten", () => {
+  const make = (rows) => ({
+    kind: "grid", rows, merges: [], confidence: 0.95, pages: [1],
+    cellConfidence: rows.map((row) => row.map(() => 0.95)),
+    columnAnchors: [0, 50, 100, 150, 200], bounds: { left: 0, top: 20, right: 200, bottom: 150 }
+  });
+  const discountRows = [
+    ["SKU", "Price", "Quantity", "Total"],
+    ["A", "10", "2", "18"], ["B", "10", "4", "36"], ["C", "10", "6", "54"]
+  ];
+  const minorityRows = [
+    ["SKU", "Price", "Quantity", "Total"],
+    ["A", "10", "2", "20"], ["B", "10", "4", "40"], ["C", "10", "6", "60"],
+    ["D", "10", "8", "80"], ["E", "10", "10", "100"], ["F", "12", "2", "24"]
+  ];
+  const model = buildWorkbookModel([
+    { pageNumber: 1, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [make(discountRows)] },
+    { pageNumber: 3, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [make(minorityRows)] }
+  ]);
+  assert.deepEqual(model.sheets[0].rows, discountRows);
+  assert.deepEqual(model.sheets[1].rows, minorityRows);
+});
+
+test("high-confidence missing decimal points are repaired only when multiplication proves them", () => {
+  const rows = [
+    ["SKU", "Price", "Quantity", "Total"],
+    ["A", "53", "240", "1272"],
+    ["B", "41", "1152", "4723.2"],
+    ["Discount", "10", "2", "18"]
+  ];
+  const model = buildWorkbookModel([{ pageNumber: 1, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [{
+    kind: "grid", rows, merges: [], confidence: 0.95, pages: [1],
+    cellConfidence: rows.map((row) => row.map(() => 0.95)), columnAnchors: [0, 50, 100, 150, 200],
+    bounds: { left: 0, top: 20, right: 200, bottom: 150 }
+  }] }]);
+  assert.deepEqual(model.sheets[0].rows.slice(1), [
+    ["A", "5.3", "240", "1272"],
+    ["B", "4.1", "1152", "4723.2"],
+    ["Discount", "10", "2", "18"]
+  ]);
+});
+
+test("electronic text rows are not merged by OCR-only damaged-grid recovery", () => {
+  const horizontal = [0, 20, 40, 60, 80, 100].flatMap((y) => [40, 60, 80].includes(y)
+    ? [{ x1: 0, y1: y, x2: 50, y2: y }]
+    : [{ x1: 0, y1: y, x2: 100, y2: y }]);
+  const vertical = [0, 50, 100].map((x) => ({ x1: x, y1: 0, x2: x, y2: 100 }));
+  const table = detectTablesOnPage({
+    source: "text", width: 100, height: 100, pageNumber: 1, lines: [...horizontal, ...vertical],
+    words: [
+      word("No", 5, 2, 1, 40), word("Product Name", 55, 2, 1, 40),
+      word("1", 5, 22, 1, 40), word("Widget A", 55, 42, 1, 40), word("Pack 6", 55, 62, 1, 40),
+      word("2", 5, 42, 1, 40), word("3", 5, 62, 1, 40), word("4", 5, 82, 1, 40)
+    ]
+  }).tables[0];
+  assert.deepEqual(table.merges, []);
+  assert.equal(table.rows[2][1], "Widget A");
+  assert.equal(table.rows[3][1], "Pack 6");
+});
+
+test("high-confidence numeric merges are preserved", () => {
+  const rows = [["Group", "Price", "Quantity", "Total"], ["Bundle", "10", "2", "20"], ["", "", "2", "20"], ["", "", "2", "20"]];
+  const model = buildWorkbookModel([{ pageNumber: 1, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [{
+    kind: "grid", rows, merges: [{ startRow: 1, startCol: 1, endRow: 3, endCol: 1 }], confidence: 0.95, pages: [1],
+    cellConfidence: rows.map((row) => row.map(() => 0.95)), columnAnchors: [0, 50, 100, 150, 200],
+    bounds: { left: 0, top: 0, right: 200, bottom: 200 }
+  }] }]);
+  assert.deepEqual(model.sheets[0].merges, [{ startRow: 1, startCol: 1, endRow: 3, endCol: 1 }]);
 });
 
 test("a dominant sequential index repairs OCR noise after page continuation", () => {

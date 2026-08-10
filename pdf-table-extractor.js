@@ -210,7 +210,7 @@ function splitLineComponents(lines) {
   return [...groups.values()];
 }
 
-function makeGridTable(words, lines, pageNumber) {
+function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = false) {
   const normalized = normalizeLines(lines);
   const xs = uniqueCoordinates(normalized.vertical.map((line) => line.x));
   const ys = uniqueCoordinates(normalized.horizontal.map((line) => line.y));
@@ -282,6 +282,7 @@ function makeGridTable(words, lines, pageNumber) {
     }
   }
   for (const candidate of damagedMergeCandidates) {
+    if (!allowDamagedMergeRecovery) continue;
     const span = candidate.endRow - candidate.startRow + 1;
     const header = String(rows[0]?.[candidate.startCol] || "").toLocaleLowerCase().replace(/\s+/g, "");
     const isProductName = /名称|品名|productname|itemname/.test(header);
@@ -454,14 +455,39 @@ function repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, tota
     const confidence = [priceIndex, quantityIndex, totalIndex]
       .map((column) => Number(table.cellConfidence?.[rowIndex]?.[column]))
       .filter(Number.isFinite);
-    const isLowConfidenceTriple = confidence.length === 3 && Math.max(...confidence) <= 0.6;
-    if (best.totalDistance > 1 && !isLowConfidenceTriple) return;
+    const hasLowConfidenceCell = confidence.length === 3 && Math.min(...confidence) < LOW_CONFIDENCE;
+    if (!hasLowConfidenceCell) return;
     for (const [column, value] of [[priceIndex, dominantPriceText], [quantityIndex, best.quantityText], [totalIndex, best.totalText]]) {
       if (String(row[column] || "").trim() === value) continue;
       row[column] = value;
       if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);
       corrected += 1;
     }
+  });
+  return corrected;
+}
+
+function repairExactDecimalPrices(table, priceIndex, quantityIndex, totalIndex) {
+  let corrected = 0;
+  table.rows.slice(1).forEach((row, offset) => {
+    const rawPrice = numericText(row[priceIndex]);
+    const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+    const rawTotal = numericText(row[totalIndex]);
+    if (!/^\d{2,4}$/.test(rawPrice) || !/^\d+$/.test(rawQuantity) || !rawTotal) return;
+    const quantity = Number(rawQuantity);
+    const total = Number(rawTotal);
+    const integerPrice = Number(rawPrice);
+    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(total) || total <= 0) return;
+    if (Math.abs(integerPrice * quantity - total) <= 0.01) return;
+    const candidates = [10, 100, 1000]
+      .filter((divisor) => rawPrice.length > Math.log10(divisor))
+      .map((divisor) => integerPrice / divisor)
+      .filter((price) => Math.abs(price * quantity - total) <= 0.01);
+    if (candidates.length !== 1) return;
+    const rowIndex = offset + 1;
+    row[priceIndex] = formatDecimal(candidates[0]);
+    if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][priceIndex] = Math.min(table.cellConfidence[rowIndex][priceIndex] || 1, 0.7);
+    corrected += 1;
   });
   return corrected;
 }
@@ -475,12 +501,17 @@ function repairArithmeticColumns(table) {
   let totalIndex = header.findIndex((value) => /金额|合计|total|amount/.test(value));
   if (totalIndex < 0 && quantityIndex + 1 < header.length) totalIndex = quantityIndex + 1;
   if (totalIndex < 0 || new Set([priceIndex, quantityIndex, totalIndex]).size < 3) return 0;
-  let corrected = repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, totalIndex);
+  let corrected = repairExactDecimalPrices(table, priceIndex, quantityIndex, totalIndex);
+  corrected += repairDominantArithmeticOutliers(table, priceIndex, quantityIndex, totalIndex);
   const repairs = table.rows.slice(1).map((row) => arithmeticPair(row, priceIndex, quantityIndex, totalIndex));
   if (repairs.filter(Boolean).length < 3) return corrected;
   repairs.forEach((pair, index) => {
     if (!pair) return;
     const rowIndex = index + 1;
+    const confidence = [priceIndex, quantityIndex, totalIndex]
+      .map((column) => Number(table.cellConfidence?.[rowIndex]?.[column]))
+      .filter(Number.isFinite);
+    if (confidence.length === 3 && Math.min(...confidence) >= LOW_CONFIDENCE) return;
     for (const [column, value] of [[priceIndex, pair.priceText], [quantityIndex, pair.quantityText], [totalIndex, pair.totalText]]) {
       if (String(table.rows[rowIndex][column] || "").trim() === value) continue;
       table.rows[rowIndex][column] = value;
@@ -545,7 +576,9 @@ function removeUnsafeOcrDataMerges(table) {
   table.merges = table.merges.filter((merge) => {
     if (merge.startRow <= 0 || merge.endRow <= merge.startRow || merge.startCol !== merge.endCol) return true;
     const header = String(table.rows[0][merge.startCol] || "").toLocaleLowerCase().replace(/\s+/g, "");
-    return !/单价|数量|金额|合计|price|qty|quantity|amount|total|否.*是|是.*否|包.*邮/.test(header);
+    const isUnsafeDataColumn = /单价|数量|金额|合计|price|qty|quantity|amount|total|否.*是|是.*否|包.*邮/.test(header);
+    if (!isUnsafeDataColumn) return true;
+    return Number(table.cellConfidence?.[merge.startRow]?.[merge.startCol]) >= LOW_CONFIDENCE;
   });
   return original - table.merges.length;
 }
@@ -553,7 +586,9 @@ function removeUnsafeOcrDataMerges(table) {
 function detectTablesOnPage(input = {}) {
   const pageNumber = Number.isInteger(input.pageNumber) && input.pageNumber > 0 ? input.pageNumber : 1;
   const words = normalizeWords(input.words);
-  const gridTables = splitLineComponents(input.lines).map((lines) => makeGridTable(words, lines, pageNumber)).filter(Boolean);
+  const gridTables = splitLineComponents(input.lines)
+    .map((lines) => makeGridTable(words, lines, pageNumber, input.source === "ocr"))
+    .filter(Boolean);
   gridTables.forEach((table) => { table.kind = "grid"; });
   const consumedIds = new Set(gridTables.flatMap((table) => table.wordIds));
   const remainingWords = words.filter((entry) => !consumedIds.has(entry.id));

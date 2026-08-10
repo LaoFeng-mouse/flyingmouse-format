@@ -56,8 +56,12 @@ test("manifest accepts only an explicit bootstrap or SHA-pinned macOS asset stat
 test("engine validator fails closed for unpinned assets and unsafe required paths", () => {
   const { selectEngineAsset, validateAssetDefinition } = require("../scripts/validate-ci-engines");
   const manifest = require("../ci-engines-v1.json");
+  assert.doesNotThrow(() => selectEngineAsset(manifest, "darwin", "arm64"));
+  const bootstrap = structuredClone(manifest);
+  bootstrap.assets["darwin-arm64"].available = false;
+  bootstrap.assets["darwin-arm64"].sha256 = null;
   assert.throws(
-    () => selectEngineAsset(manifest, "darwin", "arm64"),
+    () => selectEngineAsset(bootstrap, "darwin", "arm64"),
     /not yet pinned.*darwin-arm64/i
   );
   assert.doesNotThrow(() => validateAssetDefinition("darwin-arm64", manifest.assets["darwin-arm64"]));
@@ -155,6 +159,7 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
   assert.match(workflow, /actions\/download-artifact@v4/);
   assert.match(workflow, /sha256sum/);
   assert.match(workflow, /gh release upload ci-engines-v1/);
+  assert.doesNotMatch(workflow, /--clobber/);
 });
 
 test("Thai OCR is locked and packaged across standard, Win7, and macOS builds", () => {
@@ -168,6 +173,11 @@ test("Thai OCR is locked and packaged across standard, Win7, and macOS builds", 
   const win7Lock = require("../win7-package-lock.json");
   assert.equal(win7Lock.packages[""].dependencies["@tesseract.js-data/tha"], "1.0.0");
   assert.equal(win7Lock.packages["node_modules/@tesseract.js-data/tha"].version, "1.0.0");
+
+  const release = fs.readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
+  assert.match(release, /Stage locked Thai OCR data for Windows tests/);
+  assert.match(release, /@tesseract\.js-data[\\/]tha[\\/]4\.0\.0_best_int[\\/]tha\.traineddata\.gz/);
+  assert.match(release, /Get-FileHash/);
 });
 
 test("CI and release workflows declare native macOS quality and DMG gates", () => {

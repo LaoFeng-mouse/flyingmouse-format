@@ -68,6 +68,13 @@ function isSafeMarkdownLink(href) {
   return /^(?:#|\/|\.\/|\.\.\/)/.test(value);
 }
 
+function isSafeMarkdownImage(href) {
+  const value = String(href || "").trim();
+  if (!value || /[\u0000-\u001f\u007f\\]/.test(value) || value.startsWith("//")) return false;
+  if (/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/i.test(value)) return true;
+  return !/^[a-z][a-z\d+.-]*:/i.test(value);
+}
+
 function markdownToHtml(markdown) {
   const renderer = new marked.Renderer();
   renderer.html = (html) => escapeHtmlText(html);
@@ -75,6 +82,11 @@ function markdownToHtml(markdown) {
     if (!isSafeMarkdownLink(href)) return text;
     const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
     return `<a href="${escapeHtmlAttribute(href)}"${titleAttribute}>${text}</a>`;
+  };
+  renderer.image = (href, title, text) => {
+    if (!isSafeMarkdownImage(href)) return escapeHtmlText(text);
+    const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
+    return `<img src="${escapeHtmlAttribute(href)}" alt="${escapeHtmlAttribute(text)}"${titleAttribute}>`;
   };
   const body = marked.parse(String(markdown || ""), {
     async: false,
@@ -162,11 +174,21 @@ function flattenJsonObject(value, prefix = "", output = Object.create(null)) {
   for (const key of Object.keys(value || {}).sort()) {
     const path = prefix ? `${prefix}.${key}` : key;
     const nested = value[key];
-    if (Array.isArray(nested)) output[path] = stableJsonStringify(nested);
+    if (Array.isArray(nested)) setFlattenedValue(output, path, stableJsonStringify(nested));
     else if (nested && typeof nested === "object") flattenJsonObject(nested, path, output);
-    else output[path] = nested;
+    else setFlattenedValue(output, path, nested);
   }
   return output;
+}
+
+function setFlattenedValue(output, path, value) {
+  if (Object.prototype.hasOwnProperty.call(output, path)) {
+    const error = new Error(`JSON 转 CSV 失败：字段路径冲突：${path}`);
+    error.code = "JSON_CSV_PATH_COLLISION";
+    error.path = path;
+    throw error;
+  }
+  output[path] = value;
 }
 
 function jsonToCsv(jsonText) {

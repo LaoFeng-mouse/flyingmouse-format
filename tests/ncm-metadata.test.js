@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const sharp = require("sharp");
 
 const {
   normalizeNcmMetadata,
@@ -42,8 +43,12 @@ test("does not attach unsupported cover streams while keeping text metadata", ()
   assert.equal(options.metadata.title, "Song");
 });
 
-test("accepts only recognizable complete PNG and JPEG cover payloads", () => {
-  assert.equal(detectCoverFormat(Buffer.from("89504e470d0a1a0a00000000", "hex")), "png");
-  assert.equal(detectCoverFormat(Buffer.from("ffd8ffe00000ffd9", "hex")), "jpg");
+test("accepts only recognizable complete PNG and JPEG cover payloads", async () => {
+  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
+  const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background: "blue" } }).jpeg().toBuffer();
+  assert.equal(detectCoverFormat(png), "png");
+  assert.equal(detectCoverFormat(jpeg), "jpg");
+  assert.equal(detectCoverFormat(Buffer.from("89504e470d0a1a0a00000000", "hex")), null);
+  assert.equal(detectCoverFormat(Buffer.from("ffd8ffe00000ffd9", "hex")), null);
   assert.equal(detectCoverFormat(Buffer.from("not-an-image")), null);
 });

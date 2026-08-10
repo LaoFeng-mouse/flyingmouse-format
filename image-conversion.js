@@ -64,7 +64,10 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
     image.flatten({ background: { r: 255, g: 255, b: 255 } });
     warnings.push(warning("ALPHA_COMPOSITED_WHITE"));
   }
-  await image.toFormat(normalizedTarget, normalizedTarget === "jpeg" ? { quality: 90 } : undefined).toFile(outputPath);
+  const outputOptions = normalizedTarget === "jpeg"
+    ? { quality: 90 }
+    : (normalizedTarget === "tiff" ? { compression: "lzw" } : undefined);
+  await image.toFormat(normalizedTarget, outputOptions).toFile(outputPath);
   return { warnings };
 }
 

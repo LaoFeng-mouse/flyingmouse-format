@@ -32,13 +32,13 @@ test("presentation HTML rejects missing, empty, and non-visible bodies with a st
   }
 });
 
-test("XLSX to CSV identifies the active sheet and warns about omitted sheets and formulas", async () => {
+test("XLSX to CSV follows LibreOffice CLI by exporting the first sheet, not activeTab", async () => {
   class Workbook {
     constructor() {
       this.views = [{ activeTab: 1 }];
       this.worksheets = [
-        worksheet("Overview", [1]),
-        worksheet("Data", [{ formula: "SUM(A1:A2)", result: 3 }, 3]),
+        worksheet("Overview", [{ formula: "SUM(A1:A2)", result: 3 }, 3]),
+        worksheet("Data", [1]),
         worksheet("Archive", ["old"])
       ];
       this.xlsx = { readFile: async (filePath) => { this.loadedPath = filePath; } };
@@ -47,8 +47,8 @@ test("XLSX to CSV identifies the active sheet and warns about omitted sheets and
 
   const result = await inspectXlsxForCsv("book.xlsx", { Workbook });
 
-  assert.equal(result.exportedSheet, "Data");
-  assert.deepEqual(result.ignoredSheets, ["Overview", "Archive"]);
+  assert.equal(result.exportedSheet, "Overview");
+  assert.deepEqual(result.ignoredSheets, ["Data", "Archive"]);
   assert.equal(result.formulaCount, 1);
   assert.deepEqual(result.warnings.map((warning) => warning.code), [
     "XLSX_CSV_EXPORTED_SHEET",
@@ -59,9 +59,11 @@ test("XLSX to CSV identifies the active sheet and warns about omitted sheets and
     assert.ok(warning.messages.zhCN);
     assert.ok(warning.messages.enUS);
   }
+  assert.match(result.warnings[0].messages.zhCN, /第一张工作表/);
+  assert.match(result.warnings[0].messages.enUS, /first worksheet/i);
   assert.deepEqual(result.warnings[1].details, {
-    exportedSheet: "Data",
-    ignoredSheets: ["Overview", "Archive"]
+    exportedSheet: "Overview",
+    ignoredSheets: ["Data", "Archive"]
   });
 });
 
