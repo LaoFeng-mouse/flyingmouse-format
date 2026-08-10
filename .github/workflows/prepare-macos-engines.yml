@@ -11,7 +11,7 @@ on:
       - "scripts/validate-ci-engines.js"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-engine-candidate:
@@ -76,3 +76,27 @@ jobs:
             output/ci-engines-v1-darwin-${{ matrix.arch }}.tar.zst.sha256
           if-no-files-found: error
           compression-level: 0
+
+  publish-engine-candidates:
+    name: Publish validated macOS engine candidates
+    needs: build-engine-candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download both validated candidates
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ci-engines-v1-darwin-*
+          path: output/candidates
+
+      - name: Verify SHA-256 and publish immutable release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for archive in output/candidates/*/ci-engines-v1-darwin-*.tar.zst; do
+            expected="$(awk '{print $1}' "$archive.sha256")"
+            actual="$(sha256sum "$archive" | awk '{print $1}')"
+            test "$actual" = "$expected"
+            gh release upload ci-engines-v1 "$archive#$(basename "$archive")" --repo "${{ github.repository }}" --clobber
+          done
