@@ -1122,23 +1122,30 @@ async function renderPdfTablePage(inputPath, pageNumber, tempDir, dpi = 200) {
 }
 
 async function preparePdfTableOcrImage(imagePath, tempDir, pageNumber) {
+  const outputPath = path.join(tempDir, `ocr-clean-${String(pageNumber).padStart(3, "0")}.png`);
   const { data, info } = await sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels })
     .grayscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
   const lines = detectTableLinesFromRaw({ data, width: info.width, height: info.height, channels: info.channels });
-  if (!lines.length) return imagePath;
-  const rectangles = lines.map((line) => {
-    const eraseHalfWidth = Math.max(2, Math.ceil((Number(line.thickness) || 1) / 2) + 1);
-    const horizontal = Math.abs(line.y2 - line.y1) <= Math.abs(line.x2 - line.x1);
-    if (horizontal) {
-      return `<rect x="${Math.max(0, line.x1 - 2)}" y="${Math.max(0, line.y1 - eraseHalfWidth)}" width="${Math.max(1, line.x2 - line.x1 + 4)}" height="${eraseHalfWidth * 2}" fill="white"/>`;
-    }
-    return `<rect x="${Math.max(0, line.x1 - eraseHalfWidth)}" y="${Math.max(0, line.y1 - 2)}" width="${eraseHalfWidth * 2}" height="${Math.max(1, line.y2 - line.y1 + 4)}" fill="white"/>`;
-  }).join("");
-  const overlay = Buffer.from(`<svg width="${info.width}" height="${info.height}" xmlns="http://www.w3.org/2000/svg">${rectangles}</svg>`);
-  const outputPath = path.join(tempDir, `ocr-clean-${String(pageNumber).padStart(3, "0")}.png`);
-  await sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels }).composite([{ input: overlay }]).png().toFile(outputPath);
+  const pipeline = sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels })
+    .flatten({ background: "#ffffff" })
+    .grayscale()
+    .normalize()
+    .sharpen({ sigma: 1 });
+  if (lines.length) {
+    const rectangles = lines.map((line) => {
+      const eraseHalfWidth = Math.max(2, Math.ceil((Number(line.thickness) || 1) / 2) + 1);
+      const horizontal = Math.abs(line.y2 - line.y1) <= Math.abs(line.x2 - line.x1);
+      if (horizontal) {
+        return `<rect x="${Math.max(0, line.x1 - 2)}" y="${Math.max(0, line.y1 - eraseHalfWidth)}" width="${Math.max(1, line.x2 - line.x1 + 4)}" height="${eraseHalfWidth * 2}" fill="white"/>`;
+      }
+      return `<rect x="${Math.max(0, line.x1 - eraseHalfWidth)}" y="${Math.max(0, line.y1 - 2)}" width="${eraseHalfWidth * 2}" height="${Math.max(1, line.y2 - line.y1 + 4)}" fill="white"/>`;
+    }).join("");
+    const overlay = Buffer.from(`<svg width="${info.width}" height="${info.height}" xmlns="http://www.w3.org/2000/svg">${rectangles}</svg>`);
+    pipeline.composite([{ input: overlay }]);
+  }
+  await pipeline.png().toFile(outputPath);
   return outputPath;
 }
 
@@ -1204,7 +1211,10 @@ async function extractComplexPdfTableModel(inputPath) {
           assertPdfPages(pdf.numPages, { ocr: true });
           ocrBudgetChecked = true;
         }
-        if (!worker) worker = await createOcrWorker();
+        if (!worker) {
+          worker = await createOcrWorker();
+          await worker.setParameters({ user_defined_dpi: "200" });
+        }
         const image = await ensureRendered(page.pageNumber);
         return recognizePdfTablePage(worker, image.outputPath, tempDir, page.pageNumber);
       } : null
