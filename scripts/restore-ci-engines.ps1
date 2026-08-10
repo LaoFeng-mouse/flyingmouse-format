@@ -11,8 +11,10 @@ New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
 if (-not $BundlePath) {
   $BundlePath = Join-Path $outputRoot $manifest.assetName
-  & gh release download $manifest.releaseTag --repo $manifest.repository --pattern $manifest.assetName --dir $outputRoot --clobber
-  if ($LASTEXITCODE -ne 0) { throw "Unable to download $($manifest.assetName)." }
+  if (-not (Test-Path -LiteralPath $BundlePath -PathType Leaf)) {
+    & gh release download $manifest.releaseTag --repo $manifest.repository --pattern $manifest.assetName --dir $outputRoot
+    if ($LASTEXITCODE -ne 0) { throw "Unable to download $($manifest.assetName)." }
+  }
 }
 
 $resolvedBundle = (Resolve-Path -LiteralPath $BundlePath).Path

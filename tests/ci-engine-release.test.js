@@ -25,6 +25,7 @@ test("engine restore validates SHA-256 before extracting and checks every requir
   assert.ok(source.indexOf("SHA-256 mismatch") < source.indexOf("& tar -xf"));
   assert.match(source, /manifest\.requiredFiles/);
   assert.match(source, /ci-engines-v1-stage/);
+  assert.match(source, /Test-Path[\s\S]*gh release download/);
 });
 
 test("release workflow restores engines, runs full conversion tests and builds both installers", () => {
@@ -32,6 +33,8 @@ test("release workflow restores engines, runs full conversion tests and builds b
   for (const command of ["restore-ci-engines.ps1", "npm test", "npm audit --omit=dev", "npm run dist", "npm run dist:win7"]) {
     assert.match(workflow, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+  assert.match(workflow, /actions\/cache@v4/);
+  assert.match(workflow, /ci-engines-v1\.tar\.zst/);
   const packageJson = require("../package.json");
   assert.ok(packageJson.build.files.includes("ci-engines-v1.json"));
 });
