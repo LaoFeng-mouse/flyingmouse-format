@@ -136,7 +136,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 | Word/WPS | doc, docx, odt, rtf, wps, wpt, wpd | pdf, docx, odt, rtf, txt, html, md |
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html |
-| PDF | pdf | xlsx, txt, html, png, jpg, split/merge PDF |
+| PDF | pdf | xlsx, docx, txt, html, png, jpg, split/merge PDF |
 | Audio / 音频 | ncm, mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Video / 视频 | mp4, mov, mkv, webm, avi, m4v, wmv, flv | mp4, webm, mkv, mov, mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Any file / 任意文件 | any | zip |

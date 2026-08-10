@@ -5,6 +5,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
 const { PDFDocument, StandardFonts } = require("pdf-lib");
@@ -22,6 +23,27 @@ let baseUrl;
 
 function hashFile(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function readZipEntry(buffer, entryName) {
+  let offset = 0;
+  while (offset + 30 <= buffer.length) {
+    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
+    const method = buffer.readUInt16LE(offset + 8);
+    const compressedSize = buffer.readUInt32LE(offset + 18);
+    const nameLength = buffer.readUInt16LE(offset + 26);
+    const extraLength = buffer.readUInt16LE(offset + 28);
+    const name = buffer.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
+    const dataStart = offset + 30 + nameLength + extraLength;
+    const data = buffer.subarray(dataStart, dataStart + compressedSize);
+    if (name === entryName) {
+      if (method === 0) return data.toString("utf8");
+      if (method === 8) return zlib.inflateRawSync(data).toString("utf8");
+      throw new Error(`Unsupported ZIP compression method: ${method}`);
+    }
+    offset = dataStart + compressedSize;
+  }
+  throw new Error(`ZIP entry not found: ${entryName}`);
 }
 
 async function createImage(filePath, color, width = 96, height = 64) {
@@ -261,6 +283,25 @@ test("merges multiple images into one PDF without changing any source image", as
   const outputPath = await downloadResult(body, "merged-images.pdf");
   assertPdf(outputPath);
   assert.deepStrictEqual([hashFile(firstPath), hashFile(secondPath)], hashes);
+});
+
+test("converts a PDF to DOCX with extracted text and tables", async () => {
+  const sourcePath = path.join(scratchRoot, "word-source.pdf");
+  await createTextPdf(sourcePath);
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "word-source.pdf", "docx", "application/pdf");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "word-source.docx");
+  const outputPath = await downloadResult(body, "word-source.docx");
+  const packageBytes = await fsp.readFile(outputPath);
+  assert.strictEqual(packageBytes.readUInt32LE(0), 0x04034b50, "docx must be a ZIP package");
+  const documentXml = readZipEntry(packageBytes, "word/document.xml");
+  assert.match(documentXml, /<w:document/);
+  assert.match(documentXml, /<w:tbl>/);
+  assert.match(documentXml, /Page 1/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
 test("rejects an animated GIF targeting TIFF with a stable error code", async () => {

@@ -137,7 +137,7 @@ const spreadsheetTargets = ["pdf", "xlsx", "ods", "csv", "html"];
 const presentationInput = new Set(["ppt", "pptx", "odp", "dps", "dpt"]);
 const presentationTargets = ["pdf", "pptx", "odp", "html"];
 const pdfInput = new Set(["pdf"]);
-const pdfTextTargets = ["xlsx", "txt", "html"];
+const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
 const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg"]);
@@ -1315,7 +1315,92 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
     return;
   }
 
-  throw new Error("PDF 暂时只支持转换为 XLSX、TXT、HTML、PNG、JPG，或拆分为单页 PDF。");
+  if (target === "docx") {
+    await convertPdfToDocx(inputPath, outputPath, pages);
+    return;
+  }
+
+  throw new Error("PDF 暂时只支持转换为 XLSX、TXT、HTML、DOCX、PNG、JPG，或拆分为单页 PDF。");
+}
+
+function xmlDocxText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function xmlDocxParagraph(text, bold = false) {
+  const run = bold ? `<w:rPr><w:b/></w:rPr>` : "";
+  return `<w:p><w:r>${run}<w:t xml:space="preserve">${xmlDocxText(text)}</w:t></w:r></w:p>`;
+}
+
+function writeDocxZip(outputPath, entries) {
+  return new Promise((resolve, reject) => {
+    const archive = new yazl.ZipFile();
+    for (const entry of entries) {
+      archive.addBuffer(Buffer.from(entry.content, "utf8"), entry.path);
+    }
+    const output = fs.createWriteStream(outputPath);
+    archive.outputStream.pipe(output);
+    output.on("close", resolve);
+    output.on("error", reject);
+    archive.end();
+  });
+}
+
+async function convertPdfToDocx(inputPath, outputPath, pages) {
+  const source = pages || await extractPdfRowsByPage(inputPath);
+  const hasExtractableRows = source.some((page) => page.rows.length);
+  if (!hasExtractableRows) {
+    throw new Error("这个 PDF 没有可提取的文字，可能是扫描版图片 PDF。扫描版需要 OCR 后才能转 Word。");
+  }
+
+  const body = [];
+  for (const page of source) {
+    body.push(xmlDocxParagraph(page.name, true));
+    const multiColumnRows = page.rows.filter((row) => row.length > 1);
+    const singleRows = page.rows.filter((row) => row.length <= 1);
+    if (multiColumnRows.length) {
+      body.push("<w:tbl>");
+      for (const row of multiColumnRows) {
+        body.push("<w:tr>");
+        for (const cell of row) {
+          body.push(`<w:tc><w:p><w:r><w:t xml:space="preserve">${xmlDocxText(cell)}</w:t></w:r></w:p></w:tc>`);
+        }
+        body.push("</w:tr>");
+      }
+      body.push("</w:tbl>");
+    }
+    for (const row of singleRows) {
+      body.push(xmlDocxParagraph(row[0] || ""));
+    }
+  }
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body>
+${body.join("\n")}
+<w:sectPr/>
+</w:body>
+</w:document>`;
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  await writeDocxZip(outputPath, [
+    { path: "[Content_Types].xml", content: contentTypes },
+    { path: "_rels/.rels", content: rels },
+    { path: "word/document.xml", content: documentXml }
+  ]);
 }
 
 async function splitPdfToZip(inputPath, outputPath) {
