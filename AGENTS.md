@@ -98,6 +98,8 @@ npm audit --omit=dev --prefix output\win7-stage
 - `extraResources` 必须包含 FFmpeg、AVS3、LibreOffice、Poppler、tessdata 和 Tesseract core。
 - 保持 `signExecutable: false`，不要使用 `signAndEditExecutable: false`，后者会跳过图标嵌入。
 - `npm run dist` 当前生成 NSIS 安装包和 `dist/win-unpacked`；不要假设 APPX 已同步生成。
+- Microsoft Store 使用同一鼠鼠 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、鼠鼠图标和 SHA-256。
+- Partner Center 的“包验证通过”“认证通过”“公开发布”是不同状态；外部状态只能按现场回读结果和绝对日期记录，不能由本地构建或上传成功推断。
 - 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
 - Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
