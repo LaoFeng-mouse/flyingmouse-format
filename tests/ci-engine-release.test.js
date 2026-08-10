@@ -37,4 +37,8 @@ test("release workflow restores engines, runs full conversion tests and builds b
   assert.match(workflow, /ci-engines-v1\.tar\.zst/);
   const packageJson = require("../package.json");
   assert.ok(packageJson.build.files.includes("ci-engines-v1.json"));
+  assert.match(packageJson.scripts.dist, /--publish never/);
+  const jobHeader = workflow.slice(workflow.indexOf("jobs:"), workflow.indexOf("    steps:"));
+  assert.doesNotMatch(jobHeader, /GH_TOKEN/);
+  assert.match(workflow, /Restore fixed conversion engines[\s\S]*?GH_TOKEN:[\s\S]*?restore-ci-engines\.ps1/);
 });

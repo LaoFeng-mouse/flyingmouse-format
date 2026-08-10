@@ -344,7 +344,9 @@ test("build commands use only the installed local builder and stop after a faile
     path.join(temporaryStage, "node_modules", "electron-builder", "cli.js"),
     "--win",
     "nsis",
-    "--x64"
+    "--x64",
+    "--publish",
+    "never"
   ]);
   assert.ok(calls.every(({ options }) => options.cwd === temporaryStage));
   assert.ok(calls.every(({ options }) => options.env !== process.env));

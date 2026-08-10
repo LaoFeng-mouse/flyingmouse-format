@@ -13,8 +13,6 @@ jobs:
   validate-and-build:
     runs-on: windows-latest
     timeout-minutes: 180
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +32,8 @@ jobs:
 
       - name: Restore fixed conversion engines
         shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: .\scripts\restore-ci-engines.ps1
 
       - name: Syntax checks
