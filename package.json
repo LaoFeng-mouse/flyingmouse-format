@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -10,17 +10,21 @@
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis --publish never",
+    "dist:mac:arm64": "node scripts/validate-ci-engines.js --platform darwin --arch arm64 --root bin/engines/darwin-arm64 && electron-builder --mac dmg --arm64 --publish never",
+    "dist:mac:x64": "node scripts/validate-ci-engines.js --platform darwin --arch x64 --root bin/engines/darwin-x64 && electron-builder --mac dmg --x64 --publish never",
     "dist:win7": "node scripts/build-win7.js",
-    "test": "node --test tests/av3a-format.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
-    "test:ci": "node --test tests/av3a-format.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
+    "test": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/diagnostics.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
+    "test:ci": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/diagnostics.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/tha": "1.0.0",
     "csv-parse": "5.6.0",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "mammoth": "^1.12.0",
+    "marked": "9.1.6",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
     "pdf-lib": "^1.17.1",
@@ -53,43 +57,23 @@
       "server.js",
       "resource-policy.js",
       "text-conversion.js",
+      "office-engine.js",
+      "office-quality.js",
+      "diagnostics.js",
+      "runtime-paths.js",
+      "image-conversion.js",
       "pdf-table-extractor.js",
       "pdf-table-runtime.js",
       "ci-engines-v1.json",
       "logger.js",
       "settings-store.js",
       "ncm-format.js",
+      "ncm-metadata.js",
       "av3a-format.js",
       "kgg-format.js",
       "public/**/*",
       "package.json",
       "node_modules/**/*"
-    ],
-    "extraResources": [
-      {
-        "from": "bin/ffmpeg/ffmpeg.exe",
-        "to": "ffmpeg/ffmpeg.exe"
-      },
-      {
-        "from": "bin/avs3",
-        "to": "avs3"
-      },
-      {
-        "from": "bin/libreoffice",
-        "to": "libreoffice"
-      },
-      {
-        "from": "bin/poppler",
-        "to": "poppler"
-      },
-      {
-        "from": "bin/tessdata",
-        "to": "tessdata"
-      },
-      {
-        "from": "node_modules/tesseract.js-core",
-        "to": "tesseract.js-core"
-      }
     ],
     "asarUnpack": [
       "node_modules/sharp/**/*",
@@ -100,9 +84,72 @@
     ],
     "win": {
       "signExecutable": false,
+      "extraResources": [
+        {
+          "from": "bin/ffmpeg/ffmpeg.exe",
+          "to": "ffmpeg/ffmpeg.exe"
+        },
+        {
+          "from": "bin/avs3",
+          "to": "avs3"
+        },
+        {
+          "from": "bin/libreoffice",
+          "to": "libreoffice"
+        },
+        {
+          "from": "bin/poppler",
+          "to": "poppler"
+        },
+        {
+          "from": "bin/tessdata",
+          "to": "tessdata"
+        },
+        {
+          "from": "node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz",
+          "to": "tessdata/tha.traineddata.gz"
+        },
+        {
+          "from": "node_modules/tesseract.js-core",
+          "to": "tesseract.js-core"
+        }
+      ],
       "target": [
         "nsis",
         "appx"
+      ]
+    },
+    "mac": {
+      "artifactName": "${productName}-Setup-${version}-mac-${arch}.${ext}",
+      "minimumSystemVersion": "11.0.0",
+      "identity": null,
+      "notarize": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "extraResources": [
+        {
+          "from": "bin/engines/darwin-${arch}/runtime",
+          "to": "engines/darwin-${arch}/runtime"
+        },
+        {
+          "from": "bin/engines/darwin-${arch}/libreoffice",
+          "to": "engines/darwin-${arch}/libreoffice"
+        },
+        {
+          "from": "bin/engines/darwin-${arch}/tessdata",
+          "to": "engines/darwin-${arch}/tessdata"
+        },
+        {
+          "from": "node_modules/tesseract.js-core",
+          "to": "tesseract.js-core"
+        }
       ]
     },
     "appx": {

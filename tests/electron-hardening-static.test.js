@@ -76,18 +76,19 @@ test("PDF.js loader imports the modern layout when it resolves", async () => {
 
 test("PDF.js loader falls back to the legacy layout only when the modern entry is missing", async () => {
   const pdfjs = { getDocument() {} };
-  const packageRoot = "D:\\app\\node_modules\\pdfjs-dist";
+  const appRoot = path.resolve(path.sep, "app");
+  const packageRoot = path.join(appRoot, "node_modules", "pdfjs-dist");
   const modernEntry = path.join(packageRoot, "legacy", "build", "pdf.mjs");
   const legacyEntry = path.join(packageRoot, "legacy", "build", "pdf.js");
   const modernUrl = pathToFileURL(modernEntry).href;
   const legacyUrl = pathToFileURL(legacyEntry).href;
   const missing = Object.assign(
-    new Error(`Cannot find module '${modernEntry}' imported from D:\\app\\server.js`),
+    new Error(`Cannot find module '${modernEntry}' imported from ${path.join(appRoot, "server.js")}`),
     { code: "ERR_MODULE_NOT_FOUND", url: modernUrl }
   );
   const imports = [];
   const result = await loadPdfjsModule({
-    appRoot: "D:\\APP",
+    appRoot,
     packageJsonResolver(specifier) {
       assert.strictEqual(specifier, "pdfjs-dist/package.json");
       return path.join(packageRoot, "package.json");
@@ -105,9 +106,10 @@ test("PDF.js loader falls back to the legacy layout only when the modern entry i
 
 test("PDF.js loader rejects a package resolved outside the app root before importing", async () => {
   const imports = [];
+  const repositoryRoot = path.resolve(path.sep, "repo");
   const promise = loadPdfjsModule({
-    appRoot: "D:\\repo\\output\\win7-stage",
-    packageJsonResolver: () => "D:\\repo\\node_modules\\pdfjs-dist\\package.json",
+    appRoot: path.join(repositoryRoot, "output", "win7-stage"),
+    packageJsonResolver: () => path.join(repositoryRoot, "node_modules", "pdfjs-dist", "package.json"),
     async importer(specifier) {
       imports.push(specifier);
       return {};
@@ -138,11 +140,12 @@ test("PDF.js loader preserves a modern module runtime error without trying the l
 });
 
 test("PDF.js loader does not fall back when a dependency of the modern entry is missing", async () => {
+  const missingDependency = path.resolve(path.sep, "app", "node_modules", "canvas", "index.js");
   const dependencyError = Object.assign(
-    new Error("Cannot find package 'canvas' imported from D:\\app\\node_modules\\pdfjs-dist\\legacy\\build\\pdf.mjs"),
+    new Error(`Cannot find package 'canvas' imported from ${path.resolve(path.sep, "app", "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")}`),
     {
       code: "ERR_MODULE_NOT_FOUND",
-      url: "file:///D:/app/node_modules/canvas/index.js"
+      url: pathToFileURL(missingDependency).href
     }
   );
   const imports = [];
@@ -213,7 +216,11 @@ test("package pins the expected Electron version and includes the security modul
 test("package bundles the AV3A helper and configures its runtime path", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   const main = readRoot("electron-main.js");
-  const avs3Resources = packageJson.build.extraResources.filter((item) => item.to === "avs3");
+  const runtimePaths = readRoot("runtime-paths.js");
+  const platformResources = packageJson.name === "flyingmouse-format"
+    ? packageJson.build.win.extraResources
+    : packageJson.build.extraResources;
+  const avs3Resources = platformResources.filter((item) => item.to === "avs3");
   assert.strictEqual(avs3Resources.length, 1);
   if (packageJson.name === "flyingmouse-format") {
     assert.strictEqual(avs3Resources[0].from, "bin/avs3");
@@ -225,7 +232,8 @@ test("package bundles the AV3A helper and configures its runtime path", () => {
     assert.fail(`unexpected package name: ${packageJson.name}`);
   }
   assert.match(main, /FLYINGMOUSE_AVS3_DECODER_PATH/);
-  assert.match(main, /avs3RM0Decoder\.exe/);
+  assert.match(runtimePaths, /avs3RM0Decoder\.exe/);
+  assert.match(runtimePaths, /avs3Decoder:\s*null/);
 });
 
 test("save dialogs restore and update the last successful directory", () => {
@@ -238,4 +246,36 @@ test("save dialogs restore and update the last successful directory", () => {
   assert.match(main, /defaultPath: lastSaveDirectory/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, path\.dirname\(result\.filePath\)\)/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, directory\)/);
+});
+
+test("trusted IPC owns durable renderer settings", () => {
+  const main = readRoot("electron-main.js");
+  const preload = readRoot("preload.js");
+  for (const channel of ["get-settings", "update-settings", "migrate-legacy-settings"]) {
+    assert.match(main, new RegExp(`ipcMain\\.handle\\(\\"${channel}\\"`));
+  }
+  assert.match(main, /assertTrustedIpc\(event\)/);
+  assert.match(preload, /getSettings/);
+  assert.match(preload, /updateSettings/);
+  assert.match(preload, /migrateLegacySettings/);
+});
+
+test("trusted IPC exports a sanitized diagnostics report to the remembered directory", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  const preload = readRoot("preload.js");
+  assert.ok(packageJson.build.files.includes("diagnostics.js"));
+  assert.match(main, /ipcMain\.handle\("export-diagnostics"/);
+  assert.match(main, /buildDiagnosticsReport/);
+  assert.match(main, /readLastSaveDirectory/);
+  assert.match(main, /writeLastSaveDirectory/);
+  assert.match(main, /fs\.promises\.writeFile/);
+  assert.match(preload, /exportDiagnostics/);
+  assert.match(preload, /ipcRenderer\.invoke\("export-diagnostics"/);
+});
+
+test("runtime diagnostics read Sharp's supported runtime version API", () => {
+  const server = readRoot("server.js");
+  assert.doesNotMatch(server, /require\(["']sharp\/package\.json["']\)/);
+  assert.match(server, /sharp\.versions\.sharp/);
 });

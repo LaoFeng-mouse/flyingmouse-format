@@ -15,7 +15,8 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
-const { createTurndownService, htmlToMarkdown, csvToJsonObjects } = require("./text-conversion");
+const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv } = require("./text-conversion");
+const { convertRasterImage } = require("./image-conversion");
 const {
   LIMITS,
   ResourceLimitError,
@@ -26,8 +27,11 @@ const {
 } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
 const { convertNcm } = require("./ncm-format");
+const { buildNcmFfmpegOptions } = require("./ncm-metadata");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
+const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
+const { inspectXlsxForCsv, validatePresentationHtml } = require("./office-quality");
 const logger = require("./logger");
 
 // Prefer the Electron main process's debug.log (set via FLYINGMOUSE_LOG_FILE
@@ -141,6 +145,14 @@ const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "f
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
+const experimentalInputsByCategory = Object.freeze({
+  image: ["heic", "heif"],
+  document: ["wpd", "wps", "wpt"],
+  spreadsheet: ["et", "ett"],
+  presentation: ["dps", "dpt"],
+  audio: ["kgg"]
+});
+const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([
   ...imageTargets,
   ...textTargets,
@@ -286,8 +298,29 @@ function targetsForExt(rawExt, tools) {
   return [...targets].filter((target) => {
     const normalizedInput = normalizeExt(rawExt);
     if (category === "pdf" && target === "pdf") return true;
+    if (category === "image" && ["gif", "webp"].includes(normalizedInput) && target === "tiff") return false;
     return target !== normalizedInput || target === "zip";
   });
+}
+
+function platformCapabilities(platform = process.platform, arch = process.arch) {
+  return {
+    os: platform,
+    arch,
+    standardNcm: true,
+    av3a: platform === "win32"
+  };
+}
+
+function experimentalInputWarning(inputExt) {
+  return {
+    code: "EXPERIMENTAL_INPUT",
+    details: { inputFormat: inputExt },
+    messages: {
+      zhCN: `${inputExt.toUpperCase()} 输入仍属实验性，尚未覆盖足够真实样本；请复核转换结果。`,
+      enUS: `${inputExt.toUpperCase()} input is experimental and lacks broad real-file validation; review the converted result.`
+    }
+  };
 }
 
 function safeBaseName(originalName) {
@@ -457,59 +490,10 @@ function ocrAvailable() {
     && fs.existsSync(paths.langPath)
     && fs.existsSync(path.join(paths.langPath, "eng.traineddata.gz"))
     && fs.existsSync(path.join(paths.langPath, "chi_sim.traineddata.gz"))
+    && fs.existsSync(path.join(paths.langPath, "tha.traineddata.gz"))
     && fs.existsSync(paths.corePath)
     && fs.existsSync(paths.workerPath)
   );
-}
-
-function markdownToHtml(markdown) {
-  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
-  const output = [];
-  let inList = false;
-
-  for (const line of lines) {
-    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
-    const bullet = /^[-*]\s+(.+)$/.exec(line);
-
-    if (heading) {
-      if (inList) {
-        output.push("</ul>");
-        inList = false;
-      }
-      const level = heading[1].length;
-      output.push(`<h${level}>${escapeHtml(heading[2])}</h${level}>`);
-      continue;
-    }
-
-    if (bullet) {
-      if (!inList) {
-        output.push("<ul>");
-        inList = true;
-      }
-      output.push(`<li>${escapeHtml(bullet[1])}</li>`);
-      continue;
-    }
-
-    if (inList) {
-      output.push("</ul>");
-      inList = false;
-    }
-
-    if (!line.trim()) {
-      output.push("");
-    } else {
-      output.push(`<p>${escapeHtml(line)}</p>`);
-    }
-  }
-
-  if (inList) output.push("</ul>");
-  return `<!doctype html>
-<html lang="zh-CN">
-<head><meta charset="utf-8"><title>Converted document</title></head>
-<body>
-${output.join("\n")}
-</body>
-</html>`;
 }
 
 function htmlToText(html) {
@@ -528,34 +512,24 @@ function htmlToText(html) {
     .trim();
 }
 
-function jsonToCsv(jsonText) {
-  const data = parseJsonText(jsonText);
-  const rows = Array.isArray(data) ? data : [data];
-  const headers = [...new Set(rows.flatMap((row) => Object.keys(row || {})))];
-  const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
-  return [headers.map(quote).join(","), ...rows.map((row) => headers.map((header) => quote(row?.[header])).join(","))].join("\n");
-}
-
 async function convertImage(inputPath, outputPath, target) {
   if (target === "pdf") {
     await convertImagesToPdf([{ inputPath, originalName: path.basename(inputPath) }], outputPath);
-    return;
+    return { warnings: [] };
   }
 
   if (target === "txt") {
     await convertImageToOcrText(inputPath, outputPath);
-    return;
+    return { warnings: [] };
   }
 
   if (target === "mp4" || target === "webm") {
     await convertImageToVideo(inputPath, outputPath, target);
-    return;
+    return { warnings: [] };
   }
 
   await inspectImageMetadata(inputPath, true);
-  const image = sharp(inputPath, { animated: true, limitInputPixels: LIMITS.maxImagePixels }).rotate();
-  const normalized = target === "jpg" ? "jpeg" : target;
-  await image.toFormat(normalized, target === "jpg" ? { quality: 90 } : undefined).toFile(outputPath);
+  return convertRasterImage(inputPath, outputPath, target, { maxPixels: LIMITS.maxImagePixels });
 }
 
 async function inspectImageMetadata(inputPath, animated = false) {
@@ -628,7 +602,7 @@ async function createOcrWorker() {
 
   const { createWorker } = loadTesseract();
   const paths = ocrRuntimePaths();
-  const worker = await createWorker("eng+chi_sim", 1, {
+  const worker = await createWorker("eng+chi_sim+tha", 1, {
     langPath: paths.langPath,
     corePath: paths.corePath,
     workerPath: paths.workerPath,
@@ -957,15 +931,9 @@ async function findConvertedFile(outDir, target) {
 }
 
 async function convertWithLibreOffice(inputPath, outputPath, originalName, target) {
-  if (!(await commandExists(LIBREOFFICE_PATH, ["--version"]))) {
-    throw new Error("文档转换引擎未启用。请确认安装包内置的 LibreOffice 文件完整。");
-  }
-
   const tempDir = path.join(RUNTIME_DIR, `lo-${randomUUID()}`);
   const outDir = path.join(tempDir, "out");
-  const profileDir = path.join(tempDir, "profile");
   await fsp.mkdir(outDir, { recursive: true });
-  await fsp.mkdir(profileDir, { recursive: true });
 
   const originalExt = extFromName(originalName) || "bin";
   const safeName = sanitize(originalName || `input.${originalExt}`) || `input.${originalExt}`;
@@ -974,12 +942,6 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
   try {
     await fsp.copyFile(inputPath, workingInput);
     const args = [
-      "--headless",
-      "--nologo",
-      "--nofirststartwizard",
-      "--nodefault",
-      "--nolockcheck",
-      `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
       "--convert-to",
       libreOfficeFilterFor(target),
       "--outdir",
@@ -987,7 +949,7 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
       workingInput
     ];
 
-    await run(LIBREOFFICE_PATH, args, { timeout: 1000 * 60 * 10 });
+    await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10 });
     const convertedPath = await findConvertedFile(outDir, target);
     if (!convertedPath) {
       throw new Error("文档转换失败，可能是不支持这个源格式或文件已损坏。");
@@ -1458,11 +1420,12 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
   }
 }
 
-async function convertMedia(inputPath, outputPath, target, category) {
+async function convertMedia(inputPath, outputPath, target, category, options = {}) {
   const args = ["-hide_banner", "-y", "-i", inputPath];
+  for (const extraInput of options.extraInputs || []) args.push("-i", extraInput);
 
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
-    args.push("-vn");
+    if (!(options.extraInputs || []).length) args.push("-vn");
     if (target === "mp3") args.push("-codec:a", "libmp3lame", "-q:a", "2");
     if (target === "m4a") args.push("-codec:a", "aac", "-b:a", "192k");
     if (target === "ogg") args.push("-codec:a", "libopus", "-b:a", "160k");
@@ -1478,6 +1441,11 @@ async function convertMedia(inputPath, outputPath, target, category) {
   } else if (target === "mkv") {
     args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac");
   }
+
+  for (const [key, value] of Object.entries(options.metadata || {})) {
+    if (value) args.push("-metadata", `${key}=${value}`);
+  }
+  args.push(...(options.coverArgs || []));
 
   args.push(outputPath);
   await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 30 });
@@ -1522,12 +1490,25 @@ async function cleanupOldFiles() {
 }
 
 let cachedTools = null;
+let cachedToolDetails = {};
 
 async function getTools() {
   if (!cachedTools) {
+    let officeProbe = null;
+    try {
+      officeProbe = await probeLibreOffice(LIBREOFFICE_PATH, { runtimeDir: RUNTIME_DIR });
+      cachedToolDetails.libreoffice = officeProbe;
+    } catch (error) {
+      cachedToolDetails.libreoffice = {
+        enabled: false,
+        errorCode: error.code || "OFFICE_ENGINE_START_FAILED",
+        messages: error.messages
+      };
+      logger.warn("LibreOffice capability probe failed", error);
+    }
     cachedTools = {
       ffmpeg: await commandExists(FFMPEG_PATH),
-      libreoffice: await commandExists(LIBREOFFICE_PATH, ["--version"]),
+      libreoffice: Boolean(officeProbe?.enabled),
       poppler: await commandExists(PDFTOPPM_PATH, ["-v"]),
       ocr: ocrAvailable(),
       pdf: true,
@@ -1536,6 +1517,18 @@ async function getTools() {
     };
   }
   return cachedTools;
+}
+
+async function getToolDiagnostics() {
+  const tools = await getTools();
+  return {
+    ffmpeg: { enabled: tools.ffmpeg, executable: FFMPEG_PATH },
+    libreoffice: { ...cachedToolDetails.libreoffice, executable: LIBREOFFICE_PATH },
+    poppler: { enabled: tools.poppler, executable: PDFTOPPM_PATH },
+    ocr: { enabled: tools.ocr, version: require("tesseract.js/package.json").version },
+    pdfjs: { enabled: tools.pdf, version: require("pdfjs-dist/package.json").version },
+    sharp: { enabled: tools.sharp, version: sharp.versions.sharp }
+  };
 }
 
 function isLocalWebOrigin(value) {
@@ -1597,16 +1590,18 @@ app.get("/api/capabilities", async (_req, res) => {
   const tools = await getTools();
   res.json({
     tools,
+    platform: platformCapabilities(),
+    toolDetails: cachedToolDetails,
     maxUploadBytes: MAX_UPLOAD_BYTES,
     limits: LIMITS,
     groups: {
-      image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])] },
+      image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])], experimentalInputs: experimentalInputsByCategory.image },
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
-      document: { inputs: [...documentInput].sort(), targets: documentTargets },
-      spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets },
-      presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets },
+      document: { inputs: [...documentInput].sort(), targets: documentTargets, experimentalInputs: experimentalInputsByCategory.document },
+      spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
+      presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
-      audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets },
+      audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
     },
@@ -1622,7 +1617,7 @@ app.get("/api/capabilities", async (_req, res) => {
 app.post("/api/targets", async (req, res) => {
   const tools = await getTools();
   const ext = normalizeExt(String(req.body?.extension || "").toLowerCase());
-  res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools) });
+  res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
 });
 
 app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
@@ -1768,6 +1763,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   const outputExt = outputExtFor(category, requestedTarget);
   const outputPath = outputPathFor(originalName, requestedTarget, outputExt);
   const downloadName = outputNameFor(originalName, requestedTarget, outputExt);
+  let conversionResult = { warnings: [] };
 
   try {
     if (requestedTarget === "zip") {
@@ -1775,7 +1771,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       const level = Number.isFinite(levelNum) ? Math.min(9, Math.max(0, levelNum)) : 6;
       await zipFile(file.path, outputPath, originalName, level);
     } else if (category === "image") {
-      await convertImage(file.path, outputPath, requestedTarget);
+      conversionResult = await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
       await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "pdf") {
@@ -1788,7 +1784,13 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       } else if (category === "document" && requestedTarget === "txt") {
         await convertDocumentToText(file.path, outputPath, inputExt, originalName);
       } else {
+        if (category === "spreadsheet" && inputExt === "xlsx" && requestedTarget === "csv") {
+          conversionResult = await inspectXlsxForCsv(file.path);
+        }
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
+        if (category === "presentation" && requestedTarget === "html") {
+          validatePresentationHtml(await fsp.readFile(outputPath, "utf8"));
+        }
       }
     } else if (category === "audio" || category === "video") {
       if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg")) {
@@ -1799,7 +1801,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           const conversionInput = inputExt === "ncm"
             ? await prepareDecryptedAudio(decrypted)
             : decrypted.nativePath;
-          await convertMedia(conversionInput, outputPath, requestedTarget, "audio");
+          const mediaOptions = inputExt === "ncm"
+            ? buildNcmFfmpegOptions(decrypted, requestedTarget)
+            : {};
+          await convertMedia(conversionInput, outputPath, requestedTarget, "audio", mediaOptions);
         } finally {
           await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
         }
@@ -1819,6 +1824,12 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       mimeType,
       downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
     };
+    if (Array.isArray(conversionResult?.warnings) && conversionResult.warnings.length) {
+      payload.warnings = conversionResult.warnings;
+    }
+    if (experimentalInputSet.has(inputExt)) {
+      payload.warnings = [...(payload.warnings || []), experimentalInputWarning(inputExt)];
+    }
     if (requestedTarget === "zip") {
       const originalBytes = file.size || 0;
       const compressedBytes = (await fsp.stat(outputPath)).size;
@@ -1831,14 +1842,25 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     logger.info(`Convert succeeded: "${originalName}" -> ${downloadName} (${requestedTarget})`);
     res.json(payload);
   } catch (error) {
-    const isClientConversionError = error?.code === "CSV_PARSE_FAILED";
+    const isClientConversionError = [
+      "CSV_PARSE_FAILED",
+      "AV3A_UNSUPPORTED_PLATFORM",
+      "PDF_TABLE_OCR_REQUIRED",
+      "PDF_TABLE_OCR_EMPTY"
+    ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
+    const isOfficeEngineError = error instanceof OfficeEngineError;
     if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
     else logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
     await fsp.rm(outputPath, { force: true }).catch(() => {});
     const payload = isResourceLimitError ? resourceErrorPayload(error) : { error: error.message || "转换失败。" };
     if (error?.code) payload.errorCode = error.code;
+    if (error?.messages) payload.messages = error.messages;
+    if (isOfficeEngineError) {
+      payload.messages = error.messages;
+      payload.details = error.details;
+    }
     res.status(isResourceLimitError ? 413 : (isClientConversionError ? 422 : 500)).json(payload);
   }
 });
@@ -1903,4 +1925,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, isMissingPdfjsEntry, loadPdfjsModule };
+module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities };

@@ -37,6 +37,8 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
     `FlyingMouse Format-Setup-${rootPackage.version}-win7-x64.exe`
   );
   assert.deepEqual(profile.build.win.target, ["nsis"]);
+  assert.equal(profile.build.win.extraResources, undefined);
+  assert.equal(profile.build.mac, undefined);
   assert.equal(profile.build.appx, undefined);
   assert.doesNotMatch(profile.scripts.test, /win7-build-profile|win7-build-script|pe-metadata/);
   assert.doesNotMatch(profile.scripts["test:ci"], /win7-build-profile|win7-build-script|pe-metadata/);
@@ -71,7 +73,9 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "server.js",
     "logger.js",
     "settings-store.js",
+    "office-engine.js",
     "ncm-format.js",
+    "ncm-metadata.js",
     "av3a-format.js",
     "kgg-format.js"
   ]) {
@@ -102,6 +106,7 @@ test("stage source entries contain runtime source and assets but exclude node_mo
     "public",
     "av3a-format.js",
     "settings-store.js",
+    "office-engine.js",
     "ncm-format.js",
     "kgg-format.js"
   ]) {
@@ -159,8 +164,8 @@ test("profile validation reports missing required manifest fields", () => {
     [(input) => delete input.scripts["test:ci"], /scripts\.test:ci must be a string/],
     [(input) => delete input.build.win, /build\.win must be an object/],
     [
-      (input) => delete input.build.extraResources[0].from,
-      /build\.extraResources\[0\]\.from must be a string/
+      (input) => delete input.build.win.extraResources[0].from,
+      /build\.win\.extraResources\[0\]\.from must be a string/
     ]
   ];
 

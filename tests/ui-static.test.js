@@ -59,12 +59,27 @@ test("renderer does not inject dynamic HTML", () => {
   assert.match(app, /\.textContent\s*=/);
 });
 
-test("renderer restores and updates target preferences by source extension", () => {
+test("renderer restores and updates target preferences through durable Electron settings", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   assert.match(html, /conversion-preferences\.js/);
-  assert.match(app, /preferredTarget\(localStorage/);
-  assert.match(app, /rememberTarget\(localStorage/);
+  assert.match(app, /migrateLegacySettings/);
+  assert.match(app, /preferredTarget\(state\.settings\.targetBySource/);
+  assert.match(app, /logBridge\.updateSettings\(\{\s*targetBySource\s*\}/s);
+  assert.doesNotMatch(app, /preferredTarget\(localStorage/);
+  assert.doesNotMatch(app, /rememberTarget\(localStorage/);
+});
+
+test("renderer exposes a bilingual diagnostics export through the trusted bridge", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="diagnosticsButton"/);
+  assert.match(app, /"diagnostics\.export": "导出诊断"/);
+  assert.match(app, /"diagnostics\.export": "Export diagnostics"/);
+  assert.match(app, /logBridge\.exportDiagnostics/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+  assert.match(app, /result\?\.errorCode/);
+  assert.match(app, /error\.errorCode/);
 });
 
 test("PDF to XLSX uses a contextual bilingual smart-table label and warning", () => {
@@ -84,4 +99,21 @@ test("renderer enforces the advertised 2 GB batch limit and localizes resource e
   assert.match(app, /2 \* 1024 \* 1024 \* 1024/);
   assert.match(app, /result\?\.messages\?\.enUS/);
   assert.match(app, /result\?\.messages\?\.zhCN/);
+});
+
+test("renderer shows localized conversion warnings without HTML injection", () => {
+  const app = readPublic("app.js");
+  assert.match(app, /result\?\.warnings/);
+  assert.match(app, /warning\?\.messages\?\.enUS/);
+  assert.match(app, /warning\?\.messages\?\.zhCN/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+});
+
+test("renderer labels experimental inputs and the macOS AV3A boundary bilingually", () => {
+  const app = readPublic("app.js");
+  assert.match(app, /experimentalInputs/);
+  assert.match(app, /Experimental\/unverified inputs/);
+  assert.match(app, /实验性\/尚未完整验证的输入/);
+  assert.match(app, /Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows/);
+  assert.match(app, /macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows/);
 });
