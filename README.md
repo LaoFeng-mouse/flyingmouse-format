@@ -151,3 +151,9 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 ## License / 许可证
 
 Source code is released under the [MIT License](LICENSE). Bundled third-party components retain their respective licenses. / 项目代码采用 [MIT License](LICENSE)，内置第三方组件遵循各自许可证。
+
+## Support / 支持
+
+FlyingMouse Format is free, offline, and has no ads. If it helped you, you can buy Mouse a dried fish — completely optional. / 飞鼠格式免费、离线、无广告。如果它帮到了你，欢迎请鼠鼠吃根小鱼干，纯自愿。
+
+![WeChat payment QR / 微信收款码](public/assets/sponsor-qr.jpg)
