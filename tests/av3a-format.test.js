@@ -101,6 +101,7 @@ test("routes only decrypted AV3A M4A audio through the helper", async (t) => {
   let decodedInput;
 
   const result = await prepareDecryptedAudio({ nativePath, format: "m4a", tempDir: scratch }, {
+    platform: "win32",
     decode: async (inputPath) => {
       decodedInput = inputPath;
       return path.join(scratch, "decoded.wav");
@@ -109,7 +110,10 @@ test("routes only decrypted AV3A M4A audio through the helper", async (t) => {
 
   assert.equal(decodedInput, nativePath);
   assert.equal(result, path.join(scratch, "decoded.wav"));
-  assert.equal(await prepareDecryptedAudio({ nativePath, format: "mp3", tempDir: scratch }), nativePath);
+  assert.equal(await prepareDecryptedAudio(
+    { nativePath, format: "mp3", tempDir: scratch },
+    { platform: "win32" }
+  ), nativePath);
 });
 
 test("rejects AV3A on macOS with a stable bilingual platform error", async (t) => {
