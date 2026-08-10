@@ -4,6 +4,9 @@
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
+  "engines": {
+    "node": ">=18"
+  },
   "description": "Windows desktop universal file format converter (offline, bundled FFmpeg/LibreOffice/Poppler/Tesseract).",
   "main": "electron-main.js",
   "scripts": {
@@ -14,7 +17,7 @@
     "dist:mac:x64": "node scripts/validate-ci-engines.js --platform darwin --arch x64 --root bin/engines/darwin-x64 && electron-builder --mac dmg --x64 --publish never",
     "dist:win7": "node scripts/build-win7.js",
     "test": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/diagnostics.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js",
-    "test:ci": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/diagnostics.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
+    "test:ci": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/diagnostics.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
