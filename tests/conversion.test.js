@@ -263,6 +263,26 @@ test("merges multiple images into one PDF without changing any source image", as
   assert.deepStrictEqual([hashFile(firstPath), hashFile(secondPath)], hashes);
 });
 
+test("rejects an animated GIF targeting TIFF with a stable error code", async () => {
+  const sourcePath = path.join(scratchRoot, "anim-tiff.gif");
+  execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);
+
+  const { response, body } = await uploadConvert(sourcePath, "anim-tiff.gif", "tiff", "image/gif");
+
+  assert.strictEqual(response.status, 400);
+  assert.strictEqual(body.errorCode, "TARGET_UNAVAILABLE_FOR_SOURCE");
+});
+
+test("rejects an unknown target with a stable error code", async () => {
+  const sourcePath = path.join(scratchRoot, "unknown-target.txt");
+  await fsp.writeFile(sourcePath, "text", "utf8");
+
+  const { response, body } = await uploadConvert(sourcePath, "unknown-target.txt", "xyz9", "text/plain");
+
+  assert.strictEqual(response.status, 400);
+  assert.strictEqual(body.errorCode, "UNSUPPORTED_TARGET");
+});
+
 test("renders PDF pages to a PNG zip without changing the source PDF", async () => {
   const sourcePath = path.join(scratchRoot, "报价单.pdf");
   await createTextPdf(sourcePath);
