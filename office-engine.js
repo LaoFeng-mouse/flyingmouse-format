@@ -103,7 +103,7 @@ async function probeLibreOffice(command, options = {}) {
   const result = await executeWithProfile(command, ["--version"], {
     ...options,
     operation: "probe",
-    timeout: options.timeout || 5000
+    timeout: options.timeout || 20000
   });
   const output = `${result.stdout || ""}\n${result.stderr || ""}`;
   const match = /LibreOffice\s+([0-9]+(?:\.[0-9]+)+)/i.exec(output);
