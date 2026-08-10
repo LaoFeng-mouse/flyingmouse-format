@@ -61,8 +61,8 @@ Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electro
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse Format-Setup-0.3.4-mac-arm64.dmg`。
-- **Intel Mac**：下载 `FlyingMouse Format-Setup-0.3.4-mac-x64.dmg`。
+- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.3.4-mac-arm64.dmg`。
+- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.3.4-mac-x64.dmg`。
 
 首批 macOS 包支持 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。标准 NCM 可用；Audio Vivid（AV3A）NCM 依赖 Windows 专用解码器，不在 macOS 支持范围内。两个架构已在原生 GitHub runner 完成固定引擎、完整转换、包结构和 12 秒启动冒烟；真实 Mac 设备仍待验收。
 
@@ -112,8 +112,8 @@ The Windows 7 package is a Legacy build and does not downgrade the standard buil
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse Format-Setup-0.3.4-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse Format-Setup-0.3.4-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.3.4-mac-arm64.dmg`.
+- **Intel Mac:** use `FlyingMouse.Format-Setup-0.3.4-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Standard NCM is supported; Audio Vivid (AV3A) NCM depends on a Windows-only decoder and is unavailable on macOS. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 
