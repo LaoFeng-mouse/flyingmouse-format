@@ -45,6 +45,10 @@ const targetSelect = document.querySelector("#targetSelect");
 const pdfExcelHint = document.querySelector("#pdfExcelHint");
 const zipCompressionField = document.querySelector("#zipCompressionField");
 const zipCompression = document.querySelector("#zipCompression");
+const pdfPasswordField = document.querySelector("#pdfPasswordField");
+const pdfPassword = document.querySelector("#pdfPassword");
+const pdfActionField = document.querySelector("#pdfActionField");
+const pdfAction = document.querySelector("#pdfAction");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
@@ -89,6 +93,8 @@ const messages = {
     "formats.av3aMac": "macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows。",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
+    "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
+    "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。",
@@ -113,6 +119,8 @@ const messages = {
     "formats.av3aMac": "Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows.",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
+    "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
+    "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
     "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT.",
@@ -438,6 +446,15 @@ function syncZipCompressionField() {
   zipCompressionField.hidden = targetSelect.value !== "zip";
 }
 
+function syncPdfActionFields() {
+  if (!pdfPasswordField || !pdfActionField) return;
+  const isPdfToPdf = targetSelect.value === "pdf"
+    && state.fileInfos.length === state.files.length
+    && state.fileInfos.every((info) => info.category === "pdf");
+  pdfPasswordField.hidden = !isPdfToPdf;
+  pdfActionField.hidden = !isPdfToPdf;
+}
+
 function syncPdfExcelHint() {
   if (!pdfExcelHint) return;
   pdfExcelHint.hidden = !(targetSelect.value === "xlsx"
@@ -493,6 +510,7 @@ async function acceptFiles(fileList) {
         : (i18n.language === "en-US" ? "These files have no common target format. Batch files of the same type or select fewer files." : "这些文件没有共同的目标格式。请分成同类型文件批量转换，或减少选择的文件。"),
       "error");
       syncZipCompressionField();
+      syncPdfActionFields();
       setMouseState("error");
       return;
     }
@@ -519,6 +537,7 @@ async function acceptFiles(fileList) {
     targetSelect.disabled = false;
     convertButton.disabled = false;
     syncZipCompressionField();
+    syncPdfActionFields();
     syncPdfExcelHint();
     setMouseState(files.length > 1 ? "batch" : "idle");
     if (files.length === 1) {
@@ -575,6 +594,10 @@ async function convertOneFile(file, targetFormat) {
   form.append("targetFormat", targetFormat);
   if (targetFormat === "zip") {
     form.append("compressionLevel", zipCompression?.value || "6");
+  }
+  if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
+    form.append("pdfAction", pdfAction?.value || "");
+    if (pdfPassword?.value) form.append("password", pdfPassword.value);
   }
 
   const response = await fetch("/api/convert", {
@@ -923,6 +946,7 @@ languageSelect.addEventListener("change", async () => {
 });
 targetSelect.addEventListener("change", async () => {
   syncZipCompressionField();
+  syncPdfActionFields();
   syncPdfExcelHint();
   const targetBySource = rememberTarget(
     state.settings.targetBySource,

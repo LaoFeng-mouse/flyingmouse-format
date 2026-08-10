@@ -13,6 +13,7 @@ const sanitize = require("sanitize-filename");
 const sharp = require("sharp");
 const ExcelJS = require("exceljs");
 const yazl = require("yazl");
+const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv } = require("./text-conversion");
@@ -124,7 +125,7 @@ function bundledTessdataPath() {
 const TESSDATA_PATH = bundledTessdataPath();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
-const imageFormatTargets = ["png", "jpg", "webp", "avif", "tiff", "pdf"];
+const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
@@ -133,9 +134,9 @@ const textTargets = ["txt", "md", "html", "json", "csv"];
 const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd"]);
 const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html", "md"];
 const spreadsheetInput = new Set(["xls", "xlsx", "xlsm", "ods", "csv", "tsv", "et", "ett"]);
-const spreadsheetTargets = ["pdf", "xlsx", "ods", "csv", "html"];
+const spreadsheetTargets = ["pdf", "xlsx", "xls", "ods", "csv", "html"];
 const presentationInput = new Set(["ppt", "pptx", "odp", "dps", "dpt"]);
-const presentationTargets = ["pdf", "pptx", "odp", "html"];
+const presentationTargets = ["pdf", "pptx", "odp", "html", "png", "jpg"];
 const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
@@ -143,7 +144,7 @@ const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
 const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
-const mediaVideoTargets = ["mp4", "webm", "mkv", "mov"];
+const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
   image: ["heic", "heif"],
@@ -236,6 +237,7 @@ function categoryForExt(rawExt) {
   if (textInput.has(ext) || textInput.has(rawExt)) return "text";
   if (audioInput.has(ext) || audioInput.has(rawExt)) return "audio";
   if (videoInput.has(ext) || videoInput.has(rawExt)) return "video";
+  if (ext === "zip") return "zip";
   return "unknown";
 }
 
@@ -295,6 +297,10 @@ function targetsForExt(rawExt, tools) {
     mediaTargets.forEach((target) => targets.add(target));
   }
 
+  if (category === "zip") {
+    targets.add("pdf");
+  }
+
   return [...targets].filter((target) => {
     const normalizedInput = normalizeExt(rawExt);
     if (category === "pdf" && target === "pdf") return true;
@@ -331,6 +337,7 @@ function safeBaseName(originalName) {
 function outputExtFor(category, targetExt) {
   if (category === "pdf" && pdfImageTargets.includes(targetExt)) return "zip";
   if (category === "pdf" && targetExt === "pdf") return "zip";
+  if (category === "presentation" && ["png", "jpg"].includes(targetExt)) return "zip";
   return targetExt;
 }
 
@@ -1269,9 +1276,142 @@ async function writePdfTableWorkbook(model, outputPath) {
   await workbook.xlsx.writeFile(outputPath);
 }
 
-async function convertPdf(inputPath, outputPath, target) {
+async function convertPresentationToImages(inputPath, outputPath, originalName, target) {
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ppt-images-"));
+  try {
+    const pdfPath = path.join(tempDir, "slides.pdf");
+    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf");
+    await convertPdfPagesToImagesZip(pdfPath, outputPath, target);
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function openZipEntries(zipPath) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(zipPath, { lazyEntries: true }, (error, zipfile) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(zipfile);
+    });
+  });
+}
+
+function readZipEntryToFile(zipfile, entry, outputPath) {
+  return new Promise((resolve, reject) => {
+    zipfile.openReadStream(entry, (error, stream) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      const output = fs.createWriteStream(outputPath);
+      stream.pipe(output);
+      output.on("close", resolve);
+      output.on("error", reject);
+    });
+  });
+}
+
+async function listZipEntries(zipPath) {
+  const zipfile = await openZipEntries(zipPath);
+  return new Promise((resolve, reject) => {
+    const entries = [];
+    zipfile.on("entry", (entry) => {
+      if (!/\/$/.test(entry.fileName)) entries.push(entry);
+      zipfile.readEntry();
+    });
+    zipfile.on("end", () => {
+      zipfile.close();
+      resolve(entries);
+    });
+    zipfile.on("error", reject);
+    zipfile.readEntry();
+  });
+}
+
+async function convertZipImagesToPdf(inputPath, outputPath) {
+  const zipfile = await openZipEntries(inputPath);
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-zip-images-"));
+  const imageExts = new Set(["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif", "tiff", "tif"]);
+  try {
+    const images = [];
+    const pending = new Promise((resolve, reject) => {
+      zipfile.on("entry", (entry) => {
+        const baseName = path.posix.basename(entry.fileName);
+        const ext = path.posix.extname(baseName).toLowerCase().replace(".", "");
+        const safeName = sanitize(baseName) || `file-${images.length}`;
+        if (imageExts.has(ext) && !entry.fileName.includes("..")) {
+          const outPath = path.join(tempDir, `${images.length}-${safeName}`);
+          readZipEntryToFile(zipfile, entry, outPath)
+            .then(() => {
+              images.push({ inputPath: outPath, originalName: safeName });
+              zipfile.readEntry();
+            })
+            .catch(reject);
+          return;
+        }
+        zipfile.readEntry();
+      });
+      zipfile.on("end", () => {
+        zipfile.close();
+        resolve();
+      });
+      zipfile.on("error", reject);
+      zipfile.readEntry();
+    });
+    await pending;
+    if (!images.length) {
+      throw new Error("ZIP 内没有找到可合并为 PDF 的图片（支持 png/jpg/webp/gif/bmp/avif/tiff）。");
+    }
+    await convertImagesToPdf(images, outputPath);
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function convertPdfDecrypt(inputPath, outputPath, password) {
+  const data = await fsp.readFile(inputPath);
+  const pdf = await PDFDocument.load(data, { password, ignoreEncryption: false });
+  await fsp.writeFile(outputPath, await pdf.save());
+}
+
+const OCR_QUALITY_THRESHOLD = 0.65;
+
+function assertPdfTableOcrQuality(model) {
+  const ocrPages = (model?.summary || []).filter((page) => page.source === "ocr" && page.tableCount > 0);
+  if (!ocrPages.length) return;
+  const worst = Math.min(...ocrPages.map((page) => page.confidence));
+  if (worst >= OCR_QUALITY_THRESHOLD) return;
+  const percent = Math.round(worst * 100);
+  const error = new Error(
+    `扫描件 OCR 识别质量过低（最低置信度 ${percent}%），无法准确转换表格。可能原因是图片模糊、倾斜、阴影或分辨率不足；请提供更清晰的扫描件后重试。`
+  );
+  error.code = "PDF_TABLE_OCR_LOW_QUALITY";
+  error.messages = {
+    zhCN: `扫描件 OCR 识别质量过低（置信度 ${percent}%），可能因模糊、倾斜或阴影导致，无法准确转换表格。`,
+    enUS: `Scanned PDF OCR quality is too low (confidence ${percent}%). The page may be blurry, skewed, or shadowed, so the table cannot be converted accurately.`
+  };
+  throw error;
+}
+
+async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (target === "pdf") {
-    await splitPdfToZip(inputPath, outputPath);
+    if (options.pdfAction === "encrypt") {
+      const error = new Error("PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。");
+      error.code = "PDF_ENCRYPT_UNAVAILABLE";
+      error.messages = {
+        zhCN: "PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。",
+        enUS: "PDF encryption is not available in this build. Use another tool to password-protect the PDF."
+      };
+      throw error;
+    }
+    if (options.pdfAction === "decrypt") {
+      await convertPdfDecrypt(inputPath, outputPath, options.password || "");
+    } else {
+      await splitPdfToZip(inputPath, outputPath);
+    }
     return;
   }
 
@@ -1281,7 +1421,9 @@ async function convertPdf(inputPath, outputPath, target) {
   }
 
   if (target === "xlsx") {
-    await writePdfTableWorkbook(await extractComplexPdfTableModel(inputPath), outputPath);
+    const model = await extractComplexPdfTableModel(inputPath);
+    assertPdfTableOcrQuality(model);
+    await writePdfTableWorkbook(model, outputPath);
     return;
   }
 
@@ -1539,6 +1681,11 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
     args.push("-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus");
   } else if (target === "mkv") {
     args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac");
+  } else if (target === "gif") {
+    args.push(
+      "-vf", "fps=10,scale='min(480,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+      "-loop", "0"
+    );
   }
 
   for (const [key, value] of Object.entries(options.metadata || {})) {
@@ -1874,11 +2021,18 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "text") {
       await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "pdf") {
-      await convertPdf(file.path, outputPath, requestedTarget);
+      await convertPdf(file.path, outputPath, requestedTarget, {
+        pdfAction: String(req.body?.pdfAction || ""),
+        password: String(req.body?.password || "")
+      });
+    } else if (category === "zip") {
+      await convertZipImagesToPdf(file.path, outputPath);
     } else if (category === "spreadsheet" && inputExt === "csv" && ["txt", "md", "json"].includes(requestedTarget)) {
       await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
-      if (category === "document" && requestedTarget === "md") {
+      if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
+        await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
+      } else if (category === "document" && requestedTarget === "md") {
         await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
       } else if (category === "document" && requestedTarget === "txt") {
         await convertDocumentToText(file.path, outputPath, inputExt, originalName);
@@ -2024,4 +2178,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities };
+module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };
