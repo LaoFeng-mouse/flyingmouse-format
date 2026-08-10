@@ -60,6 +60,7 @@
 - 两个安装包均未签名，SmartScreen 可能提示未知发布者。
 - NCM 仅保证兼容 `music.163.com` 对应网易云客户端生成的文件；其他同扩展名来源不在保证范围。
 - GitHub v0.3.3 已发布为 Latest：`https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.3`；两个资产均为 `state=uploaded`，远端大小与 `sha256:` digest 已回读一致。
-- Microsoft Store 状态未在本轮实时登录 Partner Center 核验；商店材料不能声称已审核。
+- Microsoft Store Submission 2 已于 2026-08-10 在 Partner Center 原浏览器中提交，Submission ID 为 `1152921505701615843`。上传的 `FlyingMouse Format-Setup-0.3.3-x64.appx` 为 778,257,594 字节，SHA-256 `bc152900e3116319e24fea4b029c453ac00852a79a329f57ea8936ed460f0f4a`，身份 `488B6338.354574AC174AD`，版本 `0.3.3.0`，x64；Partner Center 已完成包验证并替换草稿中的旧 v0.2.1 包。
+- 截至 2026-08-10 最后一次现场核验，产品更新显示 `In certification`，提交阶段为 `Pre-processing in progress`，Certification 与 Publishing 尚未开始；不能声称已通过认证或已在商店发布。产品 ID：`9NJKN37CR6HJ`。
 
 发布步骤见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。

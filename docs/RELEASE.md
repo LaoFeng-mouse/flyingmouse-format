@@ -67,4 +67,6 @@ node scripts/inspect-pe.js "dist/FlyingMouse Format-Setup-<version>-win7-x64.exe
 
 ## Microsoft Store
 
-商店包必须从当前鼠鼠 UI 版本重新构建并重新截图。Partner Center 审核属于外部状态，未经实时查看不得写成已通过或正在审核。
+商店渠道使用与标准 Windows 10/11 包相同源码单独构建的 x64 APPX/MSIX；不得上传 NSIS，也不得把 Win7 Legacy 包提交商店。提交前必须核对包内版本、Identity、Publisher、架构、鼠鼠 UI/图标和转换模块，并保存包大小与 SHA-256。Partner Center 审核属于外部状态，所有状态说明必须写现场核验日期；上传验证、认证通过和公开发布是三个不同门槛。
+
+v0.3.3 的 `FlyingMouse Format-Setup-0.3.3-x64.appx` 已于 2026-08-10 作为 Submission 2（ID `1152921505701615843`）提交。最后一次现场核验为 `Pre-processing in progress` / `In certification`，尚未通过 Certification 或 Publishing；后续只有在 Partner Center 再次现场回读后才能更新结论。
