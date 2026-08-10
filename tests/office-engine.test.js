@@ -19,10 +19,11 @@ test("probe creates a writable isolated profile before executing LibreOffice", a
   let profilePath;
   const result = await probeLibreOffice("C:\\LibreOffice\\soffice.com", {
     runtimeDir: scratch,
-    executor: async (command, args) => {
+    executor: async (command, args, options) => {
       assert.equal(command, "C:\\LibreOffice\\soffice.com");
       assert.ok(args.includes("--headless"));
       assert.ok(args.includes("--version"));
+      assert.ok(options.timeout >= 15000, "probe timeout must tolerate slow first launch");
       profilePath = profilePathFromArgs(args);
       assert.equal((await fsp.stat(profilePath)).isDirectory(), true);
       return { stdout: "LibreOffice 26.2.1.2 620(Build:2)", stderr: "" };
