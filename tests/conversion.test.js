@@ -161,16 +161,34 @@ function assertPdf(filePath) {
 }
 
 function assertZipWithEntry(filePath, expectedFragment) {
-  const fd = fs.openSync(filePath, "r");
-  try {
-    const header = Buffer.alloc(4);
-    fs.readSync(fd, header, 0, 4, 0);
-    assert.strictEqual(header.toString("latin1"), "PK\u0003\u0004");
-  } finally {
-    fs.closeSync(fd);
+  const archive = fs.readFileSync(filePath);
+  assert.strictEqual(archive.subarray(0, 4).toString("latin1"), "PK\u0003\u0004");
+
+  const minimumEocdSize = 22;
+  const eocdSearchStart = Math.max(0, archive.length - 0xffff - minimumEocdSize);
+  let eocdOffset = -1;
+  for (let offset = archive.length - minimumEocdSize; offset >= eocdSearchStart; offset -= 1) {
+    if (archive.readUInt32LE(offset) === 0x06054b50) {
+      eocdOffset = offset;
+      break;
+    }
   }
-  const listing = execFileSync("tar", ["-tf", filePath], { encoding: "utf8" });
-  assert.match(listing, expectedFragment);
+  assert.notStrictEqual(eocdOffset, -1, "ZIP end-of-central-directory record is missing");
+
+  const entryCount = archive.readUInt16LE(eocdOffset + 10);
+  let offset = archive.readUInt32LE(eocdOffset + 16);
+  const entries = [];
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.strictEqual(archive.readUInt32LE(offset), 0x02014b50, "invalid ZIP central-directory entry");
+    const flags = archive.readUInt16LE(offset + 8);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const nameStart = offset + 46;
+    entries.push(archive.subarray(nameStart, nameStart + nameLength).toString(flags & 0x0800 ? "utf8" : "latin1"));
+    offset = nameStart + nameLength + extraLength + commentLength;
+  }
+  assert.match(entries.join("\n"), expectedFragment);
 }
 
 before(async () => {
