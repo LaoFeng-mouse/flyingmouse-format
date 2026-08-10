@@ -263,7 +263,8 @@ function makeGridTable(words, lines, pageNumber) {
     const startCol = Math.min(...cells.map((cell) => cell.column));
     const endCol = Math.max(...cells.map((cell) => cell.column));
     const rectangular = cells.length === (endRow - startRow + 1) * (endCol - startCol + 1);
-    if (rectangular) {
+    const populatedCells = cells.filter((cell) => cellWords[cell.row][cell.column].length > 0).length;
+    if (rectangular && populatedCells <= 1) {
       const entries = cells.flatMap((cell) => cellWords[cell.row][cell.column]).sort((a, b) => a.y - b.y || a.x - b.x);
       rows[startRow][startCol] = entries.map((entry) => entry.text).join(" ");
       cellConfidence[startRow][startCol] = confidenceOfWords(entries);
@@ -296,22 +297,144 @@ function rawRowsFromWords(words) {
   return clusterRows(words).map((row) => [row.words.map((entry) => entry.text).join(" ")]);
 }
 
+function editDistance(left, right) {
+  const a = String(left);
+  const b = String(right);
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const previous = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = previous;
+    }
+  }
+  return row[b.length];
+}
+
+function numericText(value) {
+  const text = String(value || "").replace(/[^0-9.]/g, "");
+  if (!text || (text.match(/\./g) || []).length > 1) return "";
+  return text;
+}
+
+function formatDecimal(value) {
+  return Number(value.toFixed(2)).toString();
+}
+
+function arithmeticPair(row, priceIndex, quantityIndex, totalIndex) {
+  const rawPrice = numericText(row[priceIndex]);
+  const rawQuantity = numericText(row[quantityIndex]).replaceAll(".", "");
+  const rawTotal = numericText(row[totalIndex]);
+  const total = Number(rawTotal);
+  if (!rawPrice || !rawQuantity || !Number.isFinite(total) || total <= 0) return null;
+  const candidates = [];
+  const add = (price, quantity) => {
+    if (!Number.isFinite(price) || price <= 0 || price > 1_000_000 || !Number.isInteger(quantity) || quantity <= 0) return;
+    const priceText = formatDecimal(price);
+    const quantityText = String(quantity);
+    candidates.push({ priceText, quantityText, score: editDistance(priceText, rawPrice) + editDistance(quantityText, rawQuantity) });
+  };
+  const priceCandidates = new Set([Number(rawPrice)]);
+  if (!rawPrice.includes(".")) {
+    if (rawPrice.length >= 2) priceCandidates.add(Number(rawPrice) / 10);
+    if (rawPrice.length >= 3) priceCandidates.add(Number(rawPrice) / 100);
+  }
+  for (const price of priceCandidates) {
+    const quantity = total / price;
+    if (Math.abs(quantity - Math.round(quantity)) <= 0.001) add(price, Math.round(quantity));
+  }
+  const quantity = Number(rawQuantity);
+  if (Number.isInteger(quantity) && quantity > 0) {
+    const price = total / quantity;
+    if (Math.abs(price * quantity - total) <= 0.01 && Math.abs(price * 100 - Math.round(price * 100)) <= 0.001) add(price, quantity);
+  }
+  candidates.sort((a, b) => a.score - b.score || Number(a.priceText) - Number(b.priceText));
+  return candidates[0] && candidates[0].score <= 3 ? candidates[0] : null;
+}
+
+function repairArithmeticColumns(table) {
+  if (table.kind !== "grid" || table.rows.length < 4) return 0;
+  const header = table.rows[0].map((value) => String(value || "").toLocaleLowerCase().replace(/\s+/g, ""));
+  const priceIndex = header.findIndex((value) => /单价|unitprice|price/.test(value));
+  const quantityIndex = header.findIndex((value) => /数量|qty|quantity/.test(value));
+  if (priceIndex < 0 || quantityIndex < 0) return 0;
+  let totalIndex = header.findIndex((value) => /金额|合计|total|amount/.test(value));
+  if (totalIndex < 0 && quantityIndex + 1 < header.length) totalIndex = quantityIndex + 1;
+  if (totalIndex < 0 || new Set([priceIndex, quantityIndex, totalIndex]).size < 3) return 0;
+  const repairs = table.rows.slice(1).map((row) => arithmeticPair(row, priceIndex, quantityIndex, totalIndex));
+  if (repairs.filter(Boolean).length < 3) return 0;
+  let corrected = 0;
+  repairs.forEach((pair, index) => {
+    if (!pair) return;
+    const rowIndex = index + 1;
+    for (const [column, value] of [[priceIndex, pair.priceText], [quantityIndex, pair.quantityText]]) {
+      if (String(table.rows[rowIndex][column] || "").trim() === value) continue;
+      table.rows[rowIndex][column] = value;
+      if (table.cellConfidence[rowIndex]) table.cellConfidence[rowIndex][column] = Math.min(table.cellConfidence[rowIndex][column] || 1, 0.7);
+      corrected += 1;
+    }
+  });
+  return corrected;
+}
+
+function repairSequentialIndex(table) {
+  if (table.kind !== "grid" || table.rows.length < 5 || !table.rows[0]?.length) return 0;
+  let endRow = table.rows.findIndex((row, index) => index > 0 && row.some((value) => /合\s*计|total/i.test(String(value || ""))));
+  if (endRow < 0) endRow = table.rows.length;
+  const dataRows = table.rows.slice(1, endRow);
+  if (dataRows.length < 4) return 0;
+  const parsed = dataRows.map((row) => {
+    const match = String(row[0] || "").match(/\d{1,4}/);
+    return match ? Number(match[0]) : null;
+  });
+  const matches = parsed.filter((value, index) => value === index + 1).length;
+  if (matches < Math.max(3, Math.ceil(dataRows.length * 0.6))) return 0;
+  let corrected = 0;
+  dataRows.forEach((row, index) => {
+    const expected = String(index + 1);
+    if (String(row[0] || "").trim() === expected) return;
+    row[0] = expected;
+    if (table.cellConfidence[index + 1]) table.cellConfidence[index + 1][0] = Math.min(table.cellConfidence[index + 1][0] || 1, 0.7);
+    corrected += 1;
+  });
+  return corrected;
+}
+
 function detectTablesOnPage(input = {}) {
   const pageNumber = Number.isInteger(input.pageNumber) && input.pageNumber > 0 ? input.pageNumber : 1;
   const words = normalizeWords(input.words);
   const gridTables = splitLineComponents(input.lines).map((lines) => makeGridTable(words, lines, pageNumber)).filter(Boolean);
+  gridTables.forEach((table) => { table.kind = "grid"; });
   const consumedIds = new Set(gridTables.flatMap((table) => table.wordIds));
   const remainingWords = words.filter((entry) => !consumedIds.has(entry.id));
   const borderlessTables = [];
   const rawWords = [];
   for (const rows of splitRowBlocks(clusterRows(remainingWords))) {
     const table = makeBorderlessTable(rows, input.width, pageNumber);
-    if (table) borderlessTables.push(table);
+    if (table) {
+      table.kind = "borderless";
+      borderlessTables.push(table);
+    }
     else rawWords.push(...rows.flatMap((row) => row.words));
   }
-  const tables = [...gridTables, ...borderlessTables].sort((a, b) => a.bounds.top - b.bounds.top || a.bounds.left - b.bounds.left);
+  const rejectedIds = new Set();
+  const tables = [...gridTables, ...borderlessTables]
+    .filter((table) => {
+      const columnCount = table.rows[0]?.length || 0;
+      const isWideOcrProse = input.source === "ocr"
+        && table.kind === "borderless"
+        && (columnCount >= 13 || (table.rows.length < 3 && columnCount >= 4));
+      if (isWideOcrProse) table.wordIds.forEach((id) => rejectedIds.add(id));
+      return !isWideOcrProse;
+    })
+    .sort((a, b) => a.bounds.top - b.bounds.top || a.bounds.left - b.bounds.left);
+  rawWords.push(...words.filter((entry) => rejectedIds.has(entry.id)));
   const warnings = [];
   tables.forEach((table, index) => {
+    const corrected = input.source === "ocr" ? repairArithmeticColumns(table) : 0;
+    if (corrected) warnings.push(`P${String(pageNumber).padStart(3, "0")}-T${String(index + 1).padStart(2, "0")}: ${corrected} numeric cells corrected by arithmetic consistency`);
     if (table.confidence < LOW_CONFIDENCE) warnings.push(`P${String(pageNumber).padStart(3, "0")}-T${String(index + 1).padStart(2, "0")}: low confidence`);
   });
   return {
@@ -355,12 +478,27 @@ function hasSequentialRows(previous, table) {
   return Number.isInteger(previousIndex) && Number.isInteger(nextIndex) && nextIndex === previousIndex + 1;
 }
 
+function sharedRepeatedCodeColumn(previous, table) {
+  if (previous.kind !== "grid" || table.kind !== "grid") return false;
+  const columnCount = Math.min(previous.rows?.[0]?.length || 0, table.rows?.[0]?.length || 0);
+  const tokens = (value) => String(value || "").toLocaleLowerCase().match(/[a-z][a-z0-9]{3,}/g) || [];
+  for (let column = 0; column < columnCount; column += 1) {
+    const previousCounts = new Map();
+    for (const row of previous.rows || []) {
+      for (const token of new Set(tokens(row[column]))) previousCounts.set(token, (previousCounts.get(token) || 0) + 1);
+    }
+    const nextTokens = new Set((table.rows || []).flatMap((row) => tokens(row[column])));
+    if ([...previousCounts].some(([token, count]) => count >= 2 && nextTokens.has(token))) return true;
+  }
+  return false;
+}
+
 function canContinue(previous, table, page) {
   if (!sameColumns(previous, table)) return false;
   const previousHeight = Math.max(1, previous.pageHeight || previous.bounds?.bottom || 1);
   const currentHeight = Math.max(1, page.height || table.bounds?.bottom || 1);
   const touchesPageBreak = previous.bounds?.bottom >= previousHeight * 0.75 && table.bounds?.top <= currentHeight * 0.25;
-  return touchesPageBreak && (sameHeader(previous, table) || hasSequentialRows(previous, table));
+  return touchesPageBreak && (sameHeader(previous, table) || hasSequentialRows(previous, table) || sharedRepeatedCodeColumn(previous, table));
 }
 
 function cloneTableAsSheet(table, name, source) {
@@ -375,7 +513,8 @@ function cloneTableAsSheet(table, name, source) {
     columnAnchors: [...(table.columnAnchors || [])],
     bounds: { ...table.bounds },
     pageWidth: table.pageWidth || 0,
-    pageHeight: table.pageHeight || 0
+    pageHeight: table.pageHeight || 0,
+    kind: table.kind || "unknown"
   };
 }
 
@@ -437,6 +576,12 @@ function buildWorkbookModel(pages = []) {
       });
       warnings.push(`P${String(page.pageNumber).padStart(3, "0")}: non-table text retained in Raw sheet`);
     }
+  }
+  for (const sheet of sheets.filter((candidate) => !candidate.name.endsWith("-Raw"))) {
+    const corrected = sheet.source === "ocr" ? repairArithmeticColumns(sheet) : 0;
+    if (corrected) warnings.push(`${sheet.name}: ${corrected} numeric cells corrected by arithmetic consistency`);
+    const sequenceCorrected = sheet.source === "ocr" ? repairSequentialIndex(sheet) : 0;
+    if (sequenceCorrected) warnings.push(`${sheet.name}: ${sequenceCorrected} index cells corrected by sequence consistency`);
   }
   return {
     sheets,

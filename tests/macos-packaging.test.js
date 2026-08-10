@@ -150,6 +150,9 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
   assert.match(workflow, /file .*runtime\/bin\/(?:ffmpeg|pdftoppm)/);
   assert.match(workflow, /sha256/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /sha256sum/);
+  assert.match(workflow, /gh release upload ci-engines-v1/);
 });
 
 test("CI and release workflows declare native macOS quality and DMG gates", () => {

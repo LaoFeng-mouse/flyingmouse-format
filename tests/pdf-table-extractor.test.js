@@ -107,6 +107,70 @@ test("workbook model continues matching tables across pages and removes repeated
   assert.deepEqual(model.sheets[0].pages, [1, 2]);
 });
 
+test("missing grid segments do not merge populated OCR rows into one cell", () => {
+  const horizontal = [0, 30, 60, 90].map((y) => ({ x1: 0, y1: y, x2: 200, y2: y }));
+  const vertical = [
+    { x1: 0, y1: 0, x2: 0, y2: 90 },
+    { x1: 100, y1: 0, x2: 100, y2: 90 },
+    { x1: 200, y1: 0, x2: 200, y2: 90 }
+  ];
+  // The middle horizontal rule is missing only in column two. OCR still found
+  // distinct values in both physical rows, so this is damage, not a merge.
+  horizontal.splice(2, 1, { x1: 0, y1: 60, x2: 100, y2: 60 });
+  const table = detectTablesOnPage({
+    pageNumber: 1, width: 200, height: 90, source: "ocr", lines: [...horizontal, ...vertical],
+    words: [
+      word("H1", 10, 5), word("H2", 110, 5),
+      word("A", 10, 35), word("480", 110, 35),
+      word("B", 10, 65), word("240", 110, 65)
+    ]
+  }).tables[0];
+  assert.deepEqual(table.rows.map((row) => row[1]), ["H2", "480", "240"]);
+  assert.deepEqual(table.merges, []);
+});
+
+test("a damaged multirow product-name cell is recovered without merging sequence cells", () => {
+  const horizontal = [0, 20, 40, 60, 80, 100].flatMap((y) => {
+    if ([40, 60, 80].includes(y)) return [{ x1: 0, y1: y, x2: 50, y2: y }];
+    return [{ x1: 0, y1: y, x2: 100, y2: y }];
+  });
+  const vertical = [0, 50, 100].map((x) => ({ x1: x, y1: 0, x2: x, y2: 100 }));
+  const table = detectTablesOnPage({
+    pageNumber: 1, width: 100, height: 100, source: "ocr", lines: [...horizontal, ...vertical],
+    words: [
+      word("序号", 5, 2), word("产品名称", 55, 2),
+      word("1", 5, 22), word("A005", 55, 42),
+      word("2", 5, 42), word("3", 5, 62), word("4", 5, 82)
+    ]
+  }).tables[0];
+  assert.deepEqual(table.rows.slice(1).map((row) => row[0]), ["1", "2", "3", "4"]);
+  assert.deepEqual(table.merges, [{ startRow: 1, startCol: 1, endRow: 4, endCol: 1 }]);
+});
+
+test("OCR product tables repair unit price and quantity only when totals prove the arithmetic", () => {
+  const xs = [0, 70, 140, 210];
+  const ys = [0, 30, 60, 90, 120];
+  const page = detectTablesOnPage({
+    pageNumber: 1, width: 210, height: 120, source: "ocr",
+    lines: [
+      ...ys.map((y) => ({ x1: 0, y1: y, x2: 210, y2: y })),
+      ...xs.map((x) => ({ x1: x, y1: 0, x2: x, y2: 120 }))
+    ],
+    words: [
+      word("单价", 5, 5), word("数量", 75, 5), word("金额", 145, 5),
+      word("53", 5, 35), word("120", 75, 35), word("3816", 145, 35),
+      word("53", 5, 65), word("7120", 75, 65), word("3816", 145, 65),
+      word("8.95", 5, 95), word("1152", 75, 95), word("4550.4", 145, 95)
+    ]
+  });
+  assert.deepEqual(page.tables[0].rows.slice(1), [
+    ["5.3", "720", "3816"],
+    ["5.3", "720", "3816"],
+    ["3.95", "1152", "4550.4"]
+  ]);
+  assert.match(page.warnings.join("\n"), /arithmetic consistency/i);
+});
+
 test("workbook model continues numbered ruled rows when the next page omits the header", () => {
   const table = (rows, top, bottom) => ({
     rows,
@@ -128,6 +192,85 @@ test("workbook model continues numbered ruled rows when the next page omits the 
   assert.equal(model.sheets.length, 1);
   assert.deepEqual(model.sheets[0].rows.map((row) => row[0]), ["序", "11", "12", "13", "14"]);
   assert.deepEqual(model.sheets[0].pages, [1, 2]);
+});
+
+test("workbook model continues a ruled product table when OCR loses row numbers but keeps a repeated code column", () => {
+  const table = (rows, top, bottom, pageNumber) => ({
+    kind: "grid",
+    rows,
+    merges: [],
+    cellConfidence: rows.map((row) => row.map(() => 0.8)),
+    confidence: 0.8,
+    pages: [pageNumber],
+    columnAnchors: [10, 40, 90, 150],
+    bounds: { left: 10, top, right: 150, bottom }
+  });
+  const model = buildWorkbookModel([
+    { pageNumber: 1, width: 160, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      table([["", "CHJ-XZD1-A", "480"], ["", "CHJ-XZD1-B", "480"]], 40, 195, 1)
+    ] },
+    { pageNumber: 2, width: 160, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      table([["13", "CHJ-XZD1-C", "720"], ["14", "CHJ-XZD1-D", "960"]], 2, 80, 2)
+    ] }
+  ]);
+  assert.equal(model.sheets.length, 1);
+  assert.deepEqual(model.sheets[0].pages, [1, 2]);
+  assert.equal(model.sheets[0].rows.length, 4);
+});
+
+test("continued OCR tables apply arithmetic repair using the first-page header", () => {
+  const make = (rows, top, bottom, pageNumber) => ({
+    kind: "grid", rows, merges: [], confidence: 0.8, pages: [pageNumber],
+    cellConfidence: rows.map((row) => row.map(() => 0.8)),
+    columnAnchors: [0, 50, 100, 150, 200], bounds: { left: 0, top, right: 200, bottom }
+  });
+  const model = buildWorkbookModel([
+    { pageNumber: 1, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      make([["SKU", "单价", "数量", "金额"], ["CODE-X1", "5.3", "480", "2544"], ["CODE-X2", "5.3", "720", "3816"]], 20, 195, 1)
+    ] },
+    { pageNumber: 2, width: 200, height: 200, source: "ocr", warnings: [], rawRows: [], tables: [
+      make([["CODE-X3", "53", "120", "3816"]], 2, 60, 2)
+    ] }
+  ]);
+  assert.equal(model.sheets.length, 1);
+  assert.deepEqual(model.sheets[0].rows.at(-1), ["CODE-X3", "5.3", "720", "3816"]);
+  assert.match(model.warnings.join("\n"), /arithmetic consistency/i);
+});
+
+test("a dominant sequential index repairs OCR noise after page continuation", () => {
+  const rows = [["序号", "名称"], ["", "A"], ["2", "B"], ["ig", "C"], ["4", "D"], ["5 |", "E"]];
+  const model = buildWorkbookModel([{ pageNumber: 1, width: 100, height: 100, source: "ocr", warnings: [], rawRows: [], tables: [{
+    kind: "grid", rows, merges: [], confidence: 0.8, pages: [1],
+    cellConfidence: rows.map((row) => row.map(() => 0.8)), columnAnchors: [0, 50, 100],
+    bounds: { left: 0, top: 0, right: 100, bottom: 100 }
+  }] }]);
+  assert.deepEqual(model.sheets[0].rows.slice(1).map((row) => row[0]), ["1", "2", "3", "4", "5"]);
+  assert.match(model.warnings.join("\n"), /sequence/i);
+});
+
+test("wide OCR prose alignment is retained as Raw instead of advertised as a table", () => {
+  const words = [];
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 14; column += 1) {
+      words.push(word(`w${row}-${column}`, 10 + column * 20, 10 + row * 30, 0.8, 14));
+    }
+  }
+  const page = detectTablesOnPage({ pageNumber: 2, width: 320, height: 200, source: "ocr", words });
+  assert.equal(page.tables.length, 0);
+  assert.match(page.rawRows.flat().join(" "), /w0-0/);
+  assert.match(page.rawRows.flat().join(" "), /w3-13/);
+});
+
+test("two-line OCR watermark alignment is retained as Raw", () => {
+  const page = detectTablesOnPage({
+    pageNumber: 2, width: 320, height: 120, source: "ocr",
+    words: [
+      word("扫描", 10, 10), word("全", 70, 10), word("能", 130, 10), word("王", 190, 10),
+      word("watermark", 10, 40), word("id", 190, 40)
+    ]
+  });
+  assert.equal(page.tables.length, 0);
+  assert.match(page.rawRows.flat().join(" "), /扫描/);
 });
 
 test("workbook model keeps different headers separate", () => {
