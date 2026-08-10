@@ -53,8 +53,9 @@ node scripts/inspect-pe.js "dist/FlyingMouse Format-Setup-<version>-win7-x64.exe
 - Node.js 22 Win7 staging：90/90。
 - 根生产审计：0；Win7 Legacy：2 high、0 critical。
 - 3 个真实 NCM/AV3A 样本转换成功且源文件不变。
-- 标准安装包：548,633,801 字节，SHA-256 `2823d680cb8573bb21cc3a9537c0f6983ee06c280def5d2877cff6c8738f041b`。
-- Win7 安装包：517,687,142 字节，SHA-256 `d06e8c3cf5a0acec204ed94e26ff4500923f5e448064c520e42b31f24682ef4a`。
+- 标准安装包：548,634,899 字节，SHA-256 `3f812a515d9ab899929d1a5d42c7ac0903ad7baab65690bef719757aa51bec79`。
+- Win7 安装包：517,688,135 字节，SHA-256 `ee04bb1a22f56036d47f2ad98f6a20513c2430e619b98eec1ef098d52579726a`。
+- 最终 GitHub Release validation：`31350567825`，完整流程通过；v0.3.3 两个远端资产已回读一致。
 
 ## GitHub 发布顺序
 
