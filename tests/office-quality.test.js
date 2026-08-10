@@ -6,7 +6,8 @@ const { test } = require("node:test");
 const {
   OfficeQualityError,
   inspectXlsxForCsv,
-  validatePresentationHtml
+  validatePresentationHtml,
+  visibleBodyText
 } = require("../office-quality");
 
 test("presentation HTML accepts visible slide text inside a non-empty body", () => {
@@ -94,6 +95,17 @@ test("server wires Office quality results into the existing warning and bilingua
 test("Win7 staging copies the Office quality runtime module", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
   assert.match(source, /["']office-quality\.js["']/);
+});
+
+test("numeric HTML entities outside the Unicode range never crash text extraction", () => {
+  assert.equal(
+    visibleBodyText("<body><p>x &#99999999; y &#x110000; z</p></body>"),
+    "x &#99999999; y &#x110000; z"
+  );
+  assert.equal(
+    visibleBodyText("<body><p>ok &#65; &#x41; end</p></body>"),
+    "ok A A end"
+  );
 });
 
 function worksheet(name, values) {

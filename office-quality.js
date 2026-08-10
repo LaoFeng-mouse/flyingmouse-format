@@ -9,6 +9,24 @@ class OfficeQualityError extends Error {
 }
 
 function decodeHtmlEntities(value) {
+  const decodeDecimal = (_match, code) => {
+    const point = Number(code);
+    if (!Number.isSafeInteger(point) || point < 0 || point > 0x10ffff) return _match;
+    try {
+      return String.fromCodePoint(point);
+    } catch {
+      return _match;
+    }
+  };
+  const decodeHex = (_match, code) => {
+    const point = Number.parseInt(code, 16);
+    if (!Number.isSafeInteger(point) || point < 0 || point > 0x10ffff) return _match;
+    try {
+      return String.fromCodePoint(point);
+    } catch {
+      return _match;
+    }
+  };
   return String(value || "")
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -16,8 +34,8 @@ function decodeHtmlEntities(value) {
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)));
+    .replace(/&#(\d+);/g, decodeDecimal)
+    .replace(/&#x([0-9a-f]+);/gi, decodeHex);
 }
 
 function visibleBodyText(html) {
