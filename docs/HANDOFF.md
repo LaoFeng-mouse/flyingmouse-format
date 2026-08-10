@@ -1,50 +1,54 @@
-# FlyingMouse Format v0.3.4 交接
+# FlyingMouse Format v0.3.5 交接
 
-更新时间：2026-08-10
+更新时间：2026-08-11
 
 ## 项目边界
 
 - GitHub：<https://github.com/LaoFeng-mouse/flyingmouse-format>
-- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.4>
+- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
-- v0.3.4 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
+- v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
 
-## v0.3.4 质量改进
+## v0.3.5 新增
 
-- 资源保护：单图 50MP / 16384px、图片合并 PDF 总解码量 100MP、批量选择 2GB、PDF 500 页、OCR 100 页；Sharp 恢复像素保护并在 Raw Buffer 前预检。
-- HTML / Office 到 Markdown 共用 ATX/Fenced Turndown；CSV 精确锁定 `csv-parse 5.6.0`，支持 BOM、转义引号和字段内换行。
-- PDF 到 Excel 使用电子文字坐标、Poppler 页面渲染与 OCR blocks，支持有框/无框、多表、旋转、跨页、合并区域、低置信批注和 Raw 回退。扫描件、复杂表头及不规则合并区域仍可能不完整。
-- 修复 OCR 高置信折扣、少数异价和合法合并区域被自动改写的问题，优先保证数据不被静默“纠正”。
-- 改进 Markdown、HTML 表格、嵌套 JSON、动图静态化、透明图片转 JPG、XLSX 到 CSV 提示、NCM 元数据与封面保留。
-- 保留按源格式记忆目标格式、保存路径记忆、中英文界面和鼠鼠 UI。
+- PDF → Word（DOCX）：pdfjs 提取文本与表格，生成标准 OOXML（多列表格转 `<w:tbl>`、单列转段落），零新依赖（yazl 打包）。
+- 视频 → GIF（ffmpeg palettegen/paletteuse，fps=10、宽度 ≤480）；WebP 动图 → GIF（sharp 保留帧数）。
+- XLSX/XLSM → XLS 老版 Excel（LibreOffice MS Excel 97 过滤器，OLE2 输出）。
+- ZIP → PDF：yauzl 惰性读取，仅合并图片类条目；拒绝含 `..` 的路径（防 zip-slip），文件名 sanitize + 序号前缀。
+- PPT/WPS → PNG/JPG：LibreOffice 转 PDF → Poppler 逐页转图 → ZIP 打包。
+- PDF 拆分/解密动作：PDF→PDF 时可选逐页拆分（ZIP）或输入密码解密（pdf-lib 原生）；加密因 pdf-lib 无加密 API 暂不可用，明确报错 `PDF_ENCRYPT_UNAVAILABLE`。
+- PDF→Excel 扫描件 OCR 质量门禁：OCR 页面最低置信度 < 65% 时明确报错 `PDF_TABLE_OCR_LOW_QUALITY`（双语说明模糊/倾斜/阴影等原因），不再输出乱码表格。
+- 无声视频转音频：探测音轨，无音轨时报 `MEDIA_NO_AUDIO_TRACK`（422，双语），不再回传原始 ffmpeg 错误。
 
-## GitHub v0.3.4 成品
+## GitHub v0.3.5 成品
 
 | 平台 | 远端资产 | 字节 | SHA-256 |
 |---|---|---:|---|
-| Windows 10/11 x64 | `FlyingMouse.Format-Setup-0.3.4-x64.exe` | 551,347,778 | `7f30479b92d9050ccd2bff860d82fb5711a9dcfecd422f866f8dbdcb03e2b2e7` |
-| Windows 7 SP1 x64 | `FlyingMouse.Format-Setup-0.3.4-win7-x64.exe` | 520,603,262 | `6b2de37ba8d12acd5c5096c8b0a530cc32f93e60e94a6e80e5bdaf892d0f4df9` |
-| macOS Apple Silicon | `FlyingMouse.Format-Setup-0.3.4-mac-arm64.dmg` | 681,546,935 | `536c004425703d5b004d9b64035616adb7a602447c3a244fbac4babbf9151c3a` |
-| macOS Intel | `FlyingMouse.Format-Setup-0.3.4-mac-x64.dmg` | 716,918,325 | `8458943d5469e3c0c143c7544a01b254ff1f73fc74319493c1abd5e86c2b7fe6` |
+| Windows 10/11 x64 | `FlyingMouse.Format-Setup-0.3.5-x64.exe` | 551,226,275 | `51f5355428e73447accc27192d7f1c4e38e223bd5df417dbc539397c780b516c` |
+| Windows 7 SP1 x64 | `FlyingMouse.Format-Setup-0.3.5-win7-x64.exe` | 520,619,411 | `88286352a9b9016c812db8800ff68cb4e6772bdb461c5220179bcef5c8cb110c` |
+| macOS Apple Silicon | `FlyingMouse.Format-Setup-0.3.5-mac-arm64.dmg` | 681,558,079 | `9a64f5107dd38593d5825bdda29f08e6de83e7e6dc075d55998a56887f4c93bc` |
+| macOS Intel | `FlyingMouse.Format-Setup-0.3.5-mac-x64.dmg` | 716,999,507 | `241e5c574ef5acaa61aca627b0daf3d97c07d169f5ee396784acc2befe672f34` |
 
-四个资产均为 `state=uploaded`，远端大小和 `sha256:` digest 已回读，与本地产物完全一致。Release 已公开、不是 prerelease，并已设为 Latest。
+四个资产均已在 Release 回读（名称/大小一致，非 draft、非 prerelease、Latest）。标签 v0.3.5 指向 `075c56fb6179742e7e4a1fe672c228048fa140bf`；main 领先标签两个提交：`bdbbf75`（docs: record v0.3.5 release evidence）、`1f3fa4c`（fix: silent-video audio track 友好报错）——**音轨修复不在 v0.3.5 安装包内，随下版发布**。
 
 ## 最终验证证据
 
-- 合并提交和标签均指向 `e7a3508d451f301fc8ea113166cc67a16f304ae2`；PR：<https://github.com/LaoFeng-mouse/flyingmouse-format/pull/4>。
-- PR CI `31387412438`：Windows、macOS arm64、macOS x64 三条代码/引擎门禁全部通过。
-- 预发布全构建 `31387420825`：四个平台的真实转换、审计、构建、包检查和冒烟全部通过。
-- 标签全构建 `31396373271`：239 项，237 通过、2 个预期 fixture skip、0 失败；根生产依赖审计 0 漏洞。
-- Windows 10/11 与 Win7 安装包均成功构建；NSIS 外壳均为 PE32、目标 OS `4.0`。Win7 运行时继续固定 Electron `22.3.27`、Sharp `0.32.6`、PDF.js `2.16.105`、Turndown `7.2.0`，并在独立 staging 中执行运行时探针。
-- macOS arm64/x64 均在原生 GitHub runner 恢复 SHA-256 锁定引擎，执行完整转换、生产审计、DMG 挂载/架构/包结构检查和 12 秒启动冒烟。
-- 用户提供的 3 个真实 NCM/AV3A 样本均解密并转为可解码 MP3，Title/Artist/Album/Cover 可读，源文件哈希未变化；私有样本和临时解密文件未提交 GitHub。
-- 用户提供的扫描 PDF 样本得分 85/95（89.47%），达到扫描 PDF 不低于 85% 的门槛；私有 PDF 和输出未提交 GitHub。
+- CI `31411191151`（push main）：Windows、macOS arm64、macOS x64 三条门禁全部通过。
+- 标签 Release workflow `31411904123`：四平台真实转换、审计、构建、包检查和冒烟全部通过；产出 win7 x64 与 macOS 两个 DMG（本地只构建标准 x64）。
+- 本地全量 `node --test`：251 项 = 247 通过、3 个预期 skip、1 个本机 git-bash tar 假失败（`tar: Cannot connect to C:`，CI Windows runner 无此问题）、0 真实失败；根生产依赖审计 0 漏洞。
+- 逐功能审查：8 个新格式功能全部过审，无 P0/P1；ZIP 防 zip-slip、密码仅本地处理、稳定错误码（`PDF_TABLE_OCR_LOW_QUALITY` / `PDF_ENCRYPT_UNAVAILABLE` / `MEDIA_NO_AUDIO_TRACK`）。
+- 组合实测 9 项（静态图→gif、png→avif、avif→jpg、动图→jpg 压平、视频→gif、无声/有声视频→音频、未知扩展名→zip、未知→pdf 拒绝）全部符合预期。
+- conversion 测试 41 项 = 38 通过 + 1 tar 假失败 + 2 skip（含无声视频 422 回归）。
+- Windows x64 安装包 NSIS 外壳 PE32、目标 OS `4.0`；本机已装 0.3.5.0（win-unpacked 拷贝法；NSIS 静默 `/S` 在本机卡死并删旧目录，属本机环境坑）。
 
 ## 风险和未完成的外部验收
 
 - Windows 安装包未签名，SmartScreen 可能提示；macOS DMG 未签名且未公证，Gatekeeper 可能提示。
 - 自动化、PE 检查和当前 runner 冒烟不能冒充真实 Windows 7 SP1 x64 或真实 Mac 设备验收；两项物理设备验收仍待完成。
 - NCM 仅保证网易云客户端 `music.163.com` 来源的标准文件；macOS 不支持依赖 Windows 专用解码器的 AV3A NCM。
-- Microsoft Store 仍是 v0.3.3 Submission 2（ID `1152921505701615843`）。最后现场状态为 `Pre-processing in progress` / `In certification`；本轮没有上传 v0.3.4 商店包，也不能声称已经通过认证或公开发布。
+- 拍照扫描件（透视/阴影）OCR 是 Tesseract 能力极限：低置信度会明确报错而非乱码；如需此类转出，需换 PaddleOCR 级引擎（工程量大，下版再议）。
+- HEIC/HEIF 输入依赖打包 sharp 的解码能力，无真实样本实测（本机 sharp 无 heif 编码器，解码器存在性待真实样本确认）。
+- 本机安装的 0.3.5.0 不含 `1f3fa4c` 音轨修复；需下版打包或重打包更新。
+- Microsoft Store 仍是 v0.3.3 Submission 2（ID `1152921505701615843`）。最后现场状态为 `Pre-processing in progress` / `In certification`；本轮没有上传 v0.3.5 商店包，也不能声称已经通过认证或公开发布。
 
 发布流程见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
