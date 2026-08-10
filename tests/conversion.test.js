@@ -10,9 +10,12 @@ const sharp = require("sharp");
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-format-tests-${process.pid}`);
-const FFMPEG_BIN = path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
+const FFMPEG_BIN = fs.existsSync(path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe"))
+  ? path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe")
+  : (process.env.FLYINGMOUSE_FFMPEG_PATH || "");
 let server;
 let baseUrl;
+let tools = null;
 
 function hashFile(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -125,16 +128,71 @@ function assertPdf(filePath) {
 }
 
 function assertZipWithEntry(filePath, expectedFragment) {
-  const fd = fs.openSync(filePath, "r");
-  try {
-    const header = Buffer.alloc(4);
-    fs.readSync(fd, header, 0, 4, 0);
-    assert.strictEqual(header.toString("latin1"), "PK\u0003\u0004");
-  } finally {
-    fs.closeSync(fd);
+  const buf = fs.readFileSync(filePath);
+  assert.strictEqual(buf.subarray(0, 4).toString("latin1"), "PK\u0003\u0004", "zip local header missing");
+  // Walk the central directory (engine-free) to collect entry names.
+  let eocd = -1;
+  for (let index = buf.length - 22; index >= 0; index -= 1) {
+    if (buf.readUInt32LE(index) === 0x06054b50) {
+      eocd = index;
+      break;
+    }
   }
-  const listing = execFileSync("tar", ["-tf", filePath], { encoding: "utf8" });
-  assert.match(listing, expectedFragment);
+  assert.ok(eocd >= 0, "zip EOCD record missing");
+  const entryCount = buf.readUInt16LE(eocd + 10);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  let offset = cdOffset;
+  const names = [];
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.strictEqual(buf.readUInt32LE(offset), 0x02014b50, "zip central directory signature missing");
+    const nameLength = buf.readUInt16LE(offset + 28);
+    const extraLength = buf.readUInt16LE(offset + 30);
+    const commentLength = buf.readUInt16LE(offset + 32);
+    names.push(buf.subarray(offset + 46, offset + 46 + nameLength).toString("utf8"));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  assert.ok(
+    names.some((name) => expectedFragment.test(name)),
+    `zip must contain an entry matching ${expectedFragment}, got: ${names.join(", ")}`
+  );
+}
+
+function extractZip(filePath, outDir) {
+  const zlib = require("zlib");
+  const buf = fs.readFileSync(filePath);
+  let eocd = -1;
+  for (let index = buf.length - 22; index >= 0; index -= 1) {
+    if (buf.readUInt32LE(index) === 0x06054b50) {
+      eocd = index;
+      break;
+    }
+  }
+  assert.ok(eocd >= 0, "zip EOCD record missing");
+  const entryCount = buf.readUInt16LE(eocd + 10);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  let offset = cdOffset;
+  for (let index = 0; index < entryCount; index += 1) {
+    assert.strictEqual(buf.readUInt32LE(offset), 0x02014b50, "zip central directory signature missing");
+    const method = buf.readUInt16LE(offset + 10);
+    const compressedSize = buf.readUInt32LE(offset + 20);
+    const uncompressedSize = buf.readUInt32LE(offset + 24);
+    const nameLength = buf.readUInt16LE(offset + 28);
+    const extraLength = buf.readUInt16LE(offset + 30);
+    const commentLength = buf.readUInt16LE(offset + 32);
+    const localOffset = buf.readUInt32LE(offset + 42);
+    const name = buf.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+    offset += 46 + nameLength + extraLength + commentLength;
+
+    const localNameLength = buf.readUInt16LE(localOffset + 26);
+    const localExtraLength = buf.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const data = buf.subarray(dataStart, dataStart + compressedSize);
+    const raw = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data) : null;
+    assert.ok(raw !== null && raw.length === uncompressedSize, `unexpected zip entry: ${name}`);
+    const target = path.join(outDir, name);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, raw);
+  }
 }
 
 before(async () => {
@@ -147,6 +205,8 @@ before(async () => {
     server = started.server;
     baseUrl = started.url;
   }
+  const capabilitiesResponse = await fetch(`${baseUrl}/api/capabilities`);
+  tools = (await capabilitiesResponse.json()).tools;
 });
 
 after(async () => {
@@ -191,7 +251,8 @@ test("merges multiple images into one PDF without changing any source image", as
   assert.deepStrictEqual([hashFile(firstPath), hashFile(secondPath)], hashes);
 });
 
-test("renders PDF pages to a PNG zip without changing the source PDF", async () => {
+test("renders PDF pages to a PNG zip without changing the source PDF", async (t) => {
+  if (!tools?.poppler) return t.skip("Poppler 未启用，跳过 PDF 渲染测试");
   const sourcePath = path.join(scratchRoot, "报价单.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -205,7 +266,8 @@ test("renders PDF pages to a PNG zip without changing the source PDF", async () 
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("renders PDF pages to a JPG zip without changing the source PDF", async () => {
+test("renders PDF pages to a JPG zip without changing the source PDF", async (t) => {
+  if (!tools?.poppler) return t.skip("Poppler 未启用，跳过 PDF 渲染测试");
   const sourcePath = path.join(scratchRoot, "picture-export.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -234,7 +296,8 @@ test("OCR converts an image containing text to TXT without changing the source",
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("OCR converts an image-only PDF to TXT without changing the source PDF", async () => {
+test("OCR converts an image-only PDF to TXT without changing the source PDF", async (t) => {
+  if (!tools?.poppler) return t.skip("Poppler 未启用，跳过扫描 PDF OCR 测试");
   const imagePath = path.join(scratchRoot, "ocr-pdf-source.png");
   await createTextImage(imagePath);
   const imageToPdf = await uploadConvert(imagePath, "ocr-pdf-source.png", "pdf", "image/png");
@@ -307,7 +370,8 @@ test("PDF table extraction to XLSX keeps rows and cells", async () => {
   assert.match(joined, /Apple/);
 });
 
-test("audio files must not offer video container targets", async () => {
+test("audio files must not offer video container targets", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过音频目标测试");
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -323,7 +387,8 @@ test("audio files must not offer video container targets", async () => {
   assert.ok(body.targets.includes("zip"), "mp3 must still offer zip");
 });
 
-test("video files keep both audio and video targets", async () => {
+test("video files keep both audio and video targets", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过视频目标测试");
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -381,7 +446,8 @@ test("local-origin conversion requests are allowed", async () => {
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("audio files offer the new AAC/OPUS/WMA outputs", async () => {
+test("audio files offer the new AAC/OPUS/WMA outputs", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过音频新格式测试");
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -394,7 +460,8 @@ test("audio files offer the new AAC/OPUS/WMA outputs", async () => {
   assert.ok(body.targets.includes("wma"), `mp3 must offer wma, got ${body.targets.join(",")}`);
 });
 
-test("image files offer MP4/WebM video outputs when ffmpeg is available", async () => {
+test("image files offer MP4/WebM video outputs when ffmpeg is available", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过图片转视频目标测试");
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -406,7 +473,8 @@ test("image files offer MP4/WebM video outputs when ffmpeg is available", async 
   assert.ok(body.targets.includes("webm"), `gif must offer webm, got ${body.targets.join(",")}`);
 });
 
-test("text files offer PDF output when LibreOffice is available", async () => {
+test("text files offer PDF output when LibreOffice is available", async (t) => {
+  if (!tools?.libreoffice) return t.skip("LibreOffice 未启用，跳过文本转 PDF 目标测试");
   const response = await fetch(`${baseUrl}/api/targets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -417,7 +485,8 @@ test("text files offer PDF output when LibreOffice is available", async () => {
   assert.ok(body.targets.includes("pdf"), `txt must offer pdf, got ${body.targets.join(",")}`);
 });
 
-test("converts a TXT file to PDF without changing the source", async () => {
+test("converts a TXT file to PDF without changing the source", async (t) => {
+  if (!tools?.libreoffice) return t.skip("LibreOffice 未启用，跳过 TXT 转 PDF 测试");
   const sourcePath = path.join(scratchRoot, "notes.txt");
   await fsp.writeFile(sourcePath, "line one\nline two", "utf8");
   const beforeHash = hashFile(sourcePath);
@@ -431,7 +500,8 @@ test("converts a TXT file to PDF without changing the source", async () => {
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("converts a Markdown file to PDF without changing the source", async () => {
+test("converts a Markdown file to PDF without changing the source", async (t) => {
+  if (!tools?.libreoffice) return t.skip("LibreOffice 未启用，跳过 Markdown 转 PDF 测试");
   const sourcePath = path.join(scratchRoot, "readme.md");
   await fsp.writeFile(sourcePath, "# Title\n\nSome **bold** text.", "utf8");
   const beforeHash = hashFile(sourcePath);
@@ -495,7 +565,7 @@ test("splits a PDF into a per-page PDF zip without changing the source", async (
   const extractDir = path.join(scratchRoot, "split-out");
   await fsp.rm(extractDir, { recursive: true, force: true });
   await fsp.mkdir(extractDir, { recursive: true });
-  execFileSync("tar", ["-xf", zipPath, "-C", extractDir]);
+  extractZip(zipPath, extractDir);
   const { PDFDocument } = require("pdf-lib");
   const page1 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-001.pdf")));
   const page2 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-002.pdf")));
@@ -504,7 +574,8 @@ test("splits a PDF into a per-page PDF zip without changing the source", async (
   assert.strictEqual(hashFile(twoPagePdf), beforeHash);
 });
 
-test("converts an animated GIF to MP4 without changing the source", async () => {
+test("converts an animated GIF to MP4 without changing the source", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过 GIF 转 MP4 测试");
   const sourcePath = path.join(scratchRoot, "anim.gif");
   execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);
   const beforeHash = hashFile(sourcePath);
@@ -525,7 +596,8 @@ test("converts an animated GIF to MP4 without changing the source", async () => 
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("converts audio to AAC, OPUS and WMA outputs without changing the source", async () => {
+test("converts audio to AAC, OPUS and WMA outputs without changing the source", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过音频转码测试");
   const sourcePath = path.join(scratchRoot, "tone.wav");
   execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", sourcePath]);
   const beforeHash = hashFile(sourcePath);
@@ -615,7 +687,8 @@ test("converts a DOCX to plain text without LibreOffice txt export", async () =>
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("converts a DOCX to PDF via LibreOffice", async () => {
+test("converts a DOCX to PDF via LibreOffice", async (t) => {
+  if (!tools?.libreoffice) return t.skip("LibreOffice 未启用，跳过 DOCX 转 PDF 测试");
   const sourcePath = path.join(scratchRoot, "文档转PDF.docx");
   await createMinimalDocx(sourcePath, "PDF content here");
   const beforeHash = hashFile(sourcePath);
@@ -630,6 +703,7 @@ test("converts a DOCX to PDF via LibreOffice", async () => {
 });
 
 test("decrypts a standard NetEase NCM file to MP3 (real fixture required)", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过 NCM 转 MP3 测试");
   const fixture = path.join(__dirname, "fixtures", "sample.ncm");
   if (!fs.existsSync(fixture)) {
     t.skip("缺少真实 NCM fixture（官方网易云客户端下载，放入 tests/fixtures/sample.ncm）");
@@ -649,6 +723,7 @@ test("decrypts a standard NetEase NCM file to MP3 (real fixture required)", asyn
 });
 
 test("decrypts a Kugou KGG file to audio (real fixture + key db required)", async (t) => {
+  if (!tools?.ffmpeg) return t.skip("FFmpeg 未启用，跳过 KGG 转 MP3 测试");
   const fixture = path.join(__dirname, "fixtures", "sample.kgg");
   if (!fs.existsSync(fixture)) {
     t.skip("缺少真实 KGG fixture（酷狗客户端下载，放入 tests/fixtures/sample.kgg）");

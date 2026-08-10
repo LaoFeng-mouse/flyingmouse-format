@@ -70,7 +70,7 @@ const messages = {
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
-    "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
+    "upload.limited": "PDF → Excel（智能表格提取）：适合电子版规则表格；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
     "action.save": "保存", "action.saveAll": "保存全部", "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
@@ -89,7 +89,7 @@ const messages = {
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
-    "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
+    "upload.limited": "PDF → Excel (smart table extraction) works best on digital, regular tables; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
     "action.save": "Save", "action.saveAll": "Save all", "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
@@ -288,7 +288,7 @@ async function fetchCapabilities() {
   toolHealth.classList.add("ok");
 
   if (!state.capabilities.tools.libreoffice) {
-    dropHint.textContent = "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice";
+    dropHint.textContent = t("upload.limited");
   }
 
   renderFormatTable();

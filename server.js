@@ -33,6 +33,13 @@ const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir()
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
 const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024;
+// Safety caps: keep decode/encode memory bounded even for hostile or corrupt
+// inputs, instead of disabling Sharp's built-in pixel guard.
+const MAX_BATCH_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 100 * 1000 * 1000;
+const MAX_IMAGE_DIMENSION = 30_000;
+const MAX_PDF_PAGES = 1_000;
+const MAX_OCR_PDF_PAGES = 200;
 const app = express();
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -181,6 +188,54 @@ async function commandExists(command, versionArgs = ["-version"]) {
   }
 }
 
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = "KB";
+  for (const next of units) {
+    if (value < 1024) break;
+    value /= 1024;
+    unit = next;
+  }
+  return `${value.toFixed(1)} ${unit}`;
+}
+
+async function assertImageWithinLimits(inputPath) {
+  const metadata = await sharp(inputPath).metadata();
+  const width = metadata.width || 0;
+  const height = metadata.height || 0;
+  const pixels = width * height;
+  if (pixels > MAX_IMAGE_PIXELS || width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+    throw new Error(
+      `图片超出安全限制（当前 ${width}×${height}，上限：单边 ${MAX_IMAGE_DIMENSION}px / ${MAX_IMAGE_PIXELS / 1000000}MP）。`
+    );
+  }
+  return metadata;
+}
+
+async function getPdfPageCount(inputPath) {
+  const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
+  return src.getPageCount();
+}
+
+async function assertPdfPageCountWithinLimits(inputPath, maxPages = MAX_PDF_PAGES) {
+  const count = await getPdfPageCount(inputPath);
+  if (count > maxPages) {
+    throw new Error(`PDF 页数超过限制（${count} 页，上限 ${maxPages} 页）。`);
+  }
+  return count;
+}
+
+function assertBatchSizeWithinLimits(files, maxBytes = MAX_BATCH_TOTAL_BYTES) {
+  const totalBytes = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  if (totalBytes > maxBytes) {
+    throw new Error(`批量文件总大小超过限制（最多 ${formatBytes(maxBytes)}，当前 ${formatBytes(totalBytes)}）。`);
+  }
+  return totalBytes;
+}
+
 function extFromName(name = "") {
   return path.extname(name).replace(".", "").toLowerCase();
 }
@@ -244,18 +299,34 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "pdf") {
     pdfTextTargets.forEach((target) => targets.add(target));
+    // PDF -> PDF (split into single-page files) uses pdf-lib only; do not
+    // gate it behind the Poppler renderer.
+    targets.add("pdf");
     if (tools.poppler) {
       pdfImageTargets.forEach((target) => targets.add(target));
-      targets.add("pdf");
     }
   }
 
-  if (category === "document" && tools.libreoffice) {
-    documentTargets.forEach((target) => targets.add(target));
+  if (category === "document") {
+    const normalizedInput = normalizeExt(rawExt);
+    if (normalizedInput === "docx") {
+      // DOCX -> Markdown/TXT use mammoth and need no LibreOffice.
+      targets.add("md");
+      targets.add("txt");
+    }
+    if (tools.libreoffice) {
+      documentTargets.forEach((target) => targets.add(target));
+    }
   }
 
-  if (category === "spreadsheet" && tools.libreoffice) {
-    spreadsheetTargets.forEach((target) => targets.add(target));
+  if (category === "spreadsheet") {
+    if (normalizeExt(rawExt) === "csv") {
+      // CSV -> JSON is engine-free and uses the RFC 4180 parser.
+      targets.add("json");
+    }
+    if (tools.libreoffice) {
+      spreadsheetTargets.forEach((target) => targets.add(target));
+    }
   }
 
   if (category === "presentation" && tools.libreoffice) {
@@ -515,28 +586,67 @@ function htmlToText(html) {
     .trim();
 }
 
-function csvToJson(csv) {
-  const rows = csv.replace(/\r\n/g, "\n").split("\n").filter(Boolean).map((line) => {
-    const cells = [];
-    let current = "";
-    let quoted = false;
-    for (let i = 0; i < line.length; i += 1) {
-      const char = line[i];
-      if (char === '"' && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else if (char === '"') {
-        quoted = !quoted;
-      } else if (char === "," && !quoted) {
-        cells.push(current);
-        current = "";
+function htmlToMarkdown(html) {
+  const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
+  return turndown.turndown(html).trim();
+}
+
+// RFC 4180 state-machine parser: handles quoted fields, escaped quotes
+// (""), embedded CR/LF inside quoted fields, mixed EOL styles and a UTF-8 BOM.
+function parseCsv(csv) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  let atFieldStart = true;
+  const input = String(csv || "").replace(/^\uFEFF/, "");
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (inQuotes) {
+      if (char === '"') {
+        if (input[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          inQuotes = false;
+        }
       } else {
-        current += char;
+        field += char;
       }
+      continue;
     }
-    cells.push(current);
-    return cells;
-  });
+    if (char === '"' && atFieldStart) {
+      inQuotes = true;
+      atFieldStart = false;
+      continue;
+    }
+    if (char === ",") {
+      row.push(field);
+      field = "";
+      atFieldStart = true;
+      continue;
+    }
+    if (char === "\n" || char === "\r") {
+      if (char === "\r" && input[index + 1] === "\n") index += 1;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      atFieldStart = true;
+      continue;
+    }
+    field += char;
+    atFieldStart = false;
+  }
+
+  row.push(field);
+  if (row.length > 1 || field !== "" || rows.length === 0) rows.push(row);
+  return rows.filter((entry) => entry.some((cell) => cell !== ""));
+}
+
+function csvToJson(csv) {
+  const rows = parseCsv(csv);
 
   const headers = rows.shift() || [];
   return rows.map((row) => Object.fromEntries(headers.map((header, index) => [header || `column_${index + 1}`, row[index] || ""])));
@@ -551,6 +661,8 @@ function jsonToCsv(jsonText) {
 }
 
 async function convertImage(inputPath, outputPath, target) {
+  await assertImageWithinLimits(inputPath);
+
   if (target === "pdf") {
     await convertImagesToPdf([{ inputPath, originalName: path.basename(inputPath) }], outputPath);
     return;
@@ -566,7 +678,7 @@ async function convertImage(inputPath, outputPath, target) {
     return;
   }
 
-  const image = sharp(inputPath, { animated: true, limitInputPixels: false }).rotate();
+  const image = sharp(inputPath, { animated: true, limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
   const normalized = target === "jpg" ? "jpeg" : target;
   await image.toFormat(normalized, target === "jpg" ? { quality: 90 } : undefined).toFile(outputPath);
 }
@@ -599,10 +711,11 @@ async function convertImageToVideo(inputPath, outputPath, target) {
 }
 
 async function prepareImageForOcr(inputPath) {
+  await assertImageWithinLimits(inputPath);
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ocr-image-"));
   const outputPath = path.join(tempDir, "ocr-input.png");
-  const metadata = await sharp(inputPath, { limitInputPixels: false }).metadata();
-  const pipeline = sharp(inputPath, { limitInputPixels: false })
+  const metadata = await sharp(inputPath).metadata();
+  const pipeline = sharp(inputPath, { limitInputPixels: MAX_IMAGE_PIXELS })
     .rotate()
     .flatten({ background: "#ffffff" })
     .grayscale()
@@ -673,7 +786,8 @@ function pdfNumber(value) {
 }
 
 async function readImageForPdf(inputPath) {
-  const { data, info } = await sharp(inputPath, { limitInputPixels: false })
+  await assertImageWithinLimits(inputPath);
+  const { data, info } = await sharp(inputPath, { limitInputPixels: MAX_IMAGE_PIXELS })
     .rotate()
     .flatten({ background: "#ffffff" })
     .toColorspace("srgb")
@@ -909,7 +1023,7 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
 <body><pre>${escapeHtml(raw)}</pre></body>
 </html>`;
   } else if (target === "md") {
-    if (source === "html") converted = htmlToText(raw);
+    if (source === "html") converted = htmlToMarkdown(raw);
     else if (source === "json") converted = `\`\`\`json\n${JSON.stringify(parseJsonText(raw), null, 2)}\n\`\`\`\n`;
   } else if (target === "json") {
     if (source === "json") converted = JSON.stringify(parseJsonText(raw), null, 2);
@@ -1006,7 +1120,7 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
-  const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
+  const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced", bulletListMarker: "-" });
   const markdown = turndown.turndown(html).trim();
   if (!markdown) {
     throw new Error("文档转 Markdown 失败，未提取到任何内容。");
@@ -1202,6 +1316,9 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
 
 async function splitPdfToZip(inputPath, outputPath) {
   const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
+  if (src.getPageCount() > MAX_PDF_PAGES) {
+    throw new Error(`PDF 页数超过限制（${src.getPageCount()} 页，上限 ${MAX_PDF_PAGES} 页）。`);
+  }
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
   try {
     const entries = [];
@@ -1223,6 +1340,13 @@ async function splitPdfToZip(inputPath, outputPath) {
 }
 
 async function mergePdfFiles(pdfFiles, outputPath) {
+  let totalPages = 0;
+  for (const file of pdfFiles) {
+    totalPages += await assertPdfPageCountWithinLimits(file.inputPath);
+  }
+  if (totalPages > MAX_PDF_PAGES) {
+    throw new Error(`合并后 PDF 总页数超过限制（${totalPages} 页，上限 ${MAX_PDF_PAGES} 页）。`);
+  }
   const merged = await PDFDocument.create();
   for (const file of pdfFiles) {
     const src = await PDFDocument.load(await fsp.readFile(file.inputPath), { ignoreEncryption: true });
@@ -1241,6 +1365,7 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150) {
     throw new Error("PDF 转图片引擎未启用。请确认安装包内置的 Poppler 文件完整。");
   }
 
+  await assertPdfPageCountWithinLimits(inputPath);
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-pages-"));
   const prefix = path.join(tempDir, "page");
   const formatArg = target === "jpg" ? "-jpeg" : "-png";
@@ -1279,6 +1404,7 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
     throw new Error("OCR 引擎未启用。请确认安装包内置的 Tesseract 语言文件完整。");
   }
 
+  await assertPdfPageCountWithinLimits(inputPath, MAX_OCR_PDF_PAGES);
   const rendered = await renderPdfPages(inputPath, "png", 300);
   let worker = null;
   try {
@@ -1299,11 +1425,38 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
   }
 }
 
-async function convertMedia(inputPath, outputPath, target, category) {
+function ncmMetaTags(meta) {
+  const tags = {};
+  if (!meta || typeof meta !== "object") return tags;
+  const title = meta.musicName || meta.name || meta.title;
+  if (title) tags.title = String(title).trim();
+  const artistValue = meta.artist;
+  if (Array.isArray(artistValue) && artistValue.length) {
+    const first = artistValue[0];
+    const artist = Array.isArray(first) ? String(first[0] || "") : String(first || "");
+    if (artist.trim()) tags.artist = artist.trim();
+  } else if (typeof artistValue === "string" && artistValue) {
+    if (artistValue.trim()) tags.artist = artistValue.trim();
+  }
+  if (meta.album) {
+    const album = String(meta.album).trim();
+    if (album) tags.album = album;
+  }
+  return Object.fromEntries(Object.entries(tags).filter(([, value]) => value));
+}
+
+async function convertMedia(inputPath, outputPath, target, category, options = {}) {
+  const metadata = options.metadata || null;
+  const coverPath = options.coverPath || null;
+  const embedCover = coverPath && ["mp3", "m4a"].includes(target);
   const args = ["-hide_banner", "-y", "-i", inputPath];
 
+  if (embedCover) {
+    args.push("-i", coverPath);
+  }
+
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
-    args.push("-vn");
+    if (!embedCover) args.push("-vn");
     if (target === "mp3") args.push("-codec:a", "libmp3lame", "-q:a", "2");
     if (target === "m4a") args.push("-codec:a", "aac", "-b:a", "192k");
     if (target === "ogg") args.push("-codec:a", "libopus", "-b:a", "160k");
@@ -1318,6 +1471,22 @@ async function convertMedia(inputPath, outputPath, target, category) {
     args.push("-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus");
   } else if (target === "mkv") {
     args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac");
+  }
+
+  if (metadata && Object.keys(metadata).length) {
+    for (const [key, value] of Object.entries(metadata)) {
+      args.push("-metadata", `${key}=${value}`);
+    }
+  }
+  if (embedCover) {
+    args.push("-map", "0:a", "-map", "1:v");
+    if (target === "mp3") {
+      args.push("-id3v2_version", "3", "-c:v", "mjpeg");
+      args.push("-metadata:s:v", "title=Album cover");
+      args.push("-metadata:s:v", "comment=Cover (front)");
+    } else {
+      args.push("-c:v", "mjpeg", "-disposition:v", "attached_pic");
+    }
   }
 
   args.push(outputPath);
@@ -1424,6 +1593,14 @@ app.get("/api/capabilities", async (_req, res) => {
   res.json({
     tools,
     maxUploadBytes: MAX_UPLOAD_BYTES,
+    limits: {
+      maxUploadBytes: MAX_UPLOAD_BYTES,
+      maxBatchTotalBytes: MAX_BATCH_TOTAL_BYTES,
+      maxImagePixels: MAX_IMAGE_PIXELS,
+      maxImageDimension: MAX_IMAGE_DIMENSION,
+      maxPdfPages: MAX_PDF_PAGES,
+      maxOcrPdfPages: MAX_OCR_PDF_PAGES
+    },
     groups: {
       image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])] },
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
@@ -1437,7 +1614,7 @@ app.get("/api/capabilities", async (_req, res) => {
     },
     optional: [
       { name: "LibreOffice", enabled: tools.libreoffice, formats: ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "wps", "pdf"] },
-      { name: "PDF table extractor", enabled: tools.pdf, formats: ["pdf", "xlsx", "txt", "html"] },
+      { name: "PDF → Excel（智能表格提取）", enabled: tools.pdf, formats: ["pdf", "xlsx", "txt", "html"] },
       { name: "Poppler PDF renderer", enabled: tools.poppler, formats: ["pdf", "png", "jpg"] },
       { name: "Tesseract OCR", enabled: tools.ocr, formats: ["image", "pdf", "txt"] }
     ]
@@ -1471,6 +1648,15 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     logger.warn(`Rejected images-to-pdf: non-image file included (${imageFiles.map((f) => f.originalName).join(", ")})`);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     res.status(400).json({ error: "批量合并 PDF 只支持图片文件。请先移除非图片文件。" });
+    return;
+  }
+
+  try {
+    assertBatchSizeWithinLimits(files);
+  } catch (error) {
+    logger.warn(`Rejected images-to-pdf: batch too large (${files.reduce((sum, f) => sum + (f.size || 0), 0)} bytes)`);
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    res.status(400).json({ error: error.message });
     return;
   }
 
@@ -1516,6 +1702,15 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
   if (pdfFiles.some((file) => normalizeExt(extFromName(file.originalName)) !== "pdf")) {
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     res.status(400).json({ error: "批量合并 PDF 只支持 PDF 文件。请先移除非 PDF 文件。" });
+    return;
+  }
+
+  try {
+    assertBatchSizeWithinLimits(files);
+  } catch (error) {
+    logger.warn(`Rejected merge-pdfs: batch too large (${files.reduce((sum, f) => sum + (f.size || 0), 0)} bytes)`);
+    await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
+    res.status(400).json({ error: error.message });
     return;
   }
 
@@ -1594,6 +1789,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
       } else if (category === "document" && requestedTarget === "txt") {
         await convertDocumentToText(file.path, outputPath, inputExt, originalName);
+      } else if (category === "spreadsheet" && inputExt === "csv" && requestedTarget === "json") {
+        await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
       } else {
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
@@ -1606,7 +1803,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           const conversionInput = inputExt === "ncm"
             ? await prepareDecryptedAudio(decrypted)
             : decrypted.nativePath;
-          await convertMedia(conversionInput, outputPath, requestedTarget, "audio");
+          await convertMedia(conversionInput, outputPath, requestedTarget, "audio", {
+            metadata: inputExt === "ncm" ? ncmMetaTags(decrypted.meta) : {},
+            coverPath: inputExt === "ncm" ? decrypted.coverPath || null : null
+          });
         } finally {
           await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
         }
@@ -1705,4 +1905,17 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, isMissingPdfjsEntry, loadPdfjsModule };
+module.exports = {
+  app,
+  startServer,
+  createPdfjsLoader,
+  isMissingPdfjsEntry,
+  loadPdfjsModule,
+  parseCsv,
+  csvToJson,
+  htmlToMarkdown,
+  ncmMetaTags,
+  assertImageWithinLimits,
+  assertPdfPageCountWithinLimits,
+  assertBatchSizeWithinLimits
+};
