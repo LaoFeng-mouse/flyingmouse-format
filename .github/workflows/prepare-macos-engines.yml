@@ -2,13 +2,6 @@ name: Prepare macOS engine candidates
 
 on:
   workflow_dispatch:
-  push:
-    branches: [v0.3.4-quality-macos]
-    paths:
-      - ".github/workflows/prepare-macos-engines.yml"
-      - "ci-engines-v1.json"
-      - "package-lock.json"
-      - "scripts/validate-ci-engines.js"
 
 permissions:
   contents: write
