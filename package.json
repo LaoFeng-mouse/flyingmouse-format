@@ -103,13 +103,7 @@
       "target": [
         "nsis",
         "appx"
-      ],
-      "signtoolOptions": {
-        "certificateSha1": "0EEEFD57DA202C56D95A63437C385F6FFB772527",
-        "signingHashAlgorithms": [
-          "sha256"
-        ]
-      }
+      ]
     },
     "appx": {
       "applicationId": "FlyingMouseFormat",

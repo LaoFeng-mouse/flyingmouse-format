@@ -207,6 +207,7 @@ test("package pins the expected Electron version and includes the security modul
 
   assert.ok(packageJson.build.files.includes("electron-security.js"));
   assert.strictEqual(packageJson.build.win.signExecutable, false);
+  assert.strictEqual(packageJson.build.win.signtoolOptions?.certificateSha1, undefined);
 });
 
 test("package bundles the AV3A helper and configures its runtime path", () => {
