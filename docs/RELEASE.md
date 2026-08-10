@@ -36,16 +36,18 @@ npm run dist:win7
 - macOS DMG 当前未签名且未公证；Release 必须披露 Gatekeeper 风险和真实 Mac 设备待验收。
 - 标准 NCM 可用；AV3A NCM 是 Windows 专属能力，不得在 macOS 能力矩阵中宣传。
 
-## v0.3.4 当前基线
+## v0.3.5 当前基线
 
-- GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.4>，公开、非 prerelease、Latest。
-- 标签提交：`e7a3508d451f301fc8ea113166cc67a16f304ae2`。
-- 标签工作流：`31396373271`，Windows、Win7、macOS arm64、macOS x64 全部通过。
-- 测试：239 项，237 通过、2 个预期 fixture skip、0 失败；根生产审计 0 漏洞。
-- Windows 10/11：551,347,778 字节，SHA-256 `7f30479b92d9050ccd2bff860d82fb5711a9dcfecd422f866f8dbdcb03e2b2e7`。
-- Windows 7：520,603,262 字节，SHA-256 `6b2de37ba8d12acd5c5096c8b0a530cc32f93e60e94a6e80e5bdaf892d0f4df9`。
-- macOS arm64：681,546,935 字节，SHA-256 `536c004425703d5b004d9b64035616adb7a602447c3a244fbac4babbf9151c3a`。
-- macOS x64：716,918,325 字节，SHA-256 `8458943d5469e3c0c143c7544a01b254ff1f73fc74319493c1abd5e86c2b7fe6`。
+- GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>，公开、非 prerelease、Latest。
+- 标签提交：`075c56fb6179742e7e4a1fe672c228048fa140bf`。
+- 标签工作流：`31411904123`，Windows、Win7、macOS arm64、macOS x64 全部通过。
+- 测试：251 项，247 通过、3 个预期 skip、1 个本机 git-bash tar 假失败（CI 无此问题）、0 真实失败；根生产审计 0 漏洞。
+- Windows 10/11：551,226,275 字节，SHA-256 `51f5355428e73447accc27192d7f1c4e38e223bd5df417dbc539397c780b516c`。
+- Windows 7：520,619,411 字节，SHA-256 `88286352a9b9016c812db8800ff68cb4e6772bdb461c5220179bcef5c8cb110c`。
+- macOS arm64：681,558,079 字节，SHA-256 `9a64f5107dd38593d5825bdda29f08e6de83e7e6dc075d55998a56887f4c93bc`。
+- macOS x64：716,999,507 字节，SHA-256 `241e5c574ef5acaa61aca627b0daf3d97c07d169f5ee396784acc2befe672f34`。
+- 本版新增：PDF→DOCX、视频→GIF、WebP 动图→GIF、XLSX→XLS、ZIP→PDF（图片合并，防 zip-slip）、PPT/WPS→PNG/JPG、PDF 拆分/解密、PDF→Excel 扫描件 OCR 低质量门禁（低置信度明确报错而非乱码产物）。
+- 已知限制：PDF 加密暂不可用（缺加密引擎，明确报错 `PDF_ENCRYPT_UNAVAILABLE`）；拍照扫描件（透视/阴影）OCR 置信度过低时报错 `PDF_TABLE_OCR_LOW_QUALITY`；HEIC 输入依赖打包 sharp 解码能力（无真实样本实测）。
 
 ## GitHub 发布顺序
 
