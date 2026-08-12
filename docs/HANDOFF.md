@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-12（v0.3.6 构建 + server.js 拆分重构 + IPC 安全补丁 + WPS docx 转 PDF 截断修复）
+更新时间：2026-08-12（v0.4.0：RAW 原片 + mgg 解密 + win7 白名单修复 + APPX 鼠鼠 logo）
 
 ## 项目边界
 
@@ -79,6 +79,18 @@
   | FlyingMouse.Format-Setup-0.3.6-mac-x64.dmg | 717,266,776 | `a644ce71714c6b2e1d8d20026a80bc76e1101a7f8bb8e5d034f0ef0dc7ed891a` |
 - 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
 - **待办（下一窗口）**：① 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；② macOS 自动更新补 zip 资产（electron-updater 在 mac 需 zip；当前 DMG 仅支持完整下载）；③ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36（含损坏重试产物 mac-x64.bad.* / win.zip 等）。
+
+## v0.4.0 发布状态（2026-08-12，进行中）
+
+- **新增功能**：
+  - 相机 RAW 原片（CR2/CR3/NEF/ARW/DNG 等 18 种）→ JPG/PNG/WebP/TIFF（dcraw 解码，Windows 实验性，无引擎自动隐藏）。输入先复制到临时目录再解码（本机 dcraw 不支持 -O，实测报 Unknown option；避免只读源目录失败与残留）。
+  - QQ 音乐 .mgg 解密（QMC2 EncV2 变体，离线）→ MP3/FLAC 等。移植 unlock-music qmc_key.ts 标准腾讯 TEA；真实样本《周杰伦-对不起.mgg》E2E：mgg → OggS → MP3 3:45 通过。
+- **修复**：win7 打包白名单补 mflac-format.js（v0.3.6 历史遗漏，win7 包缺失该模块）；APPX 商店 logo 换回鼠鼠（f2d054d）。
+- **CI 引擎 bundle 更新**：ci-engines-v1.tar.zst 重打加入 dcraw（新 sha256 d7d76009...，435,605,266 字节，已上传 Release ci-engines-v1 并回读验证）；ci-engines-v1.json 同步。
+- **提交（已推送 main + tag v0.4.0）**：f2d054d（APPX logo）/ fa9c5a4（feat mgg+RAW）/ ae3dcde（bump 0.4.0）/ 2d9dafe（win7 白名单）。tag v0.4.0 指向 2d9dafe。
+- **验证**：全量 310 过 + 2 skip；转换矩阵 16/16；NSIS 包 16/16 校验（RAW/mgg 代码 + dcraw 引擎 + sha512 配对）。
+- **Release workflow 31605192995**（tag v0.4.0 触发）：validate-and-build + mac arm64/x64 三个 job 进行中。
+- **待办（下一窗口）**：① CI 跑完下载 artifact（win/win7/mac-arm64/mac-x64）→ gh release upload 到 v0.4.0 Release（命名配对：win7 用原名、mac DMG 原名）；② Release notes 用 docs/release-notes-040.md（四平台下载指南已写好），公开设 Latest；③ 商店 APPX 0.4.0 上传 Partner Center（用户本人操作，含包内鼠鼠 logo 校验）；④ 本机升级 0.4.0（两套目录 + 图标缓存）；⑤ 清理临时脚本 scripts/tmp-* 与 output/ci-engines-check/（含 434MB 旧 bundle 下载）；⑥ 真实 RAW 样本验收（本机无真实相机样张，dcraw 解码路径仅伪样本测试 + 引擎存在性验证）。
 
 ## v0.3.9 发布状态（2026-08-12，进行中）
 
