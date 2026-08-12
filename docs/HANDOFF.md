@@ -1,6 +1,21 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-12（v0.4.0：RAW 原片 + mgg 解密 + win7 白名单修复 + APPX 鼠鼠 logo）
+更新时间：2026-08-13（v0.4.1 已发布：musicex 自动降档 + PDF 不限页数 + mac 构建容错）
+
+## v0.4.1 发布状态（2026-08-13，已完成）
+
+- **已发布并设 Latest**：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.4.1
+- 四平台资产齐全（六件套）：win x64 exe + blockmap + latest.yml（连字符命名，自动更新可用）/ win7 exe / mac-arm64 dmg / mac-x64 dmg；Release 说明含四平台下载指南（docs/release-notes-041.md）
+- **新增功能**：
+  - musicex 自动降档：原档（AIM 母带等）无在线密钥权限时，自动尝试 F0M(FLAC)/O4M(OGG)/M500(MP3) 档位从 QQ 官方 CDN 下载后解密转换（真实样本 XG-LEFT RIGHT E2E 通过）；全无权限明确报错
+  - PDF 页数不设上限：移除 maxPdfPages/maxOcrPdfPages 与对应错误码，任意页数 1:1 转换
+- **修复**：mac DMG 挂载检查卸载容错（release.yml trap 改 cleanup：hdiutil detach -force + 5 次重试 + 失败仅告警，v0.4.0/v0.4.1 实证的 Resource busy exit 16 不再导致发布失败）；APPX 商店 logo 换回鼠鼠
+- **提交（已推送 main，tag v0.4.1 指向 18f8cdf + 后续 workflow 修复 162763a 在 main）**：df8a2e2（musicex 降档+PDF）/ 725596b（PDF 不限）/ 18f8cdf（bump 0.4.1）/ 162763a（mac 容错）
+- **本机已升级 0.4.1**（%LOCALAPPDATA% + 项目目录副本 C:\Users\34615\飞鼠格式\FlyingMouse Format 两套 robocopy + 图标缓存刷新）
+- **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码），待用户本人在 Partner Center 上传（注意商店版本号必须递增，0.4.0 的 APPX 从未上传，直接传 0.4.1）
+- **待办（下一窗口）**：① 商店 Partner Center 上传 0.4.1 APPX（用户本人）；② 清理临时产物：output/ci-artifacts-040（v0.4.0 下载的 1.7GB 已无用）、output/ci-artifacts-041（下载解压后 1.7GB 可留作发布证据或删）、output/ci-engines-check（含 434MB 旧 bundle）、output/release-upload*（连字符副本）、scripts/tmp-* 临时脚本；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
+
+## v0.4.0 发布状态（2026-08-13，已停止）
 
 ## 项目边界
 
