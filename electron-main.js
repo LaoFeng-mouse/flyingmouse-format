@@ -71,6 +71,28 @@ function createWindow(url) {
   });
 }
 
+// ---- 自动更新（仅 NSIS/GitHub 渠道；微软商店版由商店自行更新）----
+function setupAutoUpdater() {
+  if (!app.isPackaged || process.windowsStore) return;
+  let autoUpdater = null;
+  try {
+    ({ autoUpdater } = require("electron-updater"));
+  } catch (error) {
+    log("Auto-updater module unavailable", error);
+    return;
+  }
+  autoUpdater.logger = logger;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("error", (error) => log("Auto-update error", error));
+  autoUpdater.on("update-downloaded", () => {
+    log("Update downloaded; will install on quit");
+  });
+  autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+    log("Auto-update check failed", error);
+  });
+}
+
 async function boot() {
   log("Boot started");
   process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
@@ -93,6 +115,7 @@ async function boot() {
   serverUrl = started.url;
   console.log(`FlyingMouse Format started at ${started.url}`);
   log(`Server started at ${started.url}`);
+  setupAutoUpdater();
   createWindow(started.url);
 }
 
