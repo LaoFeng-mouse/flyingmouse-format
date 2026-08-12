@@ -32,6 +32,14 @@
 
 验证：本地全量 296 项 = 294 通过、2 预期 skip（NCM/KGG 缺 fixture）、0 失败；`test:ci` 240 项全过。新模块已登记 build.files（ebook.js / mflac-format.js / bmp-input.js / xml-json.js）。
 
+## v0.3.6 发布状态（2026-08-12）
+
+- 本机已升级 0.3.6.0（win-unpacked 拷贝法，FileVersion 0.3.6 / ProductVersion 0.3.6.0，图标缓存已刷）。软件未运行时替换。
+- tag `v0.3.6` 已推送；Release workflow `31564182693` 三 job 全绿（validate-and-build 11m50s / macOS x64 13m46s / macOS arm64 7m36s），产物：win x64 NSIS + win7（flyingmouse-format-v0.3.6）、mac-x64 DMG、mac-arm64 DMG。
+- Draft Release `v0.3.6` 已创建；Windows x64 NSIS 本机构建（551,492,263 字节，SHA-256 `be1ef0aaef4e4c0aba2637db04146ae44c08f5c8eac6f8ffbef4f94d2c7cd65b`）上传中；win7/macOS 包从 CI artifacts 下载中（代理 ~260KB/s，约 2.5GB 预计 1-2 小时），完成后补传并公开设 Latest。
+- 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
+- **待办（下一窗口）**：① 补传 win7/macOS 包→公开 Release 设 Latest→回读资产表写入本文件；② 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；③ 更新 README 格式表若需；④ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36。
+
 ## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
 
 GPT 桌面端对已上传微软商店的 v0.3.5（标签 `075c56f`）做了 51 分钟全面审计，发现“测试全绿、用户仍转换失败”的真实缺陷。本地 agent 复现全部缺陷后修复并推送（`943411e` feat / `f872894` chore / `b0bd537` test / `b002a9c` docs）：
