@@ -419,6 +419,21 @@ function renderBatchList() {
 
     const actions = document.createElement("div");
     actions.className = "batch-actions";
+    if (canReorderImages()) {
+      const upButton = createTextElement("button", "mini-button", i18n.language === "en-US" ? "↑" : "↑");
+      upButton.type = "button";
+      upButton.dataset.move = String(index);
+      upButton.dataset.direction = "up";
+      upButton.disabled = index === 0;
+      upButton.title = i18n.language === "en-US" ? "Move up (earlier in PDF)" : "上移（在 PDF 中更靠前）";
+      const downButton = createTextElement("button", "mini-button", "↓");
+      downButton.type = "button";
+      downButton.dataset.move = String(index);
+      downButton.dataset.direction = "down";
+      downButton.disabled = index === state.files.length - 1;
+      downButton.title = i18n.language === "en-US" ? "Move down (later in PDF)" : "下移（在 PDF 中更靠后）";
+      actions.append(upButton, downButton);
+    }
     actions.append(createTextElement("span", "batch-status", batchStatusLabel(result.status)));
     if (result.status === "success" && result.result) {
       const saveButton = createTextElement("button", "mini-button", t("action.save"));
@@ -431,6 +446,28 @@ function renderBatchList() {
     return article;
   });
   batchList.replaceChildren(...entries);
+}
+
+// 多张图片合并 PDF 时允许调整顺序（PDF 页序 = 队列顺序）
+function canReorderImages() {
+  return isMergedImagePdfConversion(targetSelect.value)
+    && !state.isConverting
+    && state.batchResults.every((result) => result.status !== "success");
+}
+
+function moveFileInQueue(index, direction) {
+  if (!canReorderImages()) return;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= state.files.length) return;
+  const swap = (array) => {
+    const tmp = array[index];
+    array[index] = array[target];
+    array[target] = tmp;
+  };
+  swap(state.files);
+  swap(state.fileInfos);
+  swap(state.batchResults);
+  renderBatchList();
 }
 
 function setBatchResult(index, patch) {
@@ -924,6 +961,11 @@ fileInput.addEventListener("change", () => {
 });
 
 batchList.addEventListener("click", async (event) => {
+  const moveButton = event.target.closest("[data-move]");
+  if (moveButton) {
+    moveFileInQueue(Number(moveButton.dataset.move), moveButton.dataset.direction);
+    return;
+  }
   const button = event.target.closest("[data-save-index]");
   if (!button) return;
   const index = Number(button.dataset.saveIndex);
@@ -948,6 +990,7 @@ targetSelect.addEventListener("change", async () => {
   syncZipCompressionField();
   syncPdfActionFields();
   syncPdfExcelHint();
+  renderBatchList();
   const targetBySource = rememberTarget(
     state.settings.targetBySource,
     state.files.map((file) => extensionOf(file.name)),
