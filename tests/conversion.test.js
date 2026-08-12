@@ -6,6 +6,7 @@ const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const yauzl = require("yauzl");
 const { after, before, test } = require("node:test");
 const sharp = require("sharp");
 const { PDFDocument, StandardFonts } = require("pdf-lib");
@@ -23,6 +24,38 @@ let baseUrl;
 
 function hashFile(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+// 用 yauzl 解压 zip（不依赖 tar：git-bash 的 GNU tar 会把 C:\ 当远程主机导致假失败）
+function extractZipToDir(zipPath, destDir) {
+  return new Promise((resolve, reject) => {
+    yauzl.open(zipPath, { lazyEntries: true }, (openError, zipfile) => {
+      if (openError) {
+        reject(openError);
+        return;
+      }
+      zipfile.readEntry();
+      zipfile.on("entry", (entry) => {
+        if (/\/$/.test(entry.fileName)) {
+          zipfile.readEntry();
+          return;
+        }
+        zipfile.openReadStream(entry, (streamError, stream) => {
+          if (streamError) {
+            reject(streamError);
+            return;
+          }
+          const target = path.join(destDir, entry.fileName);
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          const output = fs.createWriteStream(target);
+          stream.pipe(output);
+          output.on("close", () => zipfile.readEntry());
+        });
+      });
+      zipfile.on("end", resolve);
+      zipfile.on("error", reject);
+    });
+  });
 }
 
 function readZipEntry(buffer, entryName) {
@@ -390,7 +423,7 @@ test("rejects PDF encryption with a clear unavailable error", async () => {
   const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
   const body = await parseBody(response);
 
-  assert.strictEqual(response.status, 500);
+  assert.strictEqual(response.status, 422);
   assert.strictEqual(body.errorCode, "PDF_ENCRYPT_UNAVAILABLE");
   assert.match(body.error, /加密/);
 });
@@ -794,7 +827,7 @@ test("splits a PDF into a per-page PDF zip without changing the source", async (
   const extractDir = path.join(scratchRoot, "split-out");
   await fsp.rm(extractDir, { recursive: true, force: true });
   await fsp.mkdir(extractDir, { recursive: true });
-  execFileSync("tar", ["-xf", zipPath, "-C", extractDir]);
+  await extractZipToDir(zipPath, extractDir);
   const { PDFDocument } = require("pdf-lib");
   const page1 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-001.pdf")));
   const page2 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-002.pdf")));
