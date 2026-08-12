@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-12（v0.3.6 构建 + server.js 拆分重构 + IPC 安全补丁）
+更新时间：2026-08-12（v0.3.6 构建 + server.js 拆分重构 + IPC 安全补丁 + WPS docx 转 PDF 截断修复）
 
 ## 项目边界
 
@@ -82,7 +82,7 @@
 
 ## v0.3.7 待办（2026-08-12 记录）
 
-- ① **用户反馈：PDF 27 页论文只转出前 7 页**（未定位）。代码审查结论：页数门禁只有 500（普通）/100（OCR），无任何 7 页硬编码截断；最可能是转换中途失败/超时只完成前 7 页，或 PDF 本身页树/混合结构（前文字后扫描）问题。待办：拿用户 debug.log（%APPDATA%\FlyingMouse Format\debug.log）与转换目标格式、报错信息，本地造 27 页样本复现各分支后再修，不盲改。
+- ① **~~用户反馈：PDF 27 页论文只转出前 7 页~~（已定位并修复，提交 8d74720）**。根因不是代码页数门禁，而是 **WPS 生成的 docx**：document.xml 含 wpsCustomData 命名空间 + 134 个 OMML 公式 + 153 个交叉引用域，LibreOffice 的 **PDF 导出**在正文约 27% 处静默截断（exit 0 但只输出前 7 页，txt/html 导出不受影响）。修复：`office-convert.js` 在 docx→pdf 前探测 wpsCustomData / 公式+域组合，命中则先经 LO roundtrip（docx→docx）规范化修复再导出 PDF。实测真实论文样本：修复后 28 页完整（修复前 7 页）。**zip 解析用手动实现（fs+zlib 解析 central directory），不用 yauzl**——微信传输的 docx 会让 yauzl openReadStream 卡在 end 事件不触发（2026-08-12 实测，普通 zip 正常）。新增 tests/office-wps-repair.test.js 4 个单测；全量 301 = 299 过 + 2 skip。
 - ② server.js 拆分后新增格式验证：新域模块（image/ocr/pdf/text-docx/office-convert）的打包态路径解析已由测试覆盖，但未做真实打包冒烟（win7 staging 需 Node 18-22 环境）；v0.3.7 构建时需确认 11 个新模块进 asar 且引擎路径正常。
 - ③ 半自动发布脚本（3325253）首次实际使用验收：打包→上传→设 Latest 闭环走一遍，确认与手动流程产物一致。
 
