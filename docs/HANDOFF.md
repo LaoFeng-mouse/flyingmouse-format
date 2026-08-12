@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-12（v0.3.5 审计修复后）
+更新时间：2026-08-12（v0.3.6 构建）
 
 ## 项目边界
 
@@ -8,6 +8,21 @@
 - 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
 - v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
+
+## v0.3.6 新增与修复（2026-08-12，用户反馈清单）
+
+| 项 | 处理 | 状态 |
+|---|---|---|
+| HEIC/HEIF 转 JPG 失败 | sharp 的 libheif 只编译了 AV1，解不了 HEVC 像素；改为入口用打包内置 ffmpeg（hevc 解码器）转 PNG 再走 sharp 链路（与 BMP 中转同模式），单图与批量/ZIP 图片→PDF 全覆盖 | 实测 sample.heic→JPG/PNG/WebP/PDF 全 200 |
+| mflac 无法转 mp3 | 新增 `mflac-format.js`：QMC 系解密（unlock-music 算法：尾部 keyLen + 探测 mask + 128 矩阵 XOR 带 0x8000 跳位），纯本地离线；QMCv1 默认 mask 兼容 | 合成自洽 round-trip 通过；真实样本待验证，标实验性（EXPERIMENTAL_INPUT 警告） |
+| txt/mobi 等电子书 | 新增 `ebook.js`：txt/md/html→EPUB（yazl 纯生成，mimetype stored）；EPUB→TXT/MD（spine 解析）；MOBI→EPUB/TXT/MD（PDB+PalmDOC 解析，实验性） | Gutenberg alice.epub/mobi 实测通过 |
+| 图片合并 PDF 无法控制顺序 | 批量图片→PDF 队列加 ↑/↓ 排序按钮（三数组同步 swap，PDF 页序=队列顺序） | UI 完成 |
+| ncm 转 mp3 日文乱码 | 根因：ncm 路径被强制 `-id3v2_version 3`（UTF-16），部分播放器读乱；改为与全局一致的 v2.4（UTF-8） | 实验验证 v2.4 标签 UTF-8 无损 |
+| 任务栏图标黑边 | build/icon.png 透明区域 RGB 是黑的；透明像素 RGB 置白（177,379 像素），黑色透明残留归零 | 需重打包+刷图标缓存生效 |
+| 软件内存太大 | 实测 idle 约 372MB（主进程 142MB），Electron 43 正常水平，无泄漏；转换峰值来自引擎进程（按需启动） | 已给数据，无明显可优化点 |
+| PDF 转 Excel 乱 | 造跨页/无框/多列复杂表格样本实测提取正常（P001 14 行 + P002 跨页续接）；拍照扫描件是 OCR 能力极限（已明确报错） | 需用户真实文件定位具体"乱" |
+
+验证：`test:ci` 240 项全过；本地全量 287 项 = 285 过 + 2 skip（NCM/KGG fixture 缺失）、0 失败。新模块已登记 build.files（ebook.js / mflac-format.js / bmp-input.js / xml-json.js）。
 
 ## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
 
