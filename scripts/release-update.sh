@@ -59,8 +59,11 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist
 EXE="dist/FlyingMouse Format-Setup-${VERSION}-x64.exe"
 [[ -f "$EXE" ]] || die "未找到安装包: $EXE"
 [[ -f dist/latest.yml ]] || die "未找到 latest.yml"
-BLOCKMAP=$(ls dist/*.blockmap 2>/dev/null | head -1)
-[[ -n "$BLOCKMAP" ]] || die "未找到 .blockmap"
+# blockmap 必须精确匹配当前版本，不能用 ls | head -1（dist 里可能残留旧版本
+# blockmap，字母序会取错，导致上传的 blockmap 与 exe 版本不配对、老用户
+# 自动更新下载差量包时校验失败）
+BLOCKMAP="dist/FlyingMouse Format-Setup-${VERSION}-x64.exe.blockmap"
+[[ -f "$BLOCKMAP" ]] || die "未找到与 v${VERSION} 配对的 .blockmap: $BLOCKMAP"
 
 LATEST_VER=$(grep '^version:' dist/latest.yml | head -1 | awk '{print $2}')
 [[ "$LATEST_VER" == "$VERSION" ]] || die "latest.yml 版本不匹配: $LATEST_VER != $VERSION"
