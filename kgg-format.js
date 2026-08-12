@@ -371,4 +371,4 @@ async function convertKgg(inputPath) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertKgg, loadKeyMap, candidateDbPaths };
+module.exports = { convertKgg, loadKeyMap, candidateDbPaths, ekeyDecrypt, createQMC2 };
