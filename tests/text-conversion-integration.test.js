@@ -203,11 +203,13 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.equal(capabilities.platform.standardNcm, true);
   assert.equal(capabilities.platform.av3a, process.platform === "win32");
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const imageSource = require("node:fs").readFileSync(path.join(__dirname, "..", "image.js"), "utf8");
+  const pdfTableSource = require("node:fs").readFileSync(path.join(__dirname, "..", "pdf-table.js"), "utf8");
   assert.doesNotMatch(serverSource, /limitInputPixels\s*:\s*false/);
-  assert.match(serverSource, /assertImagePdfBudget\(metadataList\)/);
-  assert.match(serverSource, /assertPdfPages\(pdf\.numPages\)/);
-  assert.match(serverSource, /"-cropbox"/);
-  assert.match(serverSource, /async function\* pages\(\)/);
+  assert.match(imageSource, /assertImagePdfBudget\(metadataList\)/);
+  assert.match(pdfTableSource, /assertPdfPages\(pdf\.numPages\)/);
+  assert.match(pdfTableSource, /"-cropbox"/);
+  assert.match(pdfTableSource, /async function\* pages\(\)/);
 });
 
 test("platform capabilities keep standard NCM cross-platform and AV3A Windows-only", () => {
@@ -222,7 +224,7 @@ test("platform capabilities keep standard NCM cross-platform and AV3A Windows-on
 test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
-  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js"]) {
+  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }

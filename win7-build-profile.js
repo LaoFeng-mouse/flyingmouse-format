@@ -28,7 +28,18 @@ const REQUIRED_RUNTIME_FILES = [
   "ncm-format.js",
   "ncm-metadata.js",
   "av3a-format.js",
-  "kgg-format.js"
+  "kgg-format.js",
+  "config.js",
+  "utils.js",
+  "media.js",
+  "zip-util.js",
+  "image.js",
+  "ocr.js",
+  "pdfjs.js",
+  "pdf-table.js",
+  "pdf.js",
+  "text-docx.js",
+  "office-convert.js"
 ];
 
 function cloneJson(value) {

@@ -77,7 +77,18 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "ncm-format.js",
     "ncm-metadata.js",
     "av3a-format.js",
-    "kgg-format.js"
+    "kgg-format.js",
+    "config.js",
+    "utils.js",
+    "media.js",
+    "zip-util.js",
+    "image.js",
+    "ocr.js",
+    "pdfjs.js",
+    "pdf-table.js",
+    "pdf.js",
+    "text-docx.js",
+    "office-convert.js"
   ]) {
     assert.ok(profile.build.files.includes(file), `missing ${file}`);
   }

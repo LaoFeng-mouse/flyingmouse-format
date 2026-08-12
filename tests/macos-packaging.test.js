@@ -165,10 +165,11 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
 test("Thai OCR is locked and packaged across standard, Win7, and macOS builds", () => {
   const packageJson = require("../package.json");
   const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const ocr = fs.readFileSync(path.join(root, "ocr.js"), "utf8");
   assert.equal(packageJson.dependencies["@tesseract.js-data/tha"], "1.0.0");
   assert.match(JSON.stringify(packageJson.build.win.extraResources), /tha\.traineddata\.gz/);
-  assert.match(server, /createWorker\("eng\+chi_sim\+tha"/);
-  assert.match(server, /tha\.traineddata\.gz/);
+  assert.match(ocr, /createWorker\("eng\+chi_sim\+tha"/);
+  assert.match(ocr, /tha\.traineddata\.gz/);
 
   const win7Lock = require("../win7-package-lock.json");
   assert.equal(win7Lock.packages[""].dependencies["@tesseract.js-data/tha"], "1.0.0");
