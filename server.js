@@ -20,6 +20,7 @@ const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects,
 const { convertRasterImage } = require("./image-conversion");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
 const { xmlToJson } = require("./xml-json");
+const { convertEbook, convertTextToEpub } = require("./ebook");
 const yaml = require("js-yaml");
 const {
   LIMITS,
@@ -34,6 +35,7 @@ const { convertNcm } = require("./ncm-format");
 const { buildNcmFfmpegOptions } = require("./ncm-metadata");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
+const { convertMflac } = require("./mflac-format");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
@@ -132,8 +134,8 @@ const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
-const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml"]);
-const textTargets = ["txt", "md", "html", "json", "csv"];
+const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml", "epub", "mobi"]);
+const textTargets = ["txt", "md", "html", "json", "csv", "epub"];
 const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd"]);
 const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html", "md"];
 const spreadsheetInput = new Set(["xls", "xlsx", "xlsm", "ods", "csv", "tsv", "et", "ett"]);
@@ -144,7 +146,7 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
@@ -154,7 +156,7 @@ const experimentalInputsByCategory = Object.freeze({
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
-  audio: ["kgg"]
+  audio: ["kgg", "mflac"]
 });
 const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([
@@ -266,6 +268,11 @@ function targetsForExt(rawExt, tools) {
     if (["txt", "md", "markdown", "html", "htm"].includes(normalizeExt(rawExt))) {
       targets.add("docx");
     }
+  }
+
+  // 电子书输入（EPUB/MOBI）是二进制容器，仅支持文本类目标；MOBI 只支持 EPUB/TXT/MD。
+  if (["epub", "mobi"].includes(normalizeExt(rawExt))) {
+    return [...targets].filter((target) => ["epub", "txt", "md", "zip"].includes(target));
   }
 
   if (category === "pdf") {
@@ -550,18 +557,53 @@ async function convertImage(inputPath, outputPath, target) {
   }
 }
 
-// sharp 的预编译构建不支持 BMP 输入；这里先把 BMP 解码成 PNG 临时文件，让下游统一走 PNG。
+// sharp 的预编译构建不支持 BMP 输入（无解码器）且 libheif 只编译了 AV1（AVIF），
+// HEIC/HEIF（HEVC 编码）能读元数据但解不了像素。这里统一中转：
+//   - BMP   -> 纯 JS 解码成 PNG
+//   - HEIC  -> 打包内置 ffmpeg（含 hevc 解码器）转 PNG
+// 让下游统一走 PNG。
 async function prepareImageInput(inputPath) {
-  // 先读 2 字节文件头判断（不整读大图）；只有 BMP 才解码进内存。
-  if (!isBmpFileSync(inputPath)) return { inputPath, tempDir: null };
+  // 先读文件头判断（不整读大图）；只有需要中转的格式才解码进内存。
+  if (isBmpFileSync(inputPath)) {
+    const { width, height, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
+    const pngPath = path.join(tempDir, "decoded.png");
+    await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
+      .png()
+      .toFile(pngPath);
+    return { inputPath: pngPath, tempDir };
+  }
 
-  const { width, height, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
-  const pngPath = path.join(tempDir, "decoded.png");
-  await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
-    .png()
-    .toFile(pngPath);
-  return { inputPath: pngPath, tempDir };
+  if (isHeicFileSync(inputPath)) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-heic-input-"));
+    const pngPath = path.join(tempDir, "decoded.png");
+    await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, pngPath], { timeout: 1000 * 60 * 5 });
+    if (!fs.existsSync(pngPath)) {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error("HEIC 图片解码失败：无法从该文件提取像素数据。");
+    }
+    return { inputPath: pngPath, tempDir };
+  }
+
+  return { inputPath, tempDir: null };
+}
+
+// HEIC/HEIF 是 ISO BMFF 容器（ftyp 盒子），major brand 为 heic/heif/mif1/heix/heim；
+// AVIF（avif/avis）sharp 原生可解，不在此中转范围。
+function isHeicFileSync(filePath) {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const header = Buffer.alloc(12);
+    const read = fs.readSync(fd, header, 0, 12, 0);
+    if (read < 12) return false;
+    const boxType = header.toString("latin1", 4, 8);
+    const majorBrand = header.toString("latin1", 8, 12).toLowerCase();
+    return boxType === "ftyp" && ["heic", "heif", "mif1", "heix", "heim"].includes(majorBrand);
+  } catch {
+    return false;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 async function inspectImageMetadata(inputPath, animated = false) {
@@ -684,7 +726,7 @@ function pdfNumber(value) {
 
 async function readImageForPdf(inputPath) {
   // sharp 的预编译构建不支持 BMP 输入：批量/ZIP 图片合并 PDF 时直接解码 BMP。
-  // 先读 2 字节文件头判断，避免把非 BMP 大图整读进内存。
+  // 先读文件头判断，避免把非 BMP 大图整读进内存。
   if (isBmpFileSync(inputPath)) {
     const rawBmp = decodeBmpToRaw(fs.readFileSync(inputPath));
     return {
@@ -694,6 +736,22 @@ async function readImageForPdf(inputPath) {
     };
   }
 
+  // HEIC/HEIF（HEVC）sharp 解不了像素，用 ffmpeg 转 PNG 再提取 raw。
+  if (isHeicFileSync(inputPath)) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-heic-pdf-"));
+    try {
+      const pngPath = path.join(tempDir, "decoded.png");
+      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, pngPath], { timeout: 1000 * 60 * 5 });
+      return await readPngAsPdfImage(pngPath);
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  return readPngAsPdfImage(inputPath);
+}
+
+async function readPngAsPdfImage(inputPath) {
   const { data, info } = await sharp(inputPath, { limitInputPixels: LIMITS.maxImagePixels })
     .rotate()
     .flatten({ background: "#ffffff" })
@@ -2212,7 +2270,13 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "image") {
       conversionResult = await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
-      await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
+      if (["epub", "mobi"].includes(inputExt)) {
+        await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
+      } else if (requestedTarget === "epub") {
+        await convertTextToEpub(await fsp.readFile(file.path, "utf8"), inputExt, originalName, outputPath);
+      } else {
+        await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
+      }
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget, {
         pdfAction: String(req.body?.pdfAction || ""),
@@ -2238,10 +2302,11 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg")) {
-        const decrypted = inputExt === "ncm"
-          ? await convertNcm(file.path)
-          : await convertKgg(file.path);
+      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac")) {
+        let decrypted;
+        if (inputExt === "ncm") decrypted = await convertNcm(file.path);
+        else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
+        else decrypted = await convertMflac(file.path);
         try {
           const conversionInput = inputExt === "ncm"
             ? await prepareDecryptedAudio(decrypted)
