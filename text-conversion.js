@@ -202,6 +202,49 @@ function csvToMarkdown(csv) {
   ].join("\n");
 }
 
+// CSV -> HTML 表格：严格解析（同 csvToMarkdown），生成带边框的 HTML 表格。
+// 用于 csv->html 直接输出与 csv->pdf（HTML 中转 LibreOffice）——LibreOffice 的
+// csv 导入过滤器在 headless 下是假成功（exit 0 但零输出），不能直接转。
+function csvToHtmlTable(csv) {
+  let records;
+  try {
+    records = parse(String(csv || ""), {
+      bom: true,
+      skip_empty_lines: true,
+      relax_column_count: false,
+      relax_quotes: false
+    });
+  } catch (error) {
+    const wrapped = new Error(`CSV 解析失败：列数或引号格式不合法。${error?.message ? ` ${error.message}` : ""}`);
+    wrapped.code = "CSV_PARSE_FAILED";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  if (!records.length) return "<p>（空 CSV）</p>";
+  const width = Math.max(...records.map((row) => row.length));
+  const normalized = records.map((row) => [...row, ...Array(width - row.length).fill("")]);
+  const cell = (value) => `<td>${escapeHtmlText(String(value ?? ""))}</td>`;
+  const rows = normalized.map((row) => `<tr>${row.map(cell).join("")}</tr>`).join("\n");
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CSV table</title>
+<style>
+body{font-family:Arial,"Microsoft YaHei",sans-serif;margin:24px}
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #999;padding:6px 10px;text-align:left;vertical-align:top}
+tr:first-child{font-weight:bold;background:#f5f5f5}
+</style>
+</head>
+<body>
+<table>
+${rows}
+</table>
+</body>
+</html>`;
+}
+
 function stableJsonStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
   if (value && typeof value === "object") {
@@ -244,4 +287,4 @@ function jsonToCsv(jsonText) {
   ].join("\n");
 }
 
-module.exports = { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, csvToMarkdown, jsonToCsv };
+module.exports = { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, csvToMarkdown, csvToHtmlTable, jsonToCsv };
