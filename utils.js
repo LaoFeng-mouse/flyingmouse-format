@@ -10,6 +10,7 @@ const logger = require("./logger");
 const {
   OUTPUT_DIR,
   imageInput,
+  rawInput,
   imageFormatTargets,
   imageVideoTargets,
   imageOcrTargets,
@@ -90,7 +91,7 @@ function normalizeExt(ext) {
 
 function categoryForExt(rawExt) {
   const ext = normalizeExt(rawExt);
-  if (imageInput.has(ext) || imageInput.has(rawExt)) return "image";
+  if (imageInput.has(ext) || imageInput.has(rawExt) || rawInput.has(ext) || rawInput.has(rawExt)) return "image";
   if (pdfInput.has(ext) || pdfInput.has(rawExt)) return "pdf";
   if (documentInput.has(ext) || documentInput.has(rawExt)) return "document";
   if (spreadsheetInput.has(ext) || spreadsheetInput.has(rawExt)) return "spreadsheet";

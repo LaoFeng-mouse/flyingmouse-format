@@ -68,12 +68,27 @@ function bundledTessdataPath() {
   return candidates.find((candidate) => fs.existsSync(path.join(candidate, "eng.traineddata.gz"))) || candidates[0] || "";
 }
 
+function bundledDcrawPath() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_DCRAW_PATH,
+    resourcesPath && path.join(resourcesPath, "dcraw", "dcraw.exe"),
+    path.join(ROOT, "bin", "dcraw", "dcraw.exe"),
+    path.join(process.cwd(), "bin", "dcraw", "dcraw.exe")
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
 const FFMPEG_PATH = bundledFfmpegPath();
 const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
+const DCRAW_PATH = bundledDcrawPath();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
+// 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
+const rawInput = new Set(["cr2", "cr3", "crw", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "3fr", "erf", "fff", "iiq", "kdc", "mef", "mrw", "x3f"]);
 const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
@@ -90,13 +105,14 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
   image: ["heic", "heif"],
+  raw: [...rawInput],
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
@@ -128,7 +144,9 @@ module.exports = {
   LIBREOFFICE_PATH,
   PDFTOPPM_PATH,
   TESSDATA_PATH,
+  DCRAW_PATH,
   imageInput,
+  rawInput,
   imageFormatTargets,
   imageVideoTargets,
   imageOcrTargets,

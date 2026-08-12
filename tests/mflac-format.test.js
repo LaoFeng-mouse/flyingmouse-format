@@ -4,7 +4,8 @@ const os = require("node:os");
 const fsp = require("node:fs/promises");
 const { test } = require("node:test");
 
-const { convertMflac, parseMflacFooter, loadQqMusicCredentials } = require("../mflac-format");
+const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials } = require("../mflac-format");
+const { QMC2MAP, QMC2RC4 } = require("../kgg-format");
 
 // 隔离真实桌面凭据：默认 cookie 路径指向不存在的文件，确保测试不读真实凭据、不发起网络请求。
 const { before, after } = require("node:test");
@@ -114,4 +115,67 @@ test("loadQqMusicCredentials returns null when no cookie file exists", async () 
   } finally {
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+});
+
+// ---- EncV2（mgg 新版）回归：fixture 是真实 EncV2 mgg 的 v1 key 区域（仅密钥材料，不含音频内容）----
+const ENCV2_KEY_FIXTURE = path.join(__dirname, "fixtures", "mgg-encv2-key.bin");
+const fixtureExists = require("node:fs").existsSync(ENCV2_KEY_FIXTURE);
+
+test("parseV1KeyRegion detects EncV2 key region from a real mgg key fixture", { skip: !fixtureExists }, () => {
+  const keyRegion = require("node:fs").readFileSync(ENCV2_KEY_FIXTURE);
+  const parsed = parseV1KeyRegion(keyRegion);
+  assert.equal(parsed.type, "encv2");
+  assert.ok(parsed.ekey.length > 0, "EncV2 应解出内层 ekey");
+});
+
+test("deriveQmcKey produces a 256-byte QMC2 key from the EncV2 fixture", { skip: !fixtureExists }, () => {
+  const keyRegion = require("node:fs").readFileSync(ENCV2_KEY_FIXTURE);
+  const parsed = parseV1KeyRegion(keyRegion);
+  const finalKey = deriveQmcKey(parsed.ekey);
+  assert.equal(finalKey.length, 256);
+  assert.ok(finalKey.length < 300, "256 字节 key 应走 QMC2MAP 路径");
+});
+
+test("convertMflac decrypts an EncV2 mgg built from the fixture key (OggS output)", { skip: !fixtureExists }, async () => {
+  const keyRegion = require("node:fs").readFileSync(ENCV2_KEY_FIXTURE);
+  const parsed = parseV1KeyRegion(keyRegion);
+  const finalKey = deriveQmcKey(parsed.ekey);
+  const cipher = finalKey.length < 300 ? new QMC2MAP(finalKey) : new QMC2RC4(finalKey);
+
+  // 合成 OggS 音频（测试自造，无版权内容），用真实 key 加密
+  const ogg = Buffer.concat([
+    Buffer.from("OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00", "latin1"),
+    Buffer.alloc(2048, 0x5a)
+  ]);
+  const encrypted = Buffer.from(ogg);
+  cipher.decrypt(encrypted, 0); // QMC2 XOR 加密与解密同函数
+
+  const tail = Buffer.alloc(4);
+  tail.writeUInt32LE(keyRegion.length, 0);
+  const file = Buffer.concat([encrypted, keyRegion, tail]);
+
+  const dir = await tmpDir();
+  try {
+    const mggPath = path.join(dir, "sample.mgg");
+    await fsp.writeFile(mggPath, file);
+    const result = await convertMflac(mggPath);
+    assert.equal(result.format, "ogg");
+    const out = await fsp.readFile(result.nativePath);
+    assert.equal(out.subarray(0, 4).toString("latin1"), "OggS");
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("static: config exposes mgg input and server dispatches mgg to convertMflac", () => {
+  const fs = require("node:fs");
+  const configSource = fs.readFileSync(path.join(__dirname, "..", "config.js"), "utf8");
+  assert.ok(configSource.includes('"mflac", "mgg"'), "audioInput 应包含 mgg");
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.ok(
+    serverSource.includes('inputExt === "mflac" || inputExt === "mgg"'),
+    "server.js 应把 mgg 分发给解密链路"
+  );
+  const mflacSource = fs.readFileSync(path.join(__dirname, "..", "mflac-format.js"), "utf8");
+  assert.ok(mflacSource.includes("QQMusic EncV2,Key:"), "mflac-format.js 应实现 EncV2 前缀处理");
 });
