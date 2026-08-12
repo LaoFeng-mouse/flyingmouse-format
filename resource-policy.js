@@ -3,7 +3,7 @@ const LIMITS = Object.freeze({
   maxImageDimension: 16_384,
   maxImagePdfPixels: 100_000_000,
   maxBatchBytes: 2 * 1024 * 1024 * 1024,
-  maxPdfPages: 500,
+  maxPdfPages: 1500,
   maxOcrPdfPages: 100
 });
 
@@ -37,14 +37,21 @@ const MESSAGES = Object.freeze({
     enUS: "The PDF page count could not be read. Make sure the PDF is valid."
   },
   PDF_PAGES_EXCEEDED: {
-    zhCN: "PDF 超过 500 页限制，请拆分后重试。",
-    enUS: "The PDF exceeds the 500 page limit. Split it and try again."
+    zhCN: `PDF 超过 ${LIMITS.maxPdfPages} 页限制（当前 {pages} 页）。可用「PDF→PDF 拆分」先拆分，或分批转换。`,
+    enUS: `The PDF exceeds the ${LIMITS.maxPdfPages} page limit ({pages} pages). Split it with PDF→PDF or convert it in parts.`
   },
   OCR_PDF_PAGES_EXCEEDED: {
-    zhCN: "OCR 最多处理 100 页 PDF，请拆分后重试。",
-    enUS: "OCR supports PDFs up to 100 pages. Split the PDF and try again."
+    zhCN: `OCR 最多处理 ${LIMITS.maxOcrPdfPages} 页 PDF，请拆分后重试。`,
+    enUS: `OCR supports PDFs up to ${LIMITS.maxOcrPdfPages} pages. Split the PDF and try again.`
   }
 });
+
+// 把消息里的 {key} 占位符替换为 details 里的值（如 {pages}）
+function renderMessage(text, details) {
+  return String(text).replace(/\{(\w+)\}/g, (match, key) =>
+    details[key] != null ? String(details[key]) : match
+  );
+}
 
 class ResourceLimitError extends Error {
   constructor(errorCode, details = {}) {
@@ -52,10 +59,13 @@ class ResourceLimitError extends Error {
       zhCN: "文件超出资源限制。",
       enUS: "The file exceeds a resource limit."
     };
-    super(messages.zhCN);
+    super(renderMessage(messages.zhCN, details));
     this.name = "ResourceLimitError";
     this.errorCode = errorCode;
-    this.messages = messages;
+    this.messages = {
+      zhCN: renderMessage(messages.zhCN, details),
+      enUS: renderMessage(messages.enUS, details)
+    };
     this.details = details;
   }
 }

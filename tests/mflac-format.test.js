@@ -4,7 +4,7 @@ const os = require("node:os");
 const fsp = require("node:fs/promises");
 const { test } = require("node:test");
 
-const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials } = require("../mflac-format");
+const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, musicexFallbackFilenames, loadQqMusicCredentials } = require("../mflac-format");
 const { QMC2MAP, QMC2RC4 } = require("../kgg-format");
 
 // 隔离真实桌面凭据：默认 cookie 路径指向不存在的文件，确保测试不读真实凭据、不发起网络请求。
@@ -178,4 +178,22 @@ test("static: config exposes mgg input and server dispatches mgg to convertMflac
   );
   const mflacSource = fs.readFileSync(path.join(__dirname, "..", "mflac-format.js"), "utf8");
   assert.ok(mflacSource.includes("QQMusic EncV2,Key:"), "mflac-format.js 应实现 EncV2 前缀处理");
+});
+
+test("musicexFallbackFilenames 按音质从高到低生成降档候选", () => {
+  const list = musicexFallbackFilenames("00225ydR0y8KTj");
+  assert.deepEqual(
+    list.map((x) => x.filename),
+    ["F0M00225ydR0y8KTj.mflac", "O4M00225ydR0y8KTj.mgg", "M50000225ydR0y8KTj.mp3"]
+  );
+  assert.ok(list[0].label.includes("FLAC"), "优先 FLAC 无损档");
+});
+
+test("static: musicex 原档无权限时自动降档下载（F0M/O4M/M500）", () => {
+  const fs = require("node:fs");
+  const mflacSource = fs.readFileSync(path.join(__dirname, "..", "mflac-format.js"), "utf8");
+  assert.ok(mflacSource.includes("resolveMusicex"), "应存在 musicex 解析函数");
+  assert.ok(mflacSource.includes("downloadMusicexFile"), "应存在 CDN 下载函数");
+  assert.ok(mflacSource.includes('`F0M${mediaMid}.mflac`'), "降档应包含 F0M 档");
+  assert.ok(mflacSource.includes("所有音质档位"), "全无权限时应报明确错误");
 });

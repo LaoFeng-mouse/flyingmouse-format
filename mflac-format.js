@@ -211,7 +211,8 @@ async function loadQqMusicCredentials(cookiePath) {
   return null;
 }
 
-// 调 QQ 音乐 GetEVkey 接口获取 ekey（仅传歌曲 ID 与文件名）
+// 调 QQ 音乐 GetEVkey 接口获取 ekey（仅传歌曲 ID 与文件名）。
+// 返回 { ekey, purl, sip }；ekey 为空 = 该档位当前账号无权限（非网络错误，交给调用方降档）。
 async function fetchEkeyFromApi(creds, filename, songMid) {
   const body = {
     comm: {
@@ -251,12 +252,70 @@ async function fetchEkeyFromApi(creds, filename, songMid) {
     });
     if (!response.ok) throw qmcError(`QQ 音乐接口返回 HTTP ${response.status}。`, "MFLAC_EKEY_NETWORK");
     const data = await response.json();
-    const ekey = data?.req_1?.data?.midurlinfo?.[0]?.ekey;
-    if (!ekey) throw qmcError("QQ 音乐接口未返回密钥，登录状态可能已过期。", "MFLAC_EKEY_NETWORK");
-    return ekey;
+    const info = data?.req_1?.data?.midurlinfo?.[0] || {};
+    const sip = data?.req_1?.data?.sip;
+    return { ekey: info.ekey || "", purl: info.purl || "", sip: Array.isArray(sip) ? sip : [] };
   } finally {
     clearTimeout(timer);
   }
+}
+
+// musicex 无权限时的降档候选（同一首歌的较低音质档位，文件名 = 档位前缀 + songmid）
+function musicexFallbackFilenames(mediaMid) {
+  return [
+    { filename: `F0M${mediaMid}.mflac`, label: "FLAC 无损" },
+    { filename: `O4M${mediaMid}.mgg`, label: "OGG 高音质" },
+    { filename: `M500${mediaMid}.mp3`, label: "MP3 320k" }
+  ];
+}
+
+// 下载 QQ 音乐官方 CDN 加密文件（purl 相对路径 + sip 前缀逐个尝试）
+async function downloadMusicexFile(purl, sip) {
+  const bases = [...new Set([...(sip || []).filter(Boolean), "https://dl.stream.qqmusic.qq.com/"])];
+  let lastError = null;
+  for (const base of bases) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const resp = await fetch(base + purl, { signal: controller.signal });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (buf.length > 10000) return buf;
+      throw new Error("下载内容过小");
+    } catch (e) {
+      lastError = e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw qmcError(`下载加密音频失败：${lastError ? lastError.message : "未知错误"}。`, "MFLAC_EKEY_NETWORK");
+}
+
+// 解析 musicex 密钥：先原档，无权限自动降档下载；返回 { type, ekey, fileBuf?, audioEnd? }
+async function resolveMusicex(creds, footer, originalFilename) {
+  const first = await fetchEkeyFromApi(creds, originalFilename, footer.mediaMid);
+  if (first.ekey) return { type: "direct", ekey: first.ekey };
+
+  for (const fb of musicexFallbackFilenames(footer.mediaMid)) {
+    const info = await fetchEkeyFromApi(creds, fb.filename, footer.mediaMid);
+    if (!info.ekey || !info.purl) continue;
+    const fileBuf = await downloadMusicexFile(info.purl, info.sip);
+    // 下载档位的文件可能带 musicex footer，也可能是无 footer 的裸 QMC2 加密体
+    const fbFooter = parseMflacFooter(fileBuf);
+    const audioEnd = fbFooter.type === "musicex" ? fileBuf.length - fbFooter.footerSize : fileBuf.length;
+    return {
+      type: "downloaded",
+      ekey: info.ekey,
+      fileBuf,
+      audioEnd,
+      note: fb.label
+    };
+  }
+
+  throw qmcError(
+    "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
+    "MFLAC_EKEY_NETWORK"
+  );
 }
 
 function detectAudioFormat(buf) {
@@ -275,6 +334,7 @@ async function convertMflac(inputPath, options = {}) {
   let ekey = null;
   let qmc2 = null;
   let audioEnd = buf.length;
+  let audioSource = buf;
 
   if (footer.type === "v1") {
     const keyStart = buf.length - 4 - footer.keySize;
@@ -304,7 +364,13 @@ async function convertMflac(inputPath, options = {}) {
         "MFLAC_EKEY_REQUIRED"
       );
     }
-    ekey = await fetchEkeyFromApi(creds, apiFilename, footer.mediaMid);
+    // 先原档换密钥；原档无权限时自动尝试同一首歌的其他音质档位（F0M 无损/O4M/M500）
+    const resolved = await resolveMusicex(creds, footer, apiFilename);
+    if (resolved.type === "downloaded") {
+      audioSource = resolved.fileBuf;
+      audioEnd = resolved.audioEnd;
+    }
+    ekey = resolved.ekey;
   } else {
     throw qmcError("无法识别这个 MFLAC 的加密版本（footer 缺失或格式未知）。");
   }
@@ -316,7 +382,7 @@ async function convertMflac(inputPath, options = {}) {
     if (!qmc2) throw qmcError("MFLAC 密钥不合法。");
   }
 
-  const audio = Buffer.from(buf.subarray(0, audioEnd));
+  const audio = Buffer.from(audioSource.subarray(0, audioEnd));
   qmc2.decrypt(audio, 0);
   const format = detectAudioFormat(audio);
   if (format === "unknown") {
@@ -329,4 +395,4 @@ async function convertMflac(inputPath, options = {}) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi };
+module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames };

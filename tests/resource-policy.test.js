@@ -17,7 +17,7 @@ test("resource limits expose the agreed cross-platform budgets", () => {
     maxImageDimension: 16_384,
     maxImagePdfPixels: 100_000_000,
     maxBatchBytes: 2 * 1024 * 1024 * 1024,
-    maxPdfPages: 500,
+    maxPdfPages: 1500,
     maxOcrPdfPages: 100
   });
 });
@@ -64,10 +64,10 @@ test("batch byte and PDF page budgets use separate stable errors", () => {
     () => assertBatchBytes([{ size: LIMITS.maxBatchBytes }, { size: 1 }]),
     (error) => error instanceof ResourceLimitError && error.errorCode === "BATCH_BYTES_EXCEEDED"
   );
-  assert.equal(assertPdfPages(500), 500);
+  assert.equal(assertPdfPages(1500), 1500);
   assert.equal(assertPdfPages(100, { ocr: true }), 100);
   assert.throws(
-    () => assertPdfPages(501),
+    () => assertPdfPages(1501),
     (error) => error instanceof ResourceLimitError && error.errorCode === "PDF_PAGES_EXCEEDED"
   );
   assert.throws(
