@@ -113,9 +113,13 @@ function setupAutoUpdater() {
   });
 }
 
-ipcMain.handle("get-app-version", () => app.getVersion());
+ipcMain.handle("get-app-version", (event) => {
+  assertTrustedIpc(event);
+  return app.getVersion();
+});
 
-ipcMain.handle("check-for-updates", async () => {
+ipcMain.handle("check-for-updates", async (event) => {
+  assertTrustedIpc(event);
   if (!updater) {
     return { status: "unavailable" };
   }
