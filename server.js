@@ -153,7 +153,9 @@ const {
   LIBREOFFICE_PATH,
   PDFTOPPM_PATH,
   TESSDATA_PATH,
+  DCRAW_PATH,
   imageInput,
+  rawInput,
   imageFormatTargets,
   imageVideoTargets,
   imageOcrTargets,
@@ -315,7 +317,7 @@ app.get("/api/capabilities", async (_req, res) => {
     maxUploadBytes: MAX_UPLOAD_BYTES,
     limits: LIMITS,
     groups: {
-      image: { inputs: [...imageInput].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])], experimentalInputs: experimentalInputsByCategory.image },
+      image: { inputs: [...imageInput, ...(DCRAW_PATH ? rawInput : [])].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])], experimentalInputs: [...(experimentalInputsByCategory.image || []), ...(DCRAW_PATH ? rawInput : [])].sort() },
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
       document: { inputs: [...documentInput].sort(), targets: documentTargets, experimentalInputs: experimentalInputsByCategory.document },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
@@ -532,7 +534,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac")) {
+      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg")) {
         let decrypted;
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);

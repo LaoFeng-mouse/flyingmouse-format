@@ -12,6 +12,7 @@ const candidateLo = "C:\\Users\\34615\\AppData\\Local\\Programs\\FlyingMouse For
 const LO_AVAILABLE = require("node:fs").existsSync(candidateLo);
 if (LO_AVAILABLE) process.env.FLYINGMOUSE_LIBREOFFICE_PATH = candidateLo;
 const { startServer, platformCapabilities } = require("../server");
+const { DCRAW_PATH, rawInput } = require("../config");
 
 let server;
 let baseUrl;
@@ -195,7 +196,7 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
     maxPdfPages: 500,
     maxOcrPdfPages: 100
   });
-  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"]);
+  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);

@@ -3,25 +3,27 @@
   "repository": "LaoFeng-mouse/flyingmouse-format",
   "releaseTag": "ci-engines-v1",
   "assetName": "ci-engines-v1.tar.zst",
-  "sha256": "823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a",
+  "sha256": "d7d760093a9d690f2197766b82c83abe4c097fb12a96143642fa7c72862fc05a",
   "requiredFiles": [
     "ffmpeg/ffmpeg.exe",
     "poppler/Library/bin/pdftoppm.exe",
     "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
     "tessdata/eng.traineddata.gz",
-    "tessdata/chi_sim.traineddata.gz"
+    "tessdata/chi_sim.traineddata.gz",
+    "dcraw/dcraw.exe"
   ],
   "assets": {
     "win32-x64": {
       "available": true,
       "assetName": "ci-engines-v1.tar.zst",
-      "sha256": "823980b5cb3de40b9013106264e02196f6f95d471a1bd3e78917de3e2d26f98a",
+      "sha256": "d7d760093a9d690f2197766b82c83abe4c097fb12a96143642fa7c72862fc05a",
       "requiredFiles": [
         "ffmpeg/ffmpeg.exe",
         "poppler/Library/bin/pdftoppm.exe",
         "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
         "tessdata/eng.traineddata.gz",
-        "tessdata/chi_sim.traineddata.gz"
+        "tessdata/chi_sim.traineddata.gz",
+        "dcraw/dcraw.exe"
       ]
     },
     "darwin-arm64": {

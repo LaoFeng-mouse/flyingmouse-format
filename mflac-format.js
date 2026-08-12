@@ -10,7 +10,7 @@ const path = require("path");
 const os = require("os");
 const fsp = require("fs/promises");
 
-const { ekeyDecrypt, createQMC2 } = require("./kgg-format");
+const { ekeyDecrypt, createQMC2, QMC2MAP, QMC2RC4 } = require("./kgg-format");
 
 const FLAC_HEADER = Buffer.from("fLaC", "latin1");
 const OGG_HEADER = Buffer.from("OggS", "latin1");
@@ -36,6 +36,120 @@ function qmcError(message, code = "MFLAC_DECRYPT_FAILED") {
 }
 
 // 解析尾部 footer：musicex / QTag / V1（keyLen）
+// ---- 标准腾讯 TEA（unlock-music qmc_key.ts 移植，mgg/mflac EncV2 变体用）----
+const TEA_DELTA = 0x9e3779b9;
+const MIX_KEY1 = Buffer.from([0x33, 0x38, 0x36, 0x5a, 0x4a, 0x59, 0x21, 0x40, 0x23, 0x2a, 0x24, 0x25, 0x5e, 0x26, 0x29, 0x28]);
+const MIX_KEY2 = Buffer.from([0x2a, 0x2a, 0x23, 0x21, 0x28, 0x23, 0x24, 0x25, 0x26, 0x5e, 0x61, 0x31, 0x63, 0x5a, 0x2c, 0x54]);
+
+class TeaCipher {
+  constructor(key, rounds = 64) {
+    if (key.length !== 16) throw new Error("incorrect key size");
+    const k = new DataView(key.buffer, key.byteOffset, 16);
+    this.k0 = k.getUint32(0, false);
+    this.k1 = k.getUint32(4, false);
+    this.k2 = k.getUint32(8, false);
+    this.k3 = k.getUint32(12, false);
+    this.rounds = rounds;
+  }
+  decrypt(dst, src) {
+    let v0 = src.getUint32(0, false);
+    let v1 = src.getUint32(4, false);
+    let sum = (TEA_DELTA * this.rounds) / 2;
+    for (let i = 0; i < this.rounds / 2; i += 1) {
+      v1 -= ((v0 << 4) + this.k2) ^ (v0 + sum) ^ ((v0 >>> 5) + this.k3);
+      v0 -= ((v1 << 4) + this.k0) ^ (v1 + sum) ^ ((v1 >>> 5) + this.k1);
+      sum -= TEA_DELTA;
+    }
+    dst.setUint32(0, v0, false);
+    dst.setUint32(4, v1, false);
+  }
+}
+
+// 腾讯 TEA-CBC：密文格式 PadLen(1)+Padding(0-7)+Salt(2)+Body+Zero(7)
+function decryptTencentTea(inBuf, key) {
+  if (inBuf.length % 8 !== 0) throw new Error("inBuf size not a multiple of the block size");
+  if (inBuf.length < 16) throw new Error("inBuf size too small");
+  const blk = new TeaCipher(key, 32);
+  const tmpBuf = new Uint8Array(8);
+  const tmpView = new DataView(tmpBuf.buffer);
+  blk.decrypt(tmpView, new DataView(inBuf.buffer, inBuf.byteOffset, 8));
+  const nPadLen = tmpBuf[0] & 0x7;
+  const outLen = inBuf.length - 1 - nPadLen - 2 - 7;
+  const outBuf = new Uint8Array(outLen);
+  let ivPrev = new Uint8Array(8);
+  let ivCur = inBuf.slice(0, 8);
+  let inBufPos = 8;
+  let tmpIdx = 1 + nPadLen;
+  const cryptBlock = () => {
+    ivPrev = ivCur;
+    ivCur = inBuf.slice(inBufPos, inBufPos + 8);
+    for (let j = 0; j < 8; j += 1) tmpBuf[j] ^= ivCur[j];
+    blk.decrypt(tmpView, tmpView);
+    inBufPos += 8;
+    tmpIdx = 0;
+  };
+  for (let i = 1; i <= 2; ) {
+    if (tmpIdx < 8) { tmpIdx += 1; i += 1; } else { cryptBlock(); }
+  }
+  let outBufPos = 0;
+  while (outBufPos < outLen) {
+    if (tmpIdx < 8) {
+      outBuf[outBufPos] = tmpBuf[tmpIdx] ^ ivPrev[tmpIdx];
+      outBufPos += 1;
+      tmpIdx += 1;
+    } else {
+      cryptBlock();
+    }
+  }
+  return outBuf;
+}
+
+function simpleMakeKey(salt, length) {
+  const keyBuf = [];
+  for (let i = 0; i < length; i += 1) {
+    const tmp = Math.tan(salt + i * 0.1);
+    keyBuf[i] = 0xff & (Math.abs(tmp) * 100.0);
+  }
+  return keyBuf;
+}
+
+// 解析 v1 key 区域：新版（EncV2）key 区域是 base64 文本，解码后以
+// "QQMusic EncV2,Key:" 开头；旧版 key 区域是二进制 ekey（32 字节）。
+function parseV1KeyRegion(keyRegion) {
+  let decoded;
+  try {
+    decoded = Buffer.from(keyRegion.toString("utf8"), "base64");
+  } catch {
+    return { type: "legacy" };
+  }
+  if (
+    decoded.length >= QMC2_ENCV2_PREFIX.length &&
+    decoded.subarray(0, QMC2_ENCV2_PREFIX.length).toString("latin1") === QMC2_ENCV2_PREFIX
+  ) {
+    let out = decryptTencentTea(decoded.subarray(QMC2_ENCV2_PREFIX.length), MIX_KEY1);
+    out = decryptTencentTea(out, MIX_KEY2);
+    // 第二层明文是 ekey 字节的逗号分隔十进制序列（如 "77,70,104,81,..."）
+    const nums = out.toString("utf8").split(",").map((s) => parseInt(s, 10));
+    const numBuf = Buffer.from(nums);
+    const text = numBuf.toString("latin1");
+    const ekey = /^[A-Za-z0-9+/=\r\n]+$/.test(text) ? Buffer.from(text, "base64") : numBuf;
+    return { type: "encv2", ekey };
+  }
+  return { type: "legacy" };
+}
+
+// EncV2 内层派生（unlock-music QmcDeriveKey）：simpleKey(106,8) 交错 + TEA → 流密钥
+function deriveQmcKey(ekeyBinary) {
+  const simpleKey = simpleMakeKey(106, 8);
+  const teaKey = new Uint8Array(16);
+  for (let i = 0; i < 8; i += 1) {
+    teaKey[i << 1] = simpleKey[i];
+    teaKey[(i << 1) + 1] = ekeyBinary[i];
+  }
+  const sub = decryptTencentTea(ekeyBinary.subarray(8), teaKey);
+  return Buffer.concat([ekeyBinary.subarray(0, 8), Buffer.from(sub)]);
+}
+
 function parseMflacFooter(buffer) {
   if (buffer.length >= 16 && buffer.subarray(buffer.length - 8).equals(MUSICEX_MAGIC)) {
     const version = buffer.readUInt32LE(buffer.length - 12);
@@ -159,12 +273,22 @@ async function convertMflac(inputPath, options = {}) {
   if (buf.length < 16) throw qmcError("MFLAC 文件不完整。");
   const footer = parseMflacFooter(buf);
   let ekey = null;
+  let qmc2 = null;
   let audioEnd = buf.length;
 
   if (footer.type === "v1") {
     const keyStart = buf.length - 4 - footer.keySize;
     audioEnd = keyStart;
-    ekey = buf.subarray(keyStart, buf.length - 4).toString("base64");
+    const keyRegion = buf.subarray(keyStart, buf.length - 4);
+    const parsed = parseV1KeyRegion(keyRegion);
+    if (parsed.type === "encv2") {
+      // mgg/mflac 新版（EncV2）：双 TEA + 逗号序列解析 + 内层派生 → 直接构造流密码
+      const finalKey = deriveQmcKey(parsed.ekey);
+      qmc2 = finalKey.length < 300 ? new QMC2MAP(finalKey) : new QMC2RC4(finalKey);
+    } else {
+      // 旧版：key 区域是二进制 ekey（32 字节），base64 编码后走 ekeyDecrypt
+      ekey = keyRegion.toString("base64");
+    }
   } else if (footer.type === "qtag") {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
@@ -185,10 +309,12 @@ async function convertMflac(inputPath, options = {}) {
     throw qmcError("无法识别这个 MFLAC 的加密版本（footer 缺失或格式未知）。");
   }
 
-  const key = ekeyDecrypt(ekey);
-  if (!key || key.length < 8) throw qmcError("MFLAC 密钥解析失败。");
-  const qmc2 = createQMC2(ekey);
-  if (!qmc2) throw qmcError("MFLAC 密钥不合法。");
+  if (!qmc2) {
+    const key = ekeyDecrypt(ekey);
+    if (!key || key.length < 8) throw qmcError("MFLAC 密钥解析失败。");
+    qmc2 = createQMC2(ekey);
+    if (!qmc2) throw qmcError("MFLAC 密钥不合法。");
+  }
 
   const audio = Buffer.from(buf.subarray(0, audioEnd));
   qmc2.decrypt(audio, 0);
@@ -203,4 +329,4 @@ async function convertMflac(inputPath, options = {}) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertMflac, parseMflacFooter, loadQqMusicCredentials, fetchEkeyFromApi };
+module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi };

@@ -9,7 +9,8 @@ const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const sharp = require("sharp");
-const { FFMPEG_PATH } = require("./config");
+const { FFMPEG_PATH, DCRAW_PATH, rawInput } = require("./config");
+const RAW_EXTENSIONS = rawInput;
 const { run } = require("./utils");
 const {
   LIMITS,
@@ -77,7 +78,41 @@ async function prepareImageInput(inputPath) {
     return { inputPath: pngPath, tempDir };
   }
 
+  // 相机 RAW 原片（CR2/NEF/ARW/DNG 等）：sharp/libvips 无 dcraw delegate，用打包内置
+  // dcraw.exe 解出 16-bit TIFF（sRGB）让下游统一走 sharp。
+  if (isRawFileSync(inputPath)) {
+    if (!DCRAW_PATH) {
+      throw new Error("RAW 解码引擎（dcraw）不可用：未找到 dcraw.exe。");
+    }
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-raw-input-"));
+    // dcraw 不支持 -O（部分版本报 Unknown option），输出 <basename>.tiff 固定生成在输入
+    // 所在目录。先把输入复制到临时目录再解码：源目录可能只读（U 盘/系统目录），
+    // 且避免在用户目录残留 .tiff。
+    const tempInput = path.join(tempDir, path.basename(inputPath));
+    await fsp.copyFile(inputPath, tempInput);
+    // dcraw -T 输出 16-bit TIFF；-o 1 = sRGB 色彩空间（默认 ACES 线性会偏灰，勿去掉）
+    await run(DCRAW_PATH, ["-T", "-o", "1", tempInput], { timeout: 1000 * 60 * 5 });
+    const stem = path.basename(tempInput, path.extname(tempInput));
+    const tiffCandidates = [
+      path.join(tempDir, `${stem}.tiff`),
+      path.join(tempDir, `${stem}.tif`)
+    ];
+    const tiffPath = tiffCandidates.find((c) => fs.existsSync(c));
+    if (!tiffPath) {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error("RAW 图片解码失败：无法从该文件提取像素数据。");
+    }
+    return { inputPath: tiffPath, tempDir };
+  }
+
   return { inputPath, tempDir: null };
+}
+
+// 相机 RAW 扩展名白名单（与 config.rawInput 对应；按扩展名判断，不读文件头——
+// RAW 无统一魔数，dcraw 靠内容识别，这里先按扩展名分流）
+function isRawFileSync(filePath) {
+  const ext = path.extname(filePath).toLowerCase().replace(/^\./, "");
+  return RAW_EXTENSIONS.has(ext);
 }
 
 // HEIC/HEIF 是 ISO BMFF 容器（ftyp 盒子），major brand 为 heic/heif/mif1/heix/heim；
@@ -288,6 +323,7 @@ module.exports = {
   convertImage,
   prepareImageInput,
   isHeicFileSync,
+  isRawFileSync,
   inspectImageMetadata,
   convertImageToVideo,
   pdfAscii,
