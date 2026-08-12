@@ -80,9 +80,31 @@ function countFormulaCells(worksheets) {
 }
 
 async function inspectXlsxForCsv(inputPath, options = {}) {
-  const Workbook = options.Workbook || require("exceljs").Workbook;
-  const workbook = new Workbook();
-  await workbook.xlsx.readFile(inputPath);
+  // exceljs 4.4.0 无法解析带命名空间前缀的 workbook.xml（如 <x:workbook>，常见于
+  // Java POI / 部分导出工具生成的文件）。预检只是增强提示，不应阻塞 LibreOffice 的
+  // 实际 CSV 转换——读取失败时降级为提示，继续转换。
+  let workbook;
+  try {
+    const Workbook = options.Workbook || require("exceljs").Workbook;
+    workbook = new Workbook();
+    await workbook.xlsx.readFile(inputPath);
+  } catch (error) {
+    return {
+      exportedSheet: null,
+      ignoredSheets: [],
+      formulaCount: 0,
+      previewUnavailable: true,
+      warnings: [warning(
+        "XLSX_CSV_PREVIEW_UNAVAILABLE",
+        {
+          zhCN: "无法预览工作表信息（该文件的工作簿结构无法解析），已直接转换第一张工作表。",
+          enUS: "Worksheet preview unavailable (the workbook structure could not be parsed); the first worksheet is converted directly."
+        },
+        { cause: String(error?.message || "") },
+        "warning"
+      )]
+    };
+  }
   const worksheets = Array.isArray(workbook.worksheets) ? workbook.worksheets : [];
   const exported = firstWorksheet(workbook);
   if (!exported) {

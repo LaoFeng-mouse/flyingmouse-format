@@ -166,6 +166,42 @@ function csvToJsonObjects(csv) {
   }
 }
 
+// CSV -> Markdown 表格：用严格 CSV 解析（同 csvToJsonObjects），避免把原始 CSV 文本
+// 原样当作 Markdown 输出（v0.3.5 的假实现）。单元格内的 | 与换行做转义。
+function csvToMarkdown(csv) {
+  let records;
+  try {
+    records = parse(String(csv || ""), {
+      bom: true,
+      skip_empty_lines: true,
+      relax_column_count: false,
+      relax_quotes: false
+    });
+  } catch (error) {
+    const wrapped = new Error(`CSV 解析失败：列数或引号格式不合法。${error?.message ? ` ${error.message}` : ""}`);
+    wrapped.code = "CSV_PARSE_FAILED";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  if (!records.length) return "";
+  const width = Math.max(...records.map((row) => row.length));
+  const normalized = records.map((row) => [...row, ...Array(width - row.length).fill("")]);
+  const escapeCell = (value) => {
+    const CR = String.fromCharCode(13);
+    return String(value ?? "")
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .split(CR + "\n").join("\n")
+      .replace(/\n/g, "<br>");
+  };
+  const formatRow = (row) => `| ${row.map(escapeCell).join(" | ")} |`;
+  return [
+    formatRow(normalized[0]),
+    formatRow(Array(width).fill("---")),
+    ...normalized.slice(1).map(formatRow)
+  ].join("\n");
+}
+
 function stableJsonStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
   if (value && typeof value === "object") {
@@ -208,4 +244,4 @@ function jsonToCsv(jsonText) {
   ].join("\n");
 }
 
-module.exports = { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv };
+module.exports = { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, csvToMarkdown, jsonToCsv };
