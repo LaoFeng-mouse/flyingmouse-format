@@ -151,6 +151,8 @@ function targetsForExt(rawExt, tools) {
     textTargets.forEach((target) => targets.add(target));
     // csv/tsv 的 xlsx/pdf/html/epub 有自有实现（见 /api/convert 分发）；xls/ods 的
     // LO 分隔文本导入在 headless 下假成功（exit 0 零输出），不提供，避免 500。
+    // xlsx 用 exceljs 生成，不依赖 LibreOffice（CI 无 LO 环境也必须可用）。
+    targets.add("xlsx");
     targets.delete("xls");
     targets.delete("ods");
   }
