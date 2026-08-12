@@ -2360,7 +2360,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "MEDIA_NO_AUDIO_TRACK",
       "PDF_OCR_REQUIRED",
       "XML_JSON_PARSE_FAILED",
-      "YAML_JSON_PARSE_FAILED"
+      "YAML_JSON_PARSE_FAILED",
+      "MFLAC_DECRYPT_FAILED",
+      "MFLAC_EKEY_REQUIRED",
+      "MFLAC_EKEY_NETWORK"
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
