@@ -16,9 +16,7 @@ test("resource limits expose the agreed cross-platform budgets", () => {
     maxImagePixels: 50_000_000,
     maxImageDimension: 16_384,
     maxImagePdfPixels: 100_000_000,
-    maxBatchBytes: 2 * 1024 * 1024 * 1024,
-    maxPdfPages: 1500,
-    maxOcrPdfPages: 100
+    maxBatchBytes: 2 * 1024 * 1024 * 1024
   });
 });
 
@@ -58,22 +56,17 @@ test("image-to-PDF decoded budget is enforced before raw conversion", () => {
   );
 });
 
-test("batch byte and PDF page budgets use separate stable errors", () => {
+test("batch byte budget is enforced; PDF pages are not limited (1:1 conversion)", () => {
   assert.equal(assertBatchBytes([{ size: 1024 }, { size: LIMITS.maxBatchBytes - 1024 }]), LIMITS.maxBatchBytes);
   assert.throws(
     () => assertBatchBytes([{ size: LIMITS.maxBatchBytes }, { size: 1 }]),
     (error) => error instanceof ResourceLimitError && error.errorCode === "BATCH_BYTES_EXCEEDED"
   );
+  // PDF 页数不做上限：任意正整数页数（含超长文档）都应通过
   assert.equal(assertPdfPages(1500), 1500);
+  assert.equal(assertPdfPages(10000), 10000);
   assert.equal(assertPdfPages(100, { ocr: true }), 100);
-  assert.throws(
-    () => assertPdfPages(1501),
-    (error) => error instanceof ResourceLimitError && error.errorCode === "PDF_PAGES_EXCEEDED"
-  );
-  assert.throws(
-    () => assertPdfPages(101, { ocr: true }),
-    (error) => error instanceof ResourceLimitError && error.errorCode === "OCR_PDF_PAGES_EXCEEDED"
-  );
+  assert.equal(assertPdfPages(5000, { ocr: true }), 5000);
 });
 
 test("malformed image, batch and page metadata fail closed", () => {

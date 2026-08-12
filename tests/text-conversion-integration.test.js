@@ -192,9 +192,7 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
     maxImagePixels: 50_000_000,
     maxImageDimension: 16_384,
     maxImagePdfPixels: 100_000_000,
-    maxBatchBytes: 2 * 1024 * 1024 * 1024,
-    maxPdfPages: 1500,
-    maxOcrPdfPages: 100
+    maxBatchBytes: 2 * 1024 * 1024 * 1024
   });
   assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
