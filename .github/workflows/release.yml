@@ -153,7 +153,19 @@ jobs:
           attach="$(hdiutil attach -readonly -nobrowse "$dmg")"
           mount="$(printf '%s\n' "$attach" | awk '/\/Volumes\// { sub(/^.*\/Volumes\//, "/Volumes/"); print; exit }')"
           test -n "$mount"
-          trap 'hdiutil detach "$mount"' EXIT
+          cleanup() {
+            # runner 偶发 Resource busy 导致 detach 失败（v0.4.0/v0.4.1 实证，exit 16）。
+            # 卸载只是清理动作：-force + 重试，最终失败仅告警，不影响已验证的产物。
+            for attempt in 1 2 3 4 5; do
+              if hdiutil detach -force "$mount" >/dev/null 2>&1; then
+                return 0
+              fi
+              sleep 3
+            done
+            echo "warning: could not detach $mount (Resource busy, ignoring)" >&2
+            return 0
+          }
+          trap cleanup EXIT
           app="$(find "$mount" -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$app"
           file "$app/Contents/MacOS/FlyingMouse Format"
