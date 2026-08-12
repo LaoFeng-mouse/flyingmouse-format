@@ -72,26 +72,64 @@ function createWindow(url) {
 }
 
 // ---- 自动更新（仅 NSIS/GitHub 渠道；微软商店版由商店自行更新）----
+let updater = null;
+
+function pushUpdateStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("update-status", status);
+  }
+}
+
 function setupAutoUpdater() {
   if (!app.isPackaged || process.windowsStore) return;
-  let autoUpdater = null;
   try {
-    ({ autoUpdater } = require("electron-updater"));
+    ({ autoUpdater: updater } = require("electron-updater"));
   } catch (error) {
     log("Auto-updater module unavailable", error);
     return;
   }
-  autoUpdater.logger = logger;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on("error", (error) => log("Auto-update error", error));
-  autoUpdater.on("update-downloaded", () => {
-    log("Update downloaded; will install on quit");
+  updater.logger = logger;
+  updater.autoDownload = true;
+  updater.autoInstallOnAppQuit = true;
+  updater.on("error", (error) => {
+    log("Auto-update error", error);
+    pushUpdateStatus({ status: "error", message: String(error?.message || "") });
   });
-  autoUpdater.checkForUpdatesAndNotify().catch((error) => {
+  updater.on("update-available", (info) => {
+    log(`Auto-update available: ${info?.version}`);
+    pushUpdateStatus({ status: "available", version: info?.version || "" });
+  });
+  updater.on("update-not-available", () => {
+    log("Auto-update not available");
+    pushUpdateStatus({ status: "upToDate" });
+  });
+  updater.on("update-downloaded", (info) => {
+    log(`Update downloaded: ${info?.version}; will install on quit`);
+    pushUpdateStatus({ status: "downloaded", version: info?.version || "" });
+  });
+  // 启动后静默检查一次（不打扰用户；有更新会走上面的状态推送）
+  updater.checkForUpdatesAndNotify().catch((error) => {
     log("Auto-update check failed", error);
   });
 }
+
+ipcMain.handle("get-app-version", () => app.getVersion());
+
+ipcMain.handle("check-for-updates", async () => {
+  if (!updater) {
+    return { status: "unavailable" };
+  }
+  try {
+    const result = await updater.checkForUpdates();
+    if (result?.isUpdateAvailable) {
+      return { status: "available", version: result.updateInfo?.version || "" };
+    }
+    return { status: "upToDate" };
+  } catch (error) {
+    log("Manual update check failed", error);
+    return { status: "error", message: String(error?.message || "") };
+  }
+});
 
 async function boot() {
   log("Boot started");

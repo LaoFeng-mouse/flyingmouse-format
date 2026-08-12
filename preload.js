@@ -21,5 +21,14 @@ contextBridge.exposeInMainWorld("flyingMouseFormat", {
   },
   log(level, message) {
     return ipcRenderer.invoke("log-event", { level, message });
+  },
+  getAppVersion() {
+    return ipcRenderer.invoke("get-app-version");
+  },
+  checkForUpdates() {
+    return ipcRenderer.invoke("check-for-updates");
+  },
+  onUpdateStatus(callback) {
+    ipcRenderer.on("update-status", (_event, status) => callback(status));
   }
 });
