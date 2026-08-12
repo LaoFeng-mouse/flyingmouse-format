@@ -39,7 +39,7 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
   if (animated && normalizedTarget === "webp") {
     await sharp(inputPath, { animated: true, limitInputPixels: maxPixels })
       .rotate()
-      .webp()
+      .webp({ quality: 90 })
       .toFile(outputPath);
     const outputMetadata = await sharp(outputPath, { animated: true, limitInputPixels: maxPixels }).metadata();
     const inputDelay = Array.isArray(metadata.delay) ? metadata.delay.map(Number) : [];
@@ -81,7 +81,7 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
   }
   const outputOptions = normalizedTarget === "jpeg"
     ? { quality: 90 }
-    : (normalizedTarget === "tiff" ? { compression: "lzw" } : undefined);
+    : (normalizedTarget === "webp" ? { quality: 90 } : (normalizedTarget === "tiff" ? { compression: "lzw" } : undefined));
   await image.toFormat(normalizedTarget, outputOptions).toFile(outputPath);
   return { warnings };
 }

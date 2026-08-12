@@ -1933,8 +1933,10 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
   } else if (target === "mkv") {
     args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac");
   } else if (target === "gif") {
+    // 输出质量：宽度上限 480→720（保留更多细节）、fps 10→12（更流畅）、
+    // palettegen stats_mode=diff（按帧差异生成调色板，减少闪烁）+ sierra2_4a 抖动（更平滑，减少色带）
     args.push(
-      "-vf", "fps=10,scale='min(480,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+      "-vf", "fps=12,scale='min(720,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=diff[p];[s1][p]paletteuse=dither=sierra2_4a",
       "-loop", "0"
     );
   }
