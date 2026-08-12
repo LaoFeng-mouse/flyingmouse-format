@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "private": true,
   "author": "LaoFeng",
   "productName": "FlyingMouse Format",
@@ -16,8 +16,8 @@
     "dist:mac:arm64": "node scripts/validate-ci-engines.js --platform darwin --arch arm64 --root bin/engines/darwin-arm64 && electron-builder --mac dmg --arm64 --publish never",
     "dist:mac:x64": "node scripts/validate-ci-engines.js --platform darwin --arch x64 --root bin/engines/darwin-x64 && electron-builder --mac dmg --x64 --publish never",
     "dist:win7": "node scripts/build-win7.js",
-    "test": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/diagnostics.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js tests/bmp-input.test.js tests/xml-json.test.js tests/mflac-format.test.js tests/ebook.test.js",
-    "test:ci": "node --test tests/runtime-paths.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/diagnostics.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js tests/bmp-input.test.js tests/xml-json.test.js tests/mflac-format.test.js tests/ebook.test.js"
+    "test": "node --test tests/runtime-paths.test.js tests/raw-input.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/diagnostics.test.js tests/conversion.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js tests/bmp-input.test.js tests/xml-json.test.js tests/mflac-format.test.js tests/ebook.test.js",
+    "test:ci": "node --test tests/runtime-paths.test.js tests/raw-input.test.js tests/macos-packaging.test.js tests/image-conversion.test.js tests/av3a-format.test.js tests/ncm-metadata.test.js tests/ci-engine-release.test.js tests/conversion-preferences.test.js tests/i18n.test.js tests/settings-store.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/diagnostics.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/logger.test.js tests/mouse-assets.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/resource-policy.test.js tests/text-conversion.test.js tests/text-conversion-integration.test.js tests/ui-static.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/pe-metadata.test.js tests/bmp-input.test.js tests/xml-json.test.js tests/mflac-format.test.js tests/ebook.test.js"
   },
   "dependencies": {
     "@tesseract.js-data/chi_sim": "^1.0.0",
@@ -132,6 +132,10 @@
         {
           "from": "bin/tessdata",
           "to": "tessdata"
+        },
+        {
+          "from": "bin/dcraw",
+          "to": "dcraw"
         },
         {
           "from": "node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz",
