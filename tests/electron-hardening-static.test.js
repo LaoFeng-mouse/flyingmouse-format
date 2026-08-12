@@ -31,6 +31,22 @@ test("main process enforces Electron trust boundaries", () => {
   assert.match(source, /if \(isAllowedExternalUrl\(url\)\)/);
 });
 
+test("every IPC handler checks the renderer trust boundary", () => {
+  const source = readRoot("electron-main.js");
+  const handlers = [...source.matchAll(/ipcMain\.handle\("([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(handlers.length >= 8, `expected at least 8 IPC handlers, got ${handlers.length}`);
+  for (const name of handlers) {
+    const handlerStart = source.indexOf(`ipcMain.handle("${name}"`);
+    const handlerEnd = source.indexOf("\nipcMain.handle(", handlerStart + 1);
+    const handlerSource = source.slice(handlerStart, handlerEnd === -1 ? undefined : handlerEnd);
+    assert.match(
+      handlerSource,
+      /assertTrustedIpc\(event\)/,
+      `ipcMain.handle("${name}") must validate the renderer trust boundary`
+    );
+  }
+});
+
 test("local service sends a restrictive content security policy", () => {
   const source = readRoot("server.js");
   assert.match(source, /Content-Security-Policy/);
