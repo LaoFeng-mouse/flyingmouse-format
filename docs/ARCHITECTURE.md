@@ -68,7 +68,7 @@ Electron 保存对话框 → 用户选择的目录
 
 - 单图最多 50MP，单边最多 16384px；Sharp 解码保持像素保护，并在生成 RGB/RGBA Raw Buffer 前预检。
 - 图片合并 PDF 的总解码预算为 100MP；批量选择总计最多 2GB。
-- PDF 最多 500 页；OCR 最多 100 页。拒绝响应保留 `error`，同时提供稳定 `errorCode` 和中英文消息。
+- PDF 最多 1500 页；OCR 最多 100 页。拒绝响应保留 `error`，同时提供稳定 `errorCode` 和中英文消息。
 - HTML 与 Office 文档转 Markdown 共用 ATX/Fenced Turndown helper。CSV 由精确锁定的 `csv-parse 5.6.0` 解析 BOM、转义引号和字段内换行，并对非法列数 fail closed。
 
 ## PDF 智能表格提取
