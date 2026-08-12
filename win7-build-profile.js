@@ -29,6 +29,7 @@ const REQUIRED_RUNTIME_FILES = [
   "ncm-metadata.js",
   "av3a-format.js",
   "kgg-format.js",
+  "mflac-format.js",
   "config.js",
   "utils.js",
   "media.js",
