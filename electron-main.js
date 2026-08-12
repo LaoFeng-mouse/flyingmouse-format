@@ -282,6 +282,13 @@ ipcMain.handle("log-event", (event, payload) => {
   }
 });
 
+// 本地工具类应用，纯 HTML/CSS 界面，禁用硬件加速可省 GPU 进程约 40-80MB 内存
+// （必须在 app ready 之前调用）
+app.disableHardwareAcceleration();
+// 限制主进程 V8 老生代堆上限，避免内存随使用缓慢增长；转换大文件走原生
+// 模块（sharp/ffmpeg/LibreOffice 子进程），不受此限制影响。
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=1024");
+
 if (process.platform === "win32") {
   app.setAppUserModelId("com.flyingmouse.format");
 }
