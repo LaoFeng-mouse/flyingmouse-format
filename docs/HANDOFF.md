@@ -14,7 +14,7 @@
 | 项 | 处理 | 状态 |
 |---|---|---|
 | HEIC/HEIF 转 JPG 失败 | sharp 的 libheif 只编译了 AV1，解不了 HEVC 像素；改为入口用打包内置 ffmpeg（hevc 解码器）转 PNG 再走 sharp 链路（与 BMP 中转同模式），单图与批量/ZIP 图片→PDF 全覆盖 | 实测 sample.heic→JPG/PNG/WebP/PDF 全 200 |
-| mflac 无法转 mp3 | 新增 `mflac-format.js`：QMC 系解密（unlock-music 算法：尾部 keyLen + 探测 mask + 128 矩阵 XOR 带 0x8000 跳位），纯本地离线；QMCv1 默认 mask 兼容 | 合成自洽 round-trip 通过；真实样本待验证，标实验性（EXPERIMENTAL_INPUT 警告） |
+| mflac 无法转 mp3 | 新增 `mflac-format.js` 支持三类变体：QMC2 v1（尾部 keyLen+key 离线解密）、QTag（内嵌 ekey）、musicex（新版，需 QQ 音乐登录凭据在线 GetEVkey 换密钥，复用 kgg-format.js 的 ekeyDecrypt/createQMC2 原语）；错误码 MFLAC_DECRYPT_FAILED / MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK 归入 422；cookie 默认读桌面 QQ音乐_登录cookie.txt（FLYINGMOUSE_QQ_COOKIE 可覆盖） | 真实样本双通过：任然-无人之岛（flac 4:45）+ doa-英雄（flac 3:21）→ 转 MP3 全链路 PASS；musicex 依赖在线凭据（104003=凭据过期），仍标实验性 |
 | txt/mobi 等电子书 | 新增 `ebook.js`：txt/md/html→EPUB（yazl 纯生成，mimetype stored）；EPUB→TXT/MD（spine 解析）；MOBI→EPUB/TXT/MD（PDB+PalmDOC 解析，实验性） | Gutenberg alice.epub/mobi 实测通过 |
 | 图片合并 PDF 无法控制顺序 | 批量图片→PDF 队列加 ↑/↓ 排序按钮（三数组同步 swap，PDF 页序=队列顺序） | UI 完成 |
 | ncm 转 mp3 日文乱码 | 根因：ncm 路径被强制 `-id3v2_version 3`（UTF-16），部分播放器读乱；改为与全局一致的 v2.4（UTF-8） | 实验验证 v2.4 标签 UTF-8 无损 |
