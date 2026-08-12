@@ -80,6 +80,16 @@
 - 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
 - **待办（下一窗口）**：① 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；② macOS 自动更新补 zip 资产（electron-updater 在 mac 需 zip；当前 DMG 仅支持完整下载）；③ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36（含损坏重试产物 mac-x64.bad.* / win.zip 等）。
 
+## v0.3.8 发布状态（2026-08-12）
+
+- **背景**：并行窗口在 WPS 修复前发布过 v0.3.7（exe 551,483,714 字节，下载 60 次，tag 指向 ecc7b79 不含修复）。为让已装旧 v0.3.7 的用户能收到自动更新，**bump 到 0.3.8 重新打包发布**（同版本号不会触发 electron-updater）。
+- 提交（全部已推送 main）：8d74720（WPS 修复）/ c37fb33（HANDOFF 结案）/ 8771e12（0.3.7 lock 同步）/ a05280a（release-update.sh blockmap 配对修复）/ c13c8f4（0.3.8 bump）。
+- **release-update.sh blockmap 配对修复（a05280a）**：原 `ls dist/*.blockmap | head -1` 会因 dist 残留旧版本 blockmap 按字母序取错（0.3.6 排 0.3.7 前），改为精确匹配 `dist/FlyingMouse Format-Setup-${VERSION}-x64.exe.blockmap`。
+- 产物（dist/）：`FlyingMouse Format-Setup-0.3.8-x64.exe` 551,484,192 字节；blockmap 569,400；latest.yml（version 0.3.8，sha512 `IysrBxRWy5+uXN8MUbHQ22fGbOzzEtVMCcA2bb9pPf4d4rrASsJAFInwXqsR4bV5YwRlmDGcoXXbgas3Pu6beg==` 与 exe 实测一致）。
+- 打包验证：11 域模块全部进 asar、WPS 修复（docxNeedsPdfRepair）进包、引擎资源（soffice.com/ffmpeg/pdftoppm/tessdata）齐全、EXE FileVersion 0.3.8 / ProductVersion 0.3.8.0。
+- tag `v0.3.8` 已推送（指向 c13c8f4）；Release 已创建，上传 exe+blockmap+latest.yml 中。
+- **待办（下一窗口）**：① 商店 APPX 0.3.8 构建 + Partner Center 覆盖旧 0.3.7（用户本人操作）；② 本机升级两套目录（快捷方式指向项目目录副本 C:\Users\34615\飞鼠格式\FlyingMouse Format\，另有 %LOCALAPPDATA%\Programs\FlyingMouse Format）；③ 本机自动更新 pending 里已下载的旧 0.3.7 安装包清理（用户打开软件时会装旧版，需留意）。
+
 ## v0.3.7 待办（2026-08-12 记录）
 
 - ① **~~用户反馈：PDF 27 页论文只转出前 7 页~~（已定位并修复，提交 8d74720）**。根因不是代码页数门禁，而是 **WPS 生成的 docx**：document.xml 含 wpsCustomData 命名空间 + 134 个 OMML 公式 + 153 个交叉引用域，LibreOffice 的 **PDF 导出**在正文约 27% 处静默截断（exit 0 但只输出前 7 页，txt/html 导出不受影响）。修复：`office-convert.js` 在 docx→pdf 前探测 wpsCustomData / 公式+域组合，命中则先经 LO roundtrip（docx→docx）规范化修复再导出 PDF。实测真实论文样本：修复后 28 页完整（修复前 7 页）。**zip 解析用手动实现（fs+zlib 解析 central directory），不用 yauzl**——微信传输的 docx 会让 yauzl openReadStream 卡在 end 事件不触发（2026-08-12 实测，普通 zip 正常）。新增 tests/office-wps-repair.test.js 4 个单测；全量 301 = 299 过 + 2 skip。
