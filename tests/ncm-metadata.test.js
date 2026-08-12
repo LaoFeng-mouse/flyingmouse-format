@@ -29,7 +29,7 @@ test("builds safe FFmpeg metadata and cover options for MP3", () => {
   assert.deepEqual(options.metadata, { title: "Song", artist: "Mouse", album: "Album" });
   assert.deepEqual(options.coverArgs, [
     "-map", "0:a:0", "-map", "1:v:0", "-c:v", "mjpeg",
-    "-id3v2_version", "3", "-disposition:v:0", "attached_pic"
+    "-id3v2_version", "4", "-disposition:v:0", "attached_pic"
   ]);
 });
 
