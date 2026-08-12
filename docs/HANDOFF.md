@@ -35,10 +35,19 @@
 ## v0.3.6 发布状态（2026-08-12）
 
 - 本机已升级 0.3.6.0（win-unpacked 拷贝法，FileVersion 0.3.6 / ProductVersion 0.3.6.0，图标缓存已刷）。软件未运行时替换。
-- tag `v0.3.6` 已推送；Release workflow `31564182693` 三 job 全绿（validate-and-build 11m50s / macOS x64 13m46s / macOS arm64 7m36s），产物：win x64 NSIS + win7（flyingmouse-format-v0.3.6）、mac-x64 DMG、mac-arm64 DMG。
-- Draft Release `v0.3.6` 已创建；Windows x64 NSIS 本机构建（551,492,263 字节，SHA-256 `be1ef0aaef4e4c0aba2637db04146ae44c08f5c8eac6f8ffbef4f94d2c7cd65b`）上传中；win7/macOS 包从 CI artifacts 下载中（代理 ~260KB/s，约 2.5GB 预计 1-2 小时），完成后补传并公开设 Latest。
+- tag `v0.3.6` 指向 `c9ef37c`（含自动更新）；Release workflow `31564182693` 三 job 全绿。
+- **NSIS 版自动更新已上线**：electron-updater@6.8.9 + build.publish GitHub provider；electron-main.js setupAutoUpdater（打包环境且非商店版时静默检查/自动下载/退出安装）；latest.yml + blockmap 已传 Release；商店版跳过（商店自行更新）。
+- Release `v0.3.6` 已公开、非 draft、非 prerelease、Latest；资产 6 个：
+  | 资产 | 字节 | SHA-256 |
+  |---|---|---|
+  | FlyingMouse-Format-Setup-0.3.6-x64.exe | 551,481,995 | `4e81c5dbf65637753a553a60483ff77ac40e0d214d54c56ec5e2c10d979bd429` |
+  | FlyingMouse-Format-Setup-0.3.6-x64.exe.blockmap | 569,949 | —（自动更新差量） |
+  | latest.yml | 373 | —（自动更新元数据） |
+  | FlyingMouse.Format-Setup-0.3.6-win7-x64.exe | 520,578,060 | `98d60368d8240eba82448b6a5cee4dd1d38c1bd1170285057f5249a5ad644ee3` |
+  | FlyingMouse.Format-Setup-0.3.6-mac-arm64.dmg | 681,853,883 | `ae6acd9100ddcd9c06160ba298d57521b593b37926b7dc84bb1861c8fbb04d00` |
+  | FlyingMouse.Format-Setup-0.3.6-mac-x64.dmg | 717,266,776 | `a644ce71714c6b2e1d8d20026a80bc76e1101a7f8bb8e5d034f0ef0dc7ed891a` |
 - 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
-- **待办（下一窗口）**：① 补传 win7/macOS 包→公开 Release 设 Latest→回读资产表写入本文件；② 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；③ 更新 README 格式表若需；④ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36。
+- **待办（下一窗口）**：① 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；② macOS 自动更新补 zip 资产（electron-updater 在 mac 需 zip；当前 DMG 仅支持完整下载）；③ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36（含损坏重试产物 mac-x64.bad.* / win.zip 等）。
 
 ## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
 
