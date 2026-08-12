@@ -16,7 +16,7 @@ const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
-const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown } = require("./text-conversion");
+const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
 const { xmlToJson } = require("./xml-json");
@@ -291,8 +291,12 @@ function targetsForExt(rawExt, tools) {
     spreadsheetTargets.forEach((target) => targets.add(target));
   }
 
-  if (normalizeExt(rawExt) === "csv") {
+  if (["csv", "tsv"].includes(normalizeExt(rawExt))) {
     textTargets.forEach((target) => targets.add(target));
+    // csv/tsv 的 xlsx/pdf/html/epub 有自有实现（见 /api/convert 分发）；xls/ods 的
+    // LO 分隔文本导入在 headless 下假成功（exit 0 零输出），不提供，避免 500。
+    targets.delete("xls");
+    targets.delete("ods");
   }
 
   if (category === "presentation" && tools.libreoffice) {
@@ -988,9 +992,16 @@ async function convertTextToDocx(raw, source, outputPath) {
 }
 
 async function convertText(inputPath, outputPath, inputExt, target, originalName = `converted.${normalizeExt(inputExt) || "txt"}`) {
-  const raw = await fsp.readFile(inputPath, "utf8");
-  const source = normalizeExt(inputExt);
+  let raw = await fsp.readFile(inputPath, "utf8");
+  let source = normalizeExt(inputExt);
+  const warnings = [];
   let converted = raw;
+
+  // TSV 与 CSV 同源：归一化为逗号 CSV 后按 csv 分支处理（json/md 真解析）
+  if (source === "tsv") {
+    raw = await readTabularText(inputPath, inputExt);
+    source = "csv";
+  }
 
   if (target === "pdf") {
     if (source === "md") {
@@ -1048,13 +1059,93 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
         throw wrapped;
       }
       converted = JSON.stringify(parsed, null, 2);
-    } else converted = JSON.stringify({ text: raw }, null, 2);
+    } else {
+      // 无结构文本（txt/md/log 等）没有可解析的结构，JSON 输出只能是原文包装——
+      // 明确给出警告，避免用户误以为是真解析（v0.3.5 假实现教训）。
+      converted = JSON.stringify({ text: raw }, null, 2);
+      warnings.push({
+        code: "TEXT_JSON_WRAPPED",
+        messages: {
+          zhCN: "这个文本没有可识别的结构（JSON/CSV/XML/YAML），JSON 输出仅为原文包装。",
+          enUS: "This text has no detectable structure (JSON/CSV/XML/YAML); the JSON output wraps the raw text."
+        }
+      });
+    }
   } else if (target === "csv") {
     if (source === "json") converted = jsonToCsv(raw);
     else converted = raw.split(/\r?\n/).map((line) => `"${line.replaceAll('"', '""')}"`).join("\n");
   }
 
   await fsp.writeFile(outputPath, converted, "utf8");
+  return { warnings };
+}
+
+// CSV/TSV -> XLSX：exceljs 直接生成（LibreOffice 的 csv/tsv 导入过滤器在 headless
+// 下是假成功——exit 0 但零输出，v0.3.6 实测确认；原路径全部 500）。
+async function convertCsvToXlsx(csvText, outputPath) {
+  const records = parseCsvRecords(csvText);
+  if (!records.length) throw new Error("CSV 内容为空，无法生成表格。");
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Sheet1");
+  sheet.addRows(records);
+  await workbook.xlsx.writeFile(outputPath);
+}
+
+// CSV/TSV -> PDF：自生成 HTML 表格后交给 LibreOffice html->pdf（该路径实测可靠，
+// 同 md->pdf 管线；LO 对 html 输入支持良好）。
+async function convertCsvToPdf(csvText, outputPath) {
+  const html = csvToHtmlTable(csvText);
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-csvpdf-"));
+  const htmlPath = path.join(tempDir, "table.html");
+  try {
+    await fsp.writeFile(htmlPath, html, "utf8");
+    await convertWithLibreOffice(htmlPath, outputPath, "table.html", "pdf");
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function parseCsvRecords(csv) {
+  // 与 csvToJsonObjects/csvToMarkdown 相同的严格解析（共享 csv-parse 选项）
+  const { parse } = require("csv-parse/sync");
+  try {
+    return parse(String(csv || ""), {
+      bom: true,
+      skip_empty_lines: true,
+      relax_column_count: false,
+      relax_quotes: false
+    });
+  } catch (error) {
+    const wrapped = new Error(`CSV 解析失败：列数或引号格式不合法。${error?.message ? ` ${error.message}` : ""}`);
+    wrapped.code = "CSV_PARSE_FAILED";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+}
+
+// TSV -> 逗号分隔 CSV 文本（tab 解析后重新引号转义）。TSV 与 CSV 同源，
+// 统一归一化后走同一套自有实现；避免 LO 的假成功路径。
+async function readTabularText(inputPath, inputExt) {
+  const raw = await fsp.readFile(inputPath, "utf8");
+  if (normalizeExt(inputExt) !== "tsv") return raw;
+  const { parse } = require("csv-parse/sync");
+  let records;
+  try {
+    records = parse(raw, {
+      bom: true,
+      delimiter: "\t",
+      skip_empty_lines: true,
+      relax_column_count: false,
+      relax_quotes: false
+    });
+  } catch (error) {
+    const wrapped = new Error(`TSV 解析失败：列数或引号格式不合法。${error?.message ? ` ${error.message}` : ""}`);
+    wrapped.code = "CSV_PARSE_FAILED";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  return records.map((row) => row.map(quote).join(",")).join("\n");
 }
 
 function libreOfficeFilterFor(target) {
@@ -1812,7 +1903,7 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
 }
 
 async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
-  const rendered = await renderPdfPages(inputPath, target, 150);
+  const rendered = await renderPdfPages(inputPath, target, 300);
   try {
     await zipFiles(
       rendered.files.map((file, index) => ({
@@ -2277,7 +2368,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       } else if (requestedTarget === "epub") {
         await convertTextToEpub(await fsp.readFile(file.path, "utf8"), inputExt, originalName, outputPath);
       } else {
-        await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
+        conversionResult = await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
       }
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget, {
@@ -2286,8 +2377,15 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       });
     } else if (category === "zip") {
       await convertZipImagesToPdf(file.path, outputPath);
-    } else if (category === "spreadsheet" && inputExt === "csv" && ["txt", "md", "json"].includes(requestedTarget)) {
-      await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
+    } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["txt", "md", "json"].includes(requestedTarget)) {
+      conversionResult = await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
+    } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["epub", "xlsx", "html", "pdf"].includes(requestedTarget)) {
+      // LO 的 csv/tsv 导入过滤器 headless 下假成功（exit 0 零输出），全部用自有实现
+      const tabular = await readTabularText(file.path, inputExt);
+      if (requestedTarget === "epub") await convertTextToEpub(tabular, "csv", originalName, outputPath);
+      else if (requestedTarget === "xlsx") await convertCsvToXlsx(tabular, outputPath);
+      else if (requestedTarget === "html") await fsp.writeFile(outputPath, csvToHtmlTable(tabular), "utf8");
+      else await convertCsvToPdf(tabular, outputPath);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
       if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
         await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
@@ -2365,7 +2463,12 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "YAML_JSON_PARSE_FAILED",
       "MFLAC_DECRYPT_FAILED",
       "MFLAC_EKEY_REQUIRED",
-      "MFLAC_EKEY_NETWORK"
+      "MFLAC_EKEY_NETWORK",
+      "PDF_ENCRYPT_UNAVAILABLE",
+      "PRESENTATION_HTML_EMPTY",
+      "BMP_UNSUPPORTED_VARIANT",
+      "JSON_CSV_PATH_COLLISION",
+      "PDF_TABLE_OCR_LOW_QUALITY"
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
