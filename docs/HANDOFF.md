@@ -1,6 +1,6 @@
-# FlyingMouse Format v0.3.5 交接
+# FlyingMouse Format 交接
 
-更新时间：2026-08-11
+更新时间：2026-08-12（v0.3.5 审计修复后）
 
 ## 项目边界
 
@@ -8,6 +8,23 @@
 - 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
 - v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
+
+## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
+
+GPT 桌面端对已上传微软商店的 v0.3.5（标签 `075c56f`）做了 51 分钟全面审计，发现“测试全绿、用户仍转换失败”的真实缺陷。本地 agent 复现全部缺陷后修复并推送（`943411e` feat / `f872894` chore / `b0bd537` test / `b002a9c` docs）：
+
+| 缺陷 | 修复 | 实测 |
+|---|---|---|
+| 扫描版 PDF→Word：500 + 错误文案错写“转 Excel” | 文案按目标区分；扫描版自动 OCR 回退生成可编辑 DOCX（`PDF_OCR_REQUIRED` 稳定错误码） | 扫描全能王 PDF→DOCX 200，正文段落完整 |
+| BMP→PNG：sharp 0.35.3 不支持 BMP 输入，500 | 新增 `bmp-input.js` 纯 JS 解码器（24/32 位、1/4/8 位调色板、负高度；RLE 明确报错 `BMP_UNSUPPORTED_VARIANT`），接入全部图片目标 + 批量/ZIP 图片→PDF；只读文件头判断避免整读大图 | BMP→PNG/JPG/PDF 200，PNG 魔数校验 |
+| XLSX→CSV：exceljs 预检读不了带命名空间前缀的 workbook.xml，500 | 预检降级为警告 `XLSX_CSV_PREVIEW_UNAVAILABLE`，不阻塞 LibreOffice 实际转换 | 带前缀 XLSX→CSV 200，内容正确 |
+| PPTX→HTML：LO 的 pptx→html 导出过滤器只输出空页面框架，质量门禁 500 | 改 LO→PDF→pdfjs 文本提取生成可读 HTML；纯图片 PPT 明确报 `PRESENTATION_HTML_EMPTY` | PPTX→HTML 200，含页标题 |
+| CSV→Markdown：假实现（输出原始 CSV） | `csvToMarkdown` 真解析成 Markdown 表格（表头/分隔行/单元格 `\|` 与换行转义，严格 CSV 解析） | 200，输出表格 |
+| XML/YAML→JSON：假实现（`{"text":原文}` 包装） | `xml-json.js` 轻量 XML→JSON 解析器（属性 `@` 前缀、重复标签数组、CDATA）；YAML 用 js-yaml 真解析；失败报 `XML_JSON_PARSE_FAILED` / `YAML_JSON_PARSE_FAILED` | 200，输出解析结构 |
+| HTML→DOCX：标题/列表被压成普通段落 | `convertTextToDocx` 识别 h1-h6（字号加粗）与 li（• 缩进）块级结构 | 200，docx 含 `w:sz 36` 标题与 2 个列表项 |
+| PDF→Word 能力提示不准确 | README 中英文标注为“可编辑内容提取”，明确不保留图片/字体/颜色/页眉页脚/复杂版式 | — |
+
+验证：修复后实测 21/21 通过（内容级断言）；本地全量 `node --test`（cmd 环境）279 项 = 277 通过、2 预期 skip（NCM/KGG 缺 fixture）、0 失败（含原 tar 假失败，cmd 环境 bsdtar 正常）；`test:ci` 232 项全过。新模块已登记 `build.files` 白名单，js-yaml@4.3.1 已同步 win7-package-lock.json。
 
 ## v0.3.5 新增
 
@@ -46,9 +63,9 @@
 - Windows 安装包未签名，SmartScreen 可能提示；macOS DMG 未签名且未公证，Gatekeeper 可能提示。
 - 自动化、PE 检查和当前 runner 冒烟不能冒充真实 Windows 7 SP1 x64 或真实 Mac 设备验收；两项物理设备验收仍待完成。
 - NCM 仅保证网易云客户端 `music.163.com` 来源的标准文件；macOS 不支持依赖 Windows 专用解码器的 AV3A NCM。
-- 拍照扫描件（透视/阴影）OCR 是 Tesseract 能力极限：低置信度会明确报错而非乱码；如需此类转出，需换 PaddleOCR 级引擎（工程量大，下版再议）。
-- HEIC/HEIF 输入依赖打包 sharp 的解码能力，无真实样本实测（本机 sharp 无 heif 编码器，解码器存在性待真实样本确认）。
-- 本机安装的 0.3.5.0 不含 `1f3fa4c` 音轨修复；需下版打包或重打包更新。
-- Microsoft Store 仍是 v0.3.3 Submission 2（ID `1152921505701615843`）。最后现场状态为 `Pre-processing in progress` / `In certification`；本轮没有上传 v0.3.5 商店包，也不能声称已经通过认证或公开发布。
+- 拍照扫描件（透视/阴影）OCR 是 Tesseract 能力极限：低置信度会明确报错而非乱码（PDF→XLSX 有置信度门禁；PDF→DOCX/TXT/HTML 走 OCR 回退时识别不出会明确报错）；如需此类转出，需换 PaddleOCR 级引擎（工程量大，下版再议）。
+- HEIC/HEIF 输入依赖打包 sharp 的解码能力，仍标注为实验性；无真实样本实测（本机 sharp 无 heif 编码器，解码器存在性待真实样本确认）。
+- 本机安装的 0.3.5.0 不含审计修复与 `1f3fa4c` 音轨修复；需下版打包（v0.3.6）或重打包更新。
+- Microsoft Store 仍是 v0.3.3 Submission 2（ID `1152921505701615843`）。最后现场状态为 `Pre-processing in progress` / `In certification`；本轮没有上传 v0.3.5 商店包，也不能声称已经通过认证或公开发布。v0.3.5 审计缺陷已修复但尚未重新打包/提交商店；是否撤回当前认证、改发 v0.3.6 待用户决策。
 
 发布流程见 [RELEASE.md](RELEASE.md)，代码结构见 [ARCHITECTURE.md](ARCHITECTURE.md)。
