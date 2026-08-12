@@ -84,11 +84,13 @@
 
 - **背景**：v0.3.8 发布后发现两个 CI 问题，需要 bump 0.3.9 重新发版：
   - **csv/tsv→xlsx 在 CI 无 LO 环境 400**（f6d3765）：targetsForExt 里 xlsx 只来自 spreadsheetTargets（依赖 tools.libreoffice），而 csv/tsv 的 xlsx 实际走 exceljs 自有实现，不依赖 LO。CI（windows-latest 无 LO）跑 test:ci 时 text-conversion-integration 挂 2 项。修复：csv/tsv 分支补 `targets.add("xlsx")`。本机有 LO 所以之前没暴露。
-  - **win7 构建 npm ci 失败**（1709d94）：Release workflow 的 Build isolated Windows 7 installer 报 `Missing: fs-extra@8.1.0 / semver@6.3.1 / jsonfile@4.0.0 / universalify@0.1.2 from lock file`。根因：win7-package-lock.json 缺 app-builder-lib/node_modules/@electron/get/node_modules/ 嵌套依赖闭包。用递归复制脚本补齐 16 项 + 手动补 jsonfile@4.0.0/universalify@0.1.2。
-  - 两个修复的 CI 都通过后 bump 0.3.9（28d64c1）重新发版，tag v0.3.9 已推送触发 Release workflow（构建 win/win7/mac 四平台）。
+  - **win7 构建 npm ci 失败**（根因 c9ef37c）：tmp-sync-win7-updater.js 复制 electron-updater 闭包时把 win7 lock 顶层 jsonfile/universalify/semver/fs-extra 覆盖成 main 的版本，npm ci 报 Missing: fs-extra@8.1.0 等。修复链：1709d94（补闭包）→ 55a2655（以 0.3.6 为基准重建）→ c4b969f（并行窗口用 npm 官方重新生成）→ 4734839（URL 归一化回 npmjs——npm 重新生成时 registry 是 npmmirror，CI 下载会超时）。
+  - 最终 win7 lock = npm 官方重新生成（顶层 jsonfile@4.0.0/universalify@0.1.2/semver@6.3.1/fs-extra@8.1.0，electron-updater@6.8.9，URL 全 npmjs）。win7 测试 27 个全过。
 - **mac/win7 资产缺失原因（用户问）**：release.yml 只把构建产物存为 CI artifacts，不会自动传 GitHub Release——需手动下载 artifact 再 gh release upload；win7 则因上述 lock 问题构建失败。v0.3.9 的 Release workflow 跑通后需手动上传四平台资产。
-- **本机 0.3.9 win x64 打包**：进行中（npm run dist）。
-- **待办（下一窗口）**：① Release workflow v0.3.9 跑完后下载 artifact（win/win7/mac-arm64/mac-x64）→ gh release upload 四平台资产 + latest.yml/blockmap；② 商店 APPX 0.3.9 构建 + Partner Center 覆盖旧 0.3.7/0.3.8（用户本人操作）；③ 本机升级 0.3.9（两套目录 + 图标缓存）。
+- **mac x64 DMG smoke 偶发失败**：上次 Release workflow 的 mac x64 "Mount and inspect DMG" 步骤在最后 smoke test 失败（app 启动 12 秒内退出，`kill -0` 失败），arm64 同步骤成功——疑似 runner 无 GUI 会话偶发；DMG 本身构建/挂载/file/codesign 都过。artifact 因 smoke 失败未上传。
+- **本机 0.3.9 win x64 已打包验证**：11 域模块 + WPS 修复 + csv xlsx 修复进包，版本 0.3.9.0，sha512 配对，已上传 v0.3.9 Release（draft）。
+- tag v0.3.9 指向 4734839（= origin/main），Release workflow 已触发最终验证。
+- **待办（下一窗口）**：① Release workflow v0.3.9 跑完后下载 artifact（win/win7/mac-arm64/mac-x64）→ gh release upload 四平台资产（win7 exe + mac DMG，注意命名配对）；② 公开 Release 设 Latest；③ 商店 APPX 0.3.9 构建 + Partner Center 覆盖旧 0.3.7/0.3.8（用户本人操作）；④ 本机升级 0.3.9（两套目录 + 图标缓存）。
 
 ## v0.3.8 发布状态（2026-08-12）
 
