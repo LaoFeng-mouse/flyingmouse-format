@@ -5,6 +5,7 @@ const {
   createTurndownService,
   htmlToMarkdown,
   csvToJsonObjects,
+  csvToMarkdown,
   jsonToCsv,
   markdownToHtml
 } = require("../text-conversion");
@@ -171,4 +172,41 @@ test("JSON to CSV rejects collisions between literal dots and nested paths", () 
       && error?.path === "a.b"
       && /a\.b/.test(error.message)
   );
+});
+
+test("CSV to Markdown produces a real table with header, separator, and escaped cells", () => {
+  const markdown = csvToMarkdown('"name","description"\n"Mouse","Line one\nLine two"\n');
+  assert.equal(markdown, [
+    "| name | description |",
+    "| --- | --- |",
+    "| Mouse | Line one<br>Line two |"
+  ].join("\n"));
+});
+
+test("CSV to Markdown rejects ragged rows with the stable CSV_PARSE_FAILED code (strict parser)", () => {
+  assert.throws(
+    () => csvToMarkdown('a,b,c\n1,2\n'),
+    (error) => error?.code === "CSV_PARSE_FAILED"
+  );
+});
+
+test("CSV to Markdown escapes quoted pipes in cells", () => {
+  const markdown = csvToMarkdown('a,b\n3,"x|y"\n');
+  assert.equal(markdown, [
+    "| a | b |",
+    "| --- | --- |",
+    "| 3 | x\\|y |"
+  ].join("\n"));
+});
+
+test("CSV to Markdown rejects malformed CSV with the stable CSV_PARSE_FAILED code", () => {
+  assert.throws(
+    () => csvToMarkdown('"unterminated\n'),
+    (error) => error?.code === "CSV_PARSE_FAILED" && /CSV 解析失败/.test(error.message)
+  );
+});
+
+test("CSV to Markdown returns empty string for empty input", () => {
+  assert.equal(csvToMarkdown(""), "");
+  assert.equal(csvToMarkdown("\n\n"), "");
 });

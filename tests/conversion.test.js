@@ -1010,3 +1010,146 @@ test("zip conversion honors compression level and reports sizes", async () => {
   const defaultZip = await convertZip(null);
   assert.strictEqual(defaultZip.fileName, "压缩样本.zip");
 });
+
+// ---- v0.3.5 审计修复回归：BMP/CSV-MD/XML/YAML/HTML-DOCX/XLSX-CSV/扫描PDF-DOCX ----
+
+function makeBmp2x2() {
+  const rowBytes = 8;
+  const pixelBytes = rowBytes * 2;
+  const out = Buffer.alloc(54 + pixelBytes);
+  out.write("BM", 0, "ascii");
+  out.writeUInt32LE(out.length, 2);
+  out.writeUInt32LE(54, 10);
+  out.writeUInt32LE(40, 14);
+  out.writeInt32LE(2, 18);
+  out.writeInt32LE(2, 22);
+  out.writeUInt16LE(1, 26);
+  out.writeUInt16LE(24, 28);
+  out.writeUInt32LE(pixelBytes, 34);
+  Buffer.from([0, 0, 255, 0, 255, 0, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0]).copy(out, 54);
+  return out;
+}
+
+// 构造带命名空间前缀 workbook.xml 的 XLSX（exceljs 4.4.0 无法解析此类文件，
+// 用于验证 XLSX->CSV 预检降级 + LibreOffice 实际转换）。
+function makePrefixedXlsx(filePath) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`), "_rels/.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="utf-8"?><x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheets><x:sheet name="Summary" sheetId="1" r:id="rId1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" /></x:sheets></x:workbook>`), "xl/workbook.xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`), "xl/_rels/workbook.xml.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>商品</t></is></c><c r="B1" t="inlineStr"><is><t>数量</t></is></c></row>
+<row r="2"><c r="A2" t="inlineStr"><is><t>苹果</t></is></c><c r="B2"><v>2</v></c></row>
+</sheetData></worksheet>`), "xl/worksheets/sheet1.xml");
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(filePath);
+    output.on("close", resolve);
+    output.on("error", reject);
+    zip.outputStream.pipe(output);
+    zip.end();
+  });
+}
+
+test("converts BMP to PNG (sharp cannot read BMP; custom decoder required)", async () => {
+  const sourcePath = path.join(scratchRoot, "pixels.bmp");
+  await fsp.writeFile(sourcePath, makeBmp2x2());
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "pixels.bmp", "png", "image/bmp");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "pixels.png");
+  const outputPath = await downloadResult(body, "pixels.png");
+  const header = fs.readFileSync(outputPath).subarray(1, 4).toString("latin1");
+  assert.strictEqual(header, "PNG", "BMP output must be a PNG");
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts CSV to real Markdown table (not the raw CSV passthrough)", async () => {
+  const sourcePath = path.join(scratchRoot, "multiline.csv");
+  await fsp.writeFile(sourcePath, '"name","description"\n"Mouse","Line one\nLine two"\n', "utf8");
+
+  const { response, body } = await uploadConvert(sourcePath, "multiline.csv", "md", "text/csv");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "multiline.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  assert.match(markdown, /^\| name \| description \|/);
+  assert.match(markdown, /\| --- \| --- \|/);
+  assert.match(markdown, /\| Mouse \| Line one<br>Line two \|/);
+});
+
+test("converts XML to parsed JSON instead of a text wrapper", async () => {
+  const sourcePath = path.join(scratchRoot, "tree.xml");
+  await fsp.writeFile(sourcePath, '<root><item id="1">Mouse</item></root>\n', "utf8");
+
+  const { response, body } = await uploadConvert(sourcePath, "tree.xml", "json", "application/xml");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "tree.json");
+  const json = await fsp.readFile(outputPath, "utf8");
+  assert.match(json, /"item"/);
+  assert.match(json, /"@id": "1"/);
+  assert.doesNotMatch(json, /"text"/);
+});
+
+test("converts YAML to parsed JSON instead of a text wrapper", async () => {
+  const sourcePath = path.join(scratchRoot, "record.yaml");
+  await fsp.writeFile(sourcePath, "name: Mouse\ncount: 2\n", "utf8");
+
+  const { response, body } = await uploadConvert(sourcePath, "record.yaml", "json", "application/yaml");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "record.json");
+  const json = await fsp.readFile(outputPath, "utf8");
+  assert.match(json, /"name": "Mouse"/);
+  assert.match(json, /"count": 2/);
+  assert.doesNotMatch(json, /"text"/);
+});
+
+test("converts HTML to DOCX preserving headings and list items", async () => {
+  const sourcePath = path.join(scratchRoot, "structure.html");
+  await fsp.writeFile(sourcePath, "<h1>Hello</h1><ul><li>A</li><li>B</li></ul>\n", "utf8");
+
+  const { response, body } = await uploadConvert(sourcePath, "structure.html", "docx", "text/html");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "structure.docx");
+  const packageBytes = await fsp.readFile(outputPath);
+  assert.strictEqual(packageBytes.readUInt32LE(0), 0x04034b50);
+  const documentXml = readZipEntry(packageBytes, "word/document.xml");
+  assert.match(documentXml, /<w:sz w:val="36"/, "h1 must keep heading size");
+  assert.match(documentXml, /Hello/);
+  const bullets = (documentXml.match(/•/g) || []).length;
+  assert.ok(bullets >= 2, `expected 2 list bullets, got ${bullets}`);
+});
+
+test("converts a namespace-prefixed XLSX to CSV despite exceljs preview failure", async () => {
+  const sourcePath = path.join(scratchRoot, "prefixed.xlsx");
+  await makePrefixedXlsx(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "prefixed.xlsx", "csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.ok(Array.isArray(body.warnings), "preview degradation must surface a warning");
+  assert.ok(body.warnings.some((warning) => warning.code === "XLSX_CSV_PREVIEW_UNAVAILABLE"), "warning list must include XLSX_CSV_PREVIEW_UNAVAILABLE");
+  const outputPath = await downloadResult(body, "prefixed.csv");
+  const csv = await fsp.readFile(outputPath, "utf8");
+  assert.match(csv, /商品/);
+  assert.match(csv, /苹果/);
+});

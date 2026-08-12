@@ -88,8 +88,32 @@ test("server wires Office quality results into the existing warning and bilingua
   assert.match(source, /require\(["']\.\/office-quality["']\)/);
   assert.match(source, /inspectXlsxForCsv\(file\.path\)/);
   assert.match(source, /conversionResult\s*=\s*await inspectXlsxForCsv/);
-  assert.match(source, /validatePresentationHtml\(await fsp\.readFile\(outputPath, ["']utf8["']\)\)/);
+  // 演示文稿 HTML 已改走 LO->PDF->文本提取（不再依赖 LO 的 html 导出过滤器）
+  assert.match(source, /convertPresentationToHtml\(file\.path, outputPath, originalName\)/);
+  assert.doesNotMatch(source, /validatePresentationHtml\(await fsp\.readFile/);
   assert.match(source, /payload\.messages\s*=\s*error\.messages/);
+});
+
+test("XLSX to CSV degrades gracefully when exceljs cannot parse the workbook structure", async () => {
+  class Workbook {
+    constructor() {
+      this.xlsx = {
+        readFile: async () => {
+          throw new TypeError("Cannot read properties of undefined (reading 'sheets')");
+        }
+      };
+    }
+  }
+
+  const result = await inspectXlsxForCsv("prefixed.xlsx", { Workbook });
+
+  assert.equal(result.previewUnavailable, true);
+  assert.equal(result.exportedSheet, null);
+  assert.deepEqual(result.ignoredSheets, []);
+  assert.equal(result.formulaCount, 0);
+  assert.deepEqual(result.warnings.map((warning) => warning.code), ["XLSX_CSV_PREVIEW_UNAVAILABLE"]);
+  assert.match(result.warnings[0].messages.zhCN, /无法预览工作表信息/);
+  assert.match(result.warnings[0].messages.enUS, /Worksheet preview unavailable/i);
 });
 
 test("Win7 staging copies the Office quality runtime module", () => {
