@@ -80,6 +80,16 @@
 - 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
 - **待办（下一窗口）**：① 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；② macOS 自动更新补 zip 资产（electron-updater 在 mac 需 zip；当前 DMG 仅支持完整下载）；③ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36（含损坏重试产物 mac-x64.bad.* / win.zip 等）。
 
+## v0.3.9 发布状态（2026-08-12，进行中）
+
+- **背景**：v0.3.8 发布后发现两个 CI 问题，需要 bump 0.3.9 重新发版：
+  - **csv/tsv→xlsx 在 CI 无 LO 环境 400**（f6d3765）：targetsForExt 里 xlsx 只来自 spreadsheetTargets（依赖 tools.libreoffice），而 csv/tsv 的 xlsx 实际走 exceljs 自有实现，不依赖 LO。CI（windows-latest 无 LO）跑 test:ci 时 text-conversion-integration 挂 2 项。修复：csv/tsv 分支补 `targets.add("xlsx")`。本机有 LO 所以之前没暴露。
+  - **win7 构建 npm ci 失败**（1709d94）：Release workflow 的 Build isolated Windows 7 installer 报 `Missing: fs-extra@8.1.0 / semver@6.3.1 / jsonfile@4.0.0 / universalify@0.1.2 from lock file`。根因：win7-package-lock.json 缺 app-builder-lib/node_modules/@electron/get/node_modules/ 嵌套依赖闭包。用递归复制脚本补齐 16 项 + 手动补 jsonfile@4.0.0/universalify@0.1.2。
+  - 两个修复的 CI 都通过后 bump 0.3.9（28d64c1）重新发版，tag v0.3.9 已推送触发 Release workflow（构建 win/win7/mac 四平台）。
+- **mac/win7 资产缺失原因（用户问）**：release.yml 只把构建产物存为 CI artifacts，不会自动传 GitHub Release——需手动下载 artifact 再 gh release upload；win7 则因上述 lock 问题构建失败。v0.3.9 的 Release workflow 跑通后需手动上传四平台资产。
+- **本机 0.3.9 win x64 打包**：进行中（npm run dist）。
+- **待办（下一窗口）**：① Release workflow v0.3.9 跑完后下载 artifact（win/win7/mac-arm64/mac-x64）→ gh release upload 四平台资产 + latest.yml/blockmap；② 商店 APPX 0.3.9 构建 + Partner Center 覆盖旧 0.3.7/0.3.8（用户本人操作）；③ 本机升级 0.3.9（两套目录 + 图标缓存）。
+
 ## v0.3.8 发布状态（2026-08-12）
 
 - **背景**：并行窗口在 WPS 修复前发布过 v0.3.7（exe 551,483,714 字节，下载 60 次，tag 指向 ecc7b79 不含修复）。为让已装旧 v0.3.7 的用户能收到自动更新，**bump 到 0.3.8 重新打包发布**（同版本号不会触发 electron-updater）。
