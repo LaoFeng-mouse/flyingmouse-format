@@ -23,6 +23,7 @@
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tha": "1.0.0",
+    "csrf": "^3.1.0",
     "csv-parse": "5.6.0",
     "electron-updater": "^6.8.9",
     "exceljs": "^4.4.0",

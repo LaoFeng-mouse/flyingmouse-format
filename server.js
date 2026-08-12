@@ -6,6 +6,7 @@ const path = require("path");
 const zlib = require("zlib");
 const { fileURLToPath, pathToFileURL } = require("url");
 const express = require("express");
+const Csrf = require("csrf");
 const mime = require("mime-types");
 const multer = require("multer");
 const sanitize = require("sanitize-filename");
@@ -210,7 +211,9 @@ async function cleanupOldFiles() {
   for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
     const files = await fsp.readdir(dir).catch(() => []);
     await Promise.all(files.map(async (file) => {
-      const filePath = path.join(dir, file);
+      const safeFile = sanitize(file);
+      if (!safeFile) return;
+      const filePath = path.join(dir, safeFile);
       const stat = await fsp.stat(filePath).catch(() => null);
       if (stat && stat.mtimeMs < cutoff) {
         await fsp.rm(filePath, { force: true }).catch(() => {});
@@ -261,6 +264,9 @@ async function getToolDiagnostics() {
   };
 }
 
+const csrfTokens = new Csrf();
+const csrfSecret = csrfTokens.secretSync();
+
 function isLocalWebOrigin(value) {
   if (!value) return false;
   try {
@@ -280,6 +286,15 @@ function assertLocalWebRequest(req, res, next) {
     return;
   }
   if (referer && !isLocalWebOrigin(referer)) {
+    res.status(403).json({ error: "拒绝跨站请求。" });
+    return;
+  }
+  if (!origin && !referer) {
+    res.status(403).json({ error: "拒绝跨站请求。" });
+    return;
+  }
+  const token = req.headers["x-csrf-token"] || (req.body && req.body._csrf);
+  if (!token || !csrfTokens.verify(csrfSecret, token)) {
     res.status(403).json({ error: "拒绝跨站请求。" });
     return;
   }
@@ -307,6 +322,10 @@ function sendResourceError(res, error) {
   res.status(413).json(resourceErrorPayload(error));
   return true;
 }
+
+app.get("/api/csrf-token", (_req, res) => {
+  res.json({ csrfToken: csrfTokens.create(csrfSecret) });
+});
 
 app.get("/api/capabilities", async (_req, res) => {
   const tools = await getTools();
