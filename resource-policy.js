@@ -2,9 +2,7 @@ const LIMITS = Object.freeze({
   maxImagePixels: 50_000_000,
   maxImageDimension: 16_384,
   maxImagePdfPixels: 100_000_000,
-  maxBatchBytes: 2 * 1024 * 1024 * 1024,
-  maxPdfPages: 1500,
-  maxOcrPdfPages: 100
+  maxBatchBytes: 2 * 1024 * 1024 * 1024
 });
 
 const MESSAGES = Object.freeze({
@@ -35,14 +33,6 @@ const MESSAGES = Object.freeze({
   PDF_PAGE_COUNT_INVALID: {
     zhCN: "无法读取 PDF 页数，请确认 PDF 文件完整且未损坏。",
     enUS: "The PDF page count could not be read. Make sure the PDF is valid."
-  },
-  PDF_PAGES_EXCEEDED: {
-    zhCN: `PDF 超过 ${LIMITS.maxPdfPages} 页限制（当前 {pages} 页）。可用「PDF→PDF 拆分」先拆分，或分批转换。`,
-    enUS: `The PDF exceeds the ${LIMITS.maxPdfPages} page limit ({pages} pages). Split it with PDF→PDF or convert it in parts.`
-  },
-  OCR_PDF_PAGES_EXCEEDED: {
-    zhCN: `OCR 最多处理 ${LIMITS.maxOcrPdfPages} 页 PDF，请拆分后重试。`,
-    enUS: `OCR supports PDFs up to ${LIMITS.maxOcrPdfPages} pages. Split the PDF and try again.`
   }
 });
 
@@ -134,13 +124,11 @@ function assertBatchBytes(files) {
   return total;
 }
 
-function assertPdfPages(pageCount, { ocr = false } = {}) {
+// PDF 页数不做上限限制（原文件多少页就转换多少页，1:1 还原；加载慢由用户自行权衡）。
+// 这里只校验页数是有效正整数。
+function assertPdfPages(pageCount) {
   const count = positiveInteger(pageCount);
   if (!count) throw new ResourceLimitError("PDF_PAGE_COUNT_INVALID");
-  const maximum = ocr ? LIMITS.maxOcrPdfPages : LIMITS.maxPdfPages;
-  if (count > maximum) {
-    throw new ResourceLimitError(ocr ? "OCR_PDF_PAGES_EXCEEDED" : "PDF_PAGES_EXCEEDED", { pages: count });
-  }
   return count;
 }
 
