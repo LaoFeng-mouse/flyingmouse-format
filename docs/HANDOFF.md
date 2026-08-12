@@ -21,8 +21,16 @@
 | 任务栏图标黑边 | build/icon.png 透明区域 RGB 是黑的；透明像素 RGB 置白（177,379 像素），黑色透明残留归零 | 需重打包+刷图标缓存生效 |
 | 软件内存太大 | 实测 idle 约 372MB（主进程 142MB），Electron 43 正常水平，无泄漏；转换峰值来自引擎进程（按需启动） | 已给数据，无明显可优化点 |
 | PDF 转 Excel 乱 | 造跨页/无框/多列复杂表格样本实测提取正常（P001 14 行 + P002 跨页续接）；拍照扫描件是 OCR 能力极限（已明确报错） | 需用户真实文件定位具体"乱" |
+| CSV/TSV 转换全部 500（假成功） | **实测发现**：LibreOffice headless 对分隔文本（csv/tsv）导入是假成功——exit 0 但零输出，原 csv/tsv→xlsx/xls/ods/pdf/html/epub 全部报 500。改为自有实现：csv/tsv→xlsx 用 exceljs 生成真工作表、→html 自生成 HTML 表格、→pdf 自生成 HTML 走 LO html→pdf（可靠管线）、→epub 走文本转 EPUB；tsv 归一化为逗号 CSV 复用同管线；UI 隐藏 xls/ods 避免 500 | csv/tsv→xlsx 单元格级断言、epub mimetype、pdf %PDF 头全过 |
+| txt/md/log→JSON 仍是 {"text":原文} 包装 | v0.3.5 审计修了 XML/YAML，漏了无结构文本；加 TEXT_JSON_WRAPPED 警告明确告知（不再静默假装解析） | 警告断言通过 |
+| PDF/PPT→PNG/JPG 模糊 | pdftoppm 只渲染 150 DPI（A4 1240px 宽）；提到 300 DPI（2480px，打印级，单页仅 52KB） | 已改，PDF→png 测试通过 |
+| 稳定错误码 500 | PDF_ENCRYPT_UNAVAILABLE / PRESENTATION_HTML_EMPTY / BMP_UNSUPPORTED_VARIANT / JSON_CSV_PATH_COLLISION / PDF_TABLE_OCR_LOW_QUALITY 归入 422 客户端错误 | 加密断言 500→422 更新 |
+| 视频→GIF 模糊 | 宽度 480→720、fps 10→12、palettegen stats_mode=diff + sierra2_4a 抖动（实测 720x406/12.5fps，1 秒仅 210KB） | 已改 |
+| WebP 二次压缩损伤 | 静态+动图 quality 80→90 | 已改 |
+| 内存占用大 | 禁用硬件加速（省 GPU 进程 40-80MB）+ 限制主进程 V8 堆 1GB（转换走原生模块不受影响） | 待重打包实测 |
+| 测试基建 | conversion.test.js 拆分解压从 tar 改为 yauzl（git-bash GNU tar 把 C:\ 当远程主机假失败，导致全量偶发失败） | 全量 296 = 294 过 + 2 skip |
 
-验证：`test:ci` 240 项全过；本地全量 287 项 = 285 过 + 2 skip（NCM/KGG fixture 缺失）、0 失败。新模块已登记 build.files（ebook.js / mflac-format.js / bmp-input.js / xml-json.js）。
+验证：本地全量 296 项 = 294 通过、2 预期 skip（NCM/KGG 缺 fixture）、0 失败；`test:ci` 240 项全过。新模块已登记 build.files（ebook.js / mflac-format.js / bmp-input.js / xml-json.js）。
 
 ## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
 
