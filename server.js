@@ -541,7 +541,10 @@ async function convertImage(inputPath, outputPath, target) {
     }
 
     await inspectImageMetadata(prepared.inputPath, true);
-    return convertRasterImage(prepared.inputPath, outputPath, target, { maxPixels: LIMITS.maxImagePixels });
+    // 必须 await：finally 会删除 BMP 解码的临时目录，未 await 时删除先于转换完成，
+    // macOS（文件可删）会报 decoded.png missing，Windows（句柄占用删除失败）侥幸通过。
+    const result = await convertRasterImage(prepared.inputPath, outputPath, target, { maxPixels: LIMITS.maxImagePixels });
+    return result;
   } finally {
     if (prepared.tempDir) await fsp.rm(prepared.tempDir, { recursive: true, force: true }).catch(() => {});
   }
