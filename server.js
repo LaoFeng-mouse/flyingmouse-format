@@ -16,8 +16,11 @@ const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
 const mammoth = require("mammoth");
-const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv } = require("./text-conversion");
+const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
+const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
+const { xmlToJson } = require("./xml-json");
+const yaml = require("js-yaml");
 const {
   LIMITS,
   ResourceLimitError,
@@ -32,7 +35,7 @@ const { buildNcmFfmpegOptions } = require("./ncm-metadata");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
-const { inspectXlsxForCsv, validatePresentationHtml } = require("./office-quality");
+const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
 
 // Prefer the Electron main process's debug.log (set via FLYINGMOUSE_LOG_FILE
@@ -520,23 +523,42 @@ function htmlToText(html) {
 }
 
 async function convertImage(inputPath, outputPath, target) {
-  if (target === "pdf") {
-    await convertImagesToPdf([{ inputPath, originalName: path.basename(inputPath) }], outputPath);
-    return { warnings: [] };
-  }
+  const prepared = await prepareImageInput(inputPath);
+  try {
+    if (target === "pdf") {
+      await convertImagesToPdf([{ inputPath: prepared.inputPath, originalName: path.basename(prepared.inputPath) }], outputPath);
+      return { warnings: [] };
+    }
 
-  if (target === "txt") {
-    await convertImageToOcrText(inputPath, outputPath);
-    return { warnings: [] };
-  }
+    if (target === "txt") {
+      await convertImageToOcrText(prepared.inputPath, outputPath);
+      return { warnings: [] };
+    }
 
-  if (target === "mp4" || target === "webm") {
-    await convertImageToVideo(inputPath, outputPath, target);
-    return { warnings: [] };
-  }
+    if (target === "mp4" || target === "webm") {
+      await convertImageToVideo(prepared.inputPath, outputPath, target);
+      return { warnings: [] };
+    }
 
-  await inspectImageMetadata(inputPath, true);
-  return convertRasterImage(inputPath, outputPath, target, { maxPixels: LIMITS.maxImagePixels });
+    await inspectImageMetadata(prepared.inputPath, true);
+    return convertRasterImage(prepared.inputPath, outputPath, target, { maxPixels: LIMITS.maxImagePixels });
+  } finally {
+    if (prepared.tempDir) await fsp.rm(prepared.tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// sharp 的预编译构建不支持 BMP 输入；这里先把 BMP 解码成 PNG 临时文件，让下游统一走 PNG。
+async function prepareImageInput(inputPath) {
+  // 先读 2 字节文件头判断（不整读大图）；只有 BMP 才解码进内存。
+  if (!isBmpFileSync(inputPath)) return { inputPath, tempDir: null };
+
+  const { width, height, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
+  const pngPath = path.join(tempDir, "decoded.png");
+  await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
+    .png()
+    .toFile(pngPath);
+  return { inputPath: pngPath, tempDir };
 }
 
 async function inspectImageMetadata(inputPath, animated = false) {
@@ -658,6 +680,17 @@ function pdfNumber(value) {
 }
 
 async function readImageForPdf(inputPath) {
+  // sharp 的预编译构建不支持 BMP 输入：批量/ZIP 图片合并 PDF 时直接解码 BMP。
+  // 先读 2 字节文件头判断，避免把非 BMP 大图整读进内存。
+  if (isBmpFileSync(inputPath)) {
+    const rawBmp = decodeBmpToRaw(fs.readFileSync(inputPath));
+    return {
+      width: rawBmp.width,
+      height: rawBmp.height,
+      data: zlib.deflateSync(rawBmp.data)
+    };
+  }
+
   const { data, info } = await sharp(inputPath, { limitInputPixels: LIMITS.maxImagePixels })
     .rotate()
     .flatten({ background: "#ffffff" })
@@ -812,8 +845,23 @@ function docxParagraphXml(runs, options = {}) {
   return `<w:p>${pPrXml}${docxRunXml(runs, options)}</w:p>`;
 }
 
+// 把 HTML 按块级结构拆成逻辑行，供 convertTextToDocx 逐行识别标题/列表。
+function splitHtmlIntoLines(html) {
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|ul|ol|table|tr|section|article)\s*>/gi, "</$1>\n")
+    .replace(/<li\b[^>]*>/gi, "\n$&")
+    .split("\n");
+}
+
 async function convertTextToDocx(raw, source, outputPath) {
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  let lines;
+  if (source === "html" || source === "htm") {
+    lines = splitHtmlIntoLines(raw);
+  } else {
+    const CR = String.fromCharCode(13);
+    lines = String(raw).split(CR + "\n").join("\n").split("\n");
+  }
   const paragraphs = [];
 
   for (const line of lines) {
@@ -838,7 +886,25 @@ async function convertTextToDocx(raw, source, outputPath) {
       paragraphs.push(docxParagraphXml(mdInlineRuns(trimmed)));
       continue;
     }
-    paragraphs.push(docxParagraphXml([{ t: source === "html" || source === "htm" ? htmlToText(trimmed) : trimmed }]));
+    if (source === "html" || source === "htm") {
+      // 纯结构标签行（<ul>/</div>/<table> 等）不产生空段落。
+      if (/^<\/?(ul|ol|div|table|thead|tbody|tfoot|tr|section|article)\s*>$/i.test(trimmed)) continue;
+      const heading = /^<h([1-6])\b[^>]*>([\s\S]*)<\/h\1\s*>$/i.exec(trimmed);
+      if (heading) {
+        const level = Number(heading[1]);
+        const size = [36, 32, 28, 26, 24, 24][level - 1];
+        paragraphs.push(docxParagraphXml([{ t: htmlToText(heading[2]) }], { size, bold: true, after: 120 }));
+        continue;
+      }
+      const listItem = /^<li\b[^>]*>([\s\S]*)<\/li\s*>$/i.exec(trimmed);
+      if (listItem) {
+        paragraphs.push(docxParagraphXml([{ t: "• " }, ...mdInlineRuns(htmlToText(listItem[1]))], { indent: 360 }));
+        continue;
+      }
+      paragraphs.push(docxParagraphXml([{ t: htmlToText(trimmed) }]));
+      continue;
+    }
+    paragraphs.push(docxParagraphXml([{ t: trimmed }]));
   }
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -900,10 +966,28 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
   } else if (target === "md") {
     if (source === "html") converted = htmlToMarkdown(raw);
     else if (source === "json") converted = `\`\`\`json\n${JSON.stringify(parseJsonText(raw), null, 2)}\n\`\`\`\n`;
+    else if (source === "csv") converted = csvToMarkdown(raw);
   } else if (target === "json") {
     if (source === "json") converted = JSON.stringify(parseJsonText(raw), null, 2);
     else if (source === "csv") converted = JSON.stringify(csvToJsonObjects(raw), null, 2);
-    else converted = JSON.stringify({ text: raw }, null, 2);
+    else if (source === "xml") converted = JSON.stringify(xmlToJson(raw), null, 2);
+    else if (source === "yaml" || source === "yml") {
+      let parsed;
+      try {
+        parsed = yaml.load(raw);
+      } catch (error) {
+        const wrapped = new Error(`YAML 解析失败：${String(error?.message || "未知错误")}`);
+        wrapped.code = "YAML_JSON_PARSE_FAILED";
+        wrapped.cause = error;
+        throw wrapped;
+      }
+      if (parsed === undefined) {
+        const wrapped = new Error("YAML 解析失败：内容为空或格式不合法。");
+        wrapped.code = "YAML_JSON_PARSE_FAILED";
+        throw wrapped;
+      }
+      converted = JSON.stringify(parsed, null, 2);
+    } else converted = JSON.stringify({ text: raw }, null, 2);
   } else if (target === "csv") {
     if (source === "json") converted = jsonToCsv(raw);
     else converted = raw.split(/\r?\n/).map((line) => `"${line.replaceAll('"', '""')}"`).join("\n");
@@ -1287,6 +1371,43 @@ async function convertPresentationToImages(inputPath, outputPath, originalName, 
   }
 }
 
+// 演示文稿 -> HTML：LibreOffice 的 pptx->html 导出过滤器在本便携版只输出空页面框架，
+// 因此改为 LO 转 PDF 后用 PDF.js 提取每页文字，生成带标题的可读 HTML。
+async function convertPresentationToHtml(inputPath, outputPath, originalName) {
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ppt-html-"));
+  try {
+    const pdfPath = path.join(tempDir, "slides.pdf");
+    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf");
+    const pages = await extractPdfRowsByPage(pdfPath);
+    const visibleText = pages.flatMap((page) => page.rows.flat()).join(" ").trim();
+    if (!visibleText) {
+      throw new OfficeQualityError("PRESENTATION_HTML_EMPTY", {
+        zhCN: "演示文稿 HTML 导出失败：未提取到任何幻灯片文字。请确认幻灯片是文字版而不是纯图片。",
+        enUS: "Presentation HTML export failed: no slide text was extracted. Make sure the slides contain text, not only images."
+      });
+    }
+    const body = pages.map((page) =>
+      `<h2>${escapeHtml(page.name)}</h2>\n${page.rows.map((row) => `<p>${escapeHtml(row.join(" "))}</p>`).join("\n")}`
+    ).join("\n");
+    await fsp.writeFile(outputPath, `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(safeBaseName(originalName))}</title>
+<style>
+body{font-family:Arial,"Microsoft YaHei",sans-serif;margin:24px;line-height:1.6}
+h2{color:#333;border-bottom:1px solid #ddd;padding-bottom:4px;margin-top:28px}
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`, "utf8");
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 function openZipEntries(zipPath) {
   return new Promise((resolve, reject) => {
     yauzl.open(zipPath, { lazyEntries: true }, (error, zipfile) => {
@@ -1435,7 +1556,15 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
       await convertScannedPdfToOcrText(inputPath, outputPath);
       return;
     }
-    throw new Error("这个 PDF 没有可提取的文字表格，可能是扫描版图片 PDF。扫描版需要 OCR 后才能转 Excel。");
+    if (target === "docx") {
+      await convertScannedPdfToOcrDocx(inputPath, outputPath);
+      return;
+    }
+    if (target === "html") {
+      await convertScannedPdfToOcrHtml(inputPath, outputPath);
+      return;
+    }
+    throw new Error("这个 PDF 没有可提取的文字，可能是扫描版图片 PDF。");
   }
 
   if (target === "txt") {
@@ -1637,8 +1766,50 @@ async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
 }
 
 async function convertScannedPdfToOcrText(inputPath, outputPath) {
+  const pages = await ocrScannedPdfPages(inputPath);
+  const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n").trim();
+  await fsp.writeFile(outputPath, `${combined}\n`, "utf8");
+}
+
+// 扫描版 PDF -> Word：OCR 识别每页文字，生成可编辑 DOCX（纯文本段落）。
+async function convertScannedPdfToOcrDocx(inputPath, outputPath) {
+  const pages = await ocrScannedPdfPages(inputPath);
+  const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n");
+  await convertTextToDocx(combined, "txt", outputPath);
+}
+
+// 扫描版 PDF -> HTML：OCR 识别每页文字，生成可读 HTML。
+async function convertScannedPdfToOcrHtml(inputPath, outputPath) {
+  const pages = await ocrScannedPdfPages(inputPath);
+  const body = pages.map((page) =>
+    `<h2>${escapeHtml(page.name)}</h2>\n<p>${escapeHtml(page.text || "[OCR 未识别出文字]").replace(/\n/g, "<br>\n")}</p>`
+  ).join("\n");
+  await fsp.writeFile(outputPath, `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PDF OCR 文本</title>
+<style>
+body{font-family:Arial,"Microsoft YaHei",sans-serif;margin:24px;line-height:1.6}
+h2{color:#333;border-bottom:1px solid #ddd;padding-bottom:4px}
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`, "utf8");
+}
+
+// OCR 扫描版 PDF 的每一页，返回 [{ name, text }]；OCR 不可用或完全识别不出时抛明确错误。
+async function ocrScannedPdfPages(inputPath) {
   if (!ocrAvailable()) {
-    throw new Error("OCR 引擎未启用。请确认安装包内置的 Tesseract 语言文件完整。");
+    const error = new Error("这个 PDF 没有可提取的文字，可能是扫描版图片 PDF，需要 OCR 识别后才能转换，但 OCR 引擎未启用。");
+    error.code = "PDF_OCR_REQUIRED";
+    error.messages = {
+      zhCN: "这个 PDF 没有可提取的文字，可能是扫描版图片 PDF，需要 OCR 识别后才能转换，但 OCR 引擎未启用。",
+      enUS: "This PDF has no extractable text; it may be a scanned image PDF that requires OCR, but the OCR engine is not available."
+    };
+    throw error;
   }
 
   const rendered = await renderPdfPages(inputPath, "png", 300, { ocr: true });
@@ -1648,13 +1819,12 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
     const pages = [];
     for (let index = 0; index < rendered.files.length; index += 1) {
       const text = await recognizeImageTextWithWorker(worker, rendered.files[index]);
-      pages.push(`## Page ${index + 1}\n${text || "[OCR 未识别出文字]"}`);
+      pages.push({ name: `Page ${index + 1}`, text: String(text || "").trim() });
     }
-    const combined = pages.join("\n\n").trim();
-    if (!combined || !pages.some((page) => !page.includes("[OCR 未识别出文字]"))) {
+    if (!pages.some((page) => page.text)) {
       throw new Error("OCR 没有识别出文字。请确认 PDF 扫描页清晰、文字方向正确。");
     }
-    await fsp.writeFile(outputPath, `${combined}\n`, "utf8");
+    return pages;
   } finally {
     if (worker) await worker.terminate().catch(() => {});
     await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
@@ -2052,6 +2222,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
       if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
         await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
+      } else if (category === "presentation" && requestedTarget === "html") {
+        await convertPresentationToHtml(file.path, outputPath, originalName);
       } else if (category === "document" && requestedTarget === "md") {
         await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
       } else if (category === "document" && requestedTarget === "txt") {
@@ -2061,9 +2233,6 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           conversionResult = await inspectXlsxForCsv(file.path);
         }
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
-        if (category === "presentation" && requestedTarget === "html") {
-          validatePresentationHtml(await fsp.readFile(outputPath, "utf8"));
-        }
       }
     } else if (category === "audio" || category === "video") {
       if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg")) {
@@ -2120,7 +2289,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "AV3A_UNSUPPORTED_PLATFORM",
       "PDF_TABLE_OCR_REQUIRED",
       "PDF_TABLE_OCR_EMPTY",
-      "MEDIA_NO_AUDIO_TRACK"
+      "MEDIA_NO_AUDIO_TRACK",
+      "PDF_OCR_REQUIRED",
+      "XML_JSON_PARSE_FAILED",
+      "YAML_JSON_PARSE_FAILED"
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
