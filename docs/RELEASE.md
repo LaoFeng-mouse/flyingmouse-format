@@ -3,7 +3,7 @@
 ## 发布前门禁
 
 1. 确认 `package.json`、`package-lock.json`、`win7-package-lock.json` 和文档版本一致。
-2. 确认 `build/icon.png` 仍由鼠鼠资源生成，并运行图标回归。
+2. 确认 `build/icon.png` 仍由鼠鼠资源生成，并运行图标回归。**商店 APPX 的 logo 另在 `build/appx/`（Square44x44Logo/Square150x150Logo/Wide310x150Logo/StoreLogo），必须同源鼠鼠、不得残留橙色闪电旧图标**——`git log -- build/appx/` 只允许鼠鼠相关提交，生成脚本 `scripts/gen-appx-logos.js`（从 build/icon.png 派生 4 个 logo）。
 3. 校验固定引擎 manifest 和 SHA-256；Windows 包含 FFmpeg、AVS3、LibreOffice、Poppler、Tesseract，macOS 使用对应原生架构引擎。
 4. 运行完整 `npm test`、生产依赖审计、真实 NCM/AV3A 回归和 `git diff --check`。
 5. PDF 智能表格固定样本必须满足：电子 PDF 单元格准确率不低于 95%，扫描 PDF 不低于 85%，表格数量、页签和明确合并区域 100% 正确。
