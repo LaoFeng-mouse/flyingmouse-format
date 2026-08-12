@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-12（v0.3.6 构建）
+更新时间：2026-08-12（v0.3.6 构建 + server.js 拆分重构 + IPC 安全补丁）
 
 ## 项目边界
 
@@ -8,6 +8,37 @@
 - 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
 - v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
+
+## server.js 拆分重构（2026-08-12，6 提交已推送，零功能变化）
+
+将 2550 行单文件 server.js 拆分为 11 个域模块，主文件减到 680 行（只留路由/中间件/startServer）。**纯搬移零逻辑改动，全量测试与基线一致（296=294+2skip，重构后仍一致）**。
+
+| 提交 | 内容 |
+|---|---|
+| d9d7b9c | refactor: 拆分 config/utils/media/zip-util 域（批1） |
+| 96795cb | refactor: 拆分 image/ocr 域（批2） |
+| 9e6223f | refactor: 拆分 pdfjs/pdf-table/pdf 域（批3） |
+| 50281b6 | refactor: 拆分 text-docx/office-convert 域（批4） |
+| be96b5a | refactor: server.js 改为 require 域模块并删除搬移函数（2550→680 行） |
+| ed8f33a | test+chore: 打包白名单加入新域模块，静态断言指向新模块 |
+
+- 新模块：config.js（引擎路径+格式常量）、utils.js（18 工具）、media.js（ffmpeg）、zip-util.js（zip 读写）、image.js（图片/PDF 拼图）、ocr.js（Tesseract）、pdfjs.js（PDF.js 加载）、pdf-table.js（表格提取）、pdf.js（PDF 转换全家桶）、text-docx.js（文本互转/DOCX/CSV 真实现）、office-convert.js（LibreOffice 转换）。
+- 循环依赖处理：image⇄ocr、text-docx⇄office-convert、pdf⇄text-docx/office-convert 全部用「顶层单向 require + 函数内延迟 require」解决。
+- 打包链同步：11 个新模块全部登记 package.json build.files + win7-build-profile.js REQUIRED_RUNTIME_FILES；白名单断言测试已加入新模块清单。
+- 静态断言同步：logger Command failed→utils.js；PDF.js 加载→pdfjs.js；表格提取→pdf-table.js；OCR worker→ocr.js；OFFICE_CONVERSION_FAILED→office-convert.js。
+- 效果：以后加新格式在对应域模块加函数即可，不再改主文件；各域独立可测。
+
+## UI 版本号 + 检查更新（2026-08-12，3 提交已推送）
+
+| 提交 | 内容 |
+|---|---|
+| 11fd74b | feat: UI 显示版本号 + 检查更新按钮与状态（标题栏显示 app.getVersion；顶部检查更新按钮手动触发 electron-updater；启动静默检查一次；状态推送已是最新/发现新版下载中/已下载重启生效/检查失败，中英文；开发环境与商店版自动隐藏降级） |
+| 4dc1cdb | fix: 版本号与检查更新 IPC handler 补 assertTrustedIpc 同源校验（get-app-version / check-for-updates 遗漏渲染进程信任边界校验，与项目其他 IPC handler 安全基线对齐） |
+| f8f0d9d | test: 新增 IPC handler 信任边界静态断言（扫描全部 ipcMain.handle，逐个断言含 assertTrustedIpc(event)，防止未来新增 handler 漏校验） |
+
+- 清理：删除仓库根目录冗余 index.html（与 public/index.html 一致但零引用，server.js 只服务 public/）。
+- 验证：全量 297 = 295 过 + 2 skip（新增 1 个 IPC 断言），0 失败。
+- 注：push 走代理（HTTPS_PROXY=http://127.0.0.1:7897）成功；直连 GitHub 报 Connection reset。
 
 ## v0.3.6 新增与修复（2026-08-12，用户反馈清单）
 
@@ -48,6 +79,12 @@
   | FlyingMouse.Format-Setup-0.3.6-mac-x64.dmg | 717,266,776 | `a644ce71714c6b2e1d8d20026a80bc76e1101a7f8bb8e5d034f0ef0dc7ed891a` |
 - 商店 APPX `FlyingMouse Format-Setup-0.3.6-x64.appx`（781,295,280 字节，SHA-256 `4f627586440cdf3c598659a6938f72d0333e4a093fa5c845adafb54e1404e792`）已构建并校验（Identity `488B6338.354574AC174AD` / x64 / 0.3.6.0 / 引擎资源齐全），校验记录 docs/v0.3.6-商店上传校验.md。
 - **待办（下一窗口）**：① 微软商店 Partner Center 上传 APPX（用户本人操作：新提交→上传包→发布信息→提交认证），回读现场状态；② macOS 自动更新补 zip 资产（electron-updater 在 mac 需 zip；当前 DMG 仅支持完整下载）；③ 清理临时脚本 scripts/tmp-* 与 /tmp/fm-rel36（含损坏重试产物 mac-x64.bad.* / win.zip 等）。
+
+## v0.3.7 待办（2026-08-12 记录）
+
+- ① **用户反馈：PDF 27 页论文只转出前 7 页**（未定位）。代码审查结论：页数门禁只有 500（普通）/100（OCR），无任何 7 页硬编码截断；最可能是转换中途失败/超时只完成前 7 页，或 PDF 本身页树/混合结构（前文字后扫描）问题。待办：拿用户 debug.log（%APPDATA%\FlyingMouse Format\debug.log）与转换目标格式、报错信息，本地造 27 页样本复现各分支后再修，不盲改。
+- ② server.js 拆分后新增格式验证：新域模块（image/ocr/pdf/text-docx/office-convert）的打包态路径解析已由测试覆盖，但未做真实打包冒烟（win7 staging 需 Node 18-22 环境）；v0.3.7 构建时需确认 11 个新模块进 asar 且引擎路径正常。
+- ③ 半自动发布脚本（3325253）首次实际使用验收：打包→上传→设 Latest 闭环走一遍，确认与手动流程产物一致。
 
 ## v0.3.5 审计修复（2026-08-12，main 领先 v0.3.5 标签 6 个提交）
 
