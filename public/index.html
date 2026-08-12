@@ -14,12 +14,14 @@
           <div class="brand-lockup">
             <img class="brand-mouse" src="/assets/mouse-format/mouse-idle.png" alt="" aria-hidden="true">
             <div>
-              <p class="eyebrow">FlyingMouse Format</p>
+              <p class="eyebrow">FlyingMouse Format <span class="app-version" id="appVersion"></span></p>
               <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
             </div>
           </div>
           <div class="topbar-actions">
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
+            <button class="ghost-button" id="updateButton" type="button" data-i18n="update.check">检查更新</button>
+            <span class="update-status" id="updateStatus" hidden></span>
             <label class="language-field">
               <span data-i18n="language.label">语言</span>
               <select id="languageSelect" aria-label="语言 / Language">

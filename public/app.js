@@ -81,6 +81,10 @@ const messages = {
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
+    "update.check": "检查更新", "update.checking": "正在检查更新…",
+    "update.latest": "已是最新版本", "update.available": "发现新版本 v{version}，正在下载…",
+    "update.downloaded": "新版本 v{version} 已下载，重启后生效", "update.restart": "立即重启",
+    "update.error": "更新检查失败：{message}", "update.unavailable": "当前版本不支持自动更新",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
@@ -107,6 +111,10 @@ const messages = {
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
+    "update.check": "Check for Updates", "update.checking": "Checking for updates…",
+    "update.latest": "You are up to date", "update.available": "New version v{version} found, downloading…",
+    "update.downloaded": "v{version} downloaded; restart to apply", "update.restart": "Restart now",
+    "update.error": "Update check failed: {message}", "update.unavailable": "Auto-update is unavailable in this build",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
@@ -1049,6 +1057,59 @@ async function initializeApp() {
   setMouseState("upload");
   setWorkflowStep("select");
   await fetchCapabilities();
+  initializeUpdateWidget();
+}
+
+// ---- 版本号与自动更新状态（NSIS 版；开发/商店版静默降级）----
+const appVersionEl = document.querySelector("#appVersion");
+const updateButton = document.querySelector("#updateButton");
+const updateStatusEl = document.querySelector("#updateStatus");
+
+function renderUpdateStatus(status) {
+  const kind = status?.status;
+  const version = status?.version || "";
+  const message = status?.message || "unknown";
+  let text = "";
+  let tone = "";
+  if (kind === "checking") text = t("update.checking");
+  else if (kind === "upToDate") { text = t("update.latest"); tone = "ok"; }
+  else if (kind === "available") text = t("update.available", { version });
+  else if (kind === "downloaded") { text = t("update.downloaded", { version }); tone = "ok"; }
+  else if (kind === "error") { text = t("update.error", { message }); tone = "error"; }
+  else if (kind === "unavailable") text = t("update.unavailable");
+  if (!text) {
+    updateStatusEl.hidden = true;
+    return;
+  }
+  updateStatusEl.textContent = text;
+  updateStatusEl.hidden = false;
+  updateStatusEl.classList.toggle("update-error", tone === "error");
+  updateStatusEl.classList.toggle("update-ok", tone === "ok");
+}
+
+function initializeUpdateWidget() {
+  if (!window.flyingMouseFormat) {
+    updateButton.hidden = true;
+    return;
+  }
+  window.flyingMouseFormat.getAppVersion()
+    .then((version) => {
+      if (version) appVersionEl.textContent = `v${version}`;
+    })
+    .catch(() => {});
+  window.flyingMouseFormat.onUpdateStatus((status) => renderUpdateStatus(status));
+  updateButton.addEventListener("click", async () => {
+    updateButton.disabled = true;
+    renderUpdateStatus({ status: "checking" });
+    try {
+      const result = await window.flyingMouseFormat.checkForUpdates();
+      renderUpdateStatus(result);
+    } catch (error) {
+      renderUpdateStatus({ status: "error", message: String(error?.message || "") });
+    } finally {
+      updateButton.disabled = false;
+    }
+  });
 }
 
 initializeApp().catch((error) => {

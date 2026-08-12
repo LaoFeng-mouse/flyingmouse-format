@@ -154,6 +154,35 @@ h1 {
   border: 2px solid var(--line);
 }
 
+.app-version {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.update-status {
+  display: inline-block;
+  max-width: 260px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--paper-soft, #f4f1ea);
+  border: 2px solid var(--line);
+  color: var(--text);
+}
+
+.update-status.update-ok {
+  color: var(--success);
+  background: var(--green-soft);
+}
+
+.update-status.update-error {
+  color: var(--danger);
+  background: var(--red-soft, #fdeaea);
+}
+
 .workflow-steps {
   display: flex;
   gap: 10px;
