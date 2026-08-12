@@ -40,7 +40,7 @@ test("local service sends a restrictive content security policy", () => {
 });
 
 test("PDF.js loader supports modern and Win7 legacy layouts", () => {
-  const source = readRoot("server.js");
+  const source = readRoot("pdfjs.js");
   assert.match(source, /pdfjs-dist\/package\.json/);
   assert.match(source, /"pdf\.mjs"/);
   assert.match(source, /"pdf\.js"/);
@@ -49,7 +49,7 @@ test("PDF.js loader supports modern and Win7 legacy layouts", () => {
 });
 
 test("PDF extraction disables PDF.js eval support", () => {
-  const source = readRoot("server.js");
+  const source = readRoot("pdf-table.js");
   const functionStart = source.indexOf("async function extractPdfRowsByPage");
   const functionEnd = source.indexOf("\nasync function ", functionStart + 1);
   const extractSource = source.slice(functionStart, functionEnd);
@@ -281,8 +281,8 @@ test("runtime diagnostics read Sharp's supported runtime version API", () => {
 });
 
 test("LibreOffice conversions without an output file surface the stable OFFICE_CONVERSION_FAILED code", () => {
-  const server = readRoot("server.js");
-  const branch = /if \(!convertedPath\) \{[\s\S]{0,200}?throw new OfficeEngineError\(\s*"OFFICE_CONVERSION_FAILED"/.exec(server);
+  const server = readRoot("office-convert.js");
+  const branch = /if \(!convertedPath\) \{\s*\n\s*throw new OfficeEngineError\(\s*"OFFICE_CONVERSION_FAILED"/.exec(server);
   assert.ok(branch, "findConvertedFile empty branch must throw the stable code");
   assert.doesNotMatch(server, /throw new Error\(\s*"文档转换失败，可能是不支持这个源格式或文件已损坏。"/);
 });

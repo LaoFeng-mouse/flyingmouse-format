@@ -65,17 +65,18 @@ test("logger mirrors warnings and errors to stdout but not info", async () => {
 
 test("server.js routes conversion lifecycle events through the logger", () => {
   const source = readRoot("server.js");
-  assert.match(source, /require\("\.\/logger"\)/, "server must require the logger");
+  const utilsSource = readRoot("utils.js");
+  assert.ok(source.includes('require("./logger")'), "server must require the logger");
   assert.match(source, /logger\.info\(`Convert request/, "convert request start must be logged");
   assert.match(source, /logger\.info\(`Convert succeeded/, "convert success must be logged");
   assert.match(source, /logger\.error\(`Convert failed/, "convert failure must be logged");
-  assert.match(source, /Command failed/, "engine stderr must be logged on command failure");
+  assert.match(utilsSource, /Command failed/, "engine stderr must be logged on command failure (run lives in utils.js)");
   assert.match(source, /Server listening on/, "server startup must be logged");
 });
 
 test("electron main forwards renderer log events to debug.log behind the trust boundary", () => {
   const source = readRoot("electron-main.js");
-  assert.match(source, /require\("\.\/logger"\)/, "main must require the logger");
+  assert.ok(source.includes('require("./logger")'), "main must require the logger");
   assert.match(source, /logger\.setLogFile\(/, "main must point the logger at userData");
   assert.match(source, /ipcMain\.handle\("log-event"/, "log-event IPC handler is missing");
   assert.match(source, /assertTrustedIpc\(event\)/, "renderer log IPC must check the trust boundary");
