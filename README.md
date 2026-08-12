@@ -25,6 +25,7 @@
 - 批量转换：显示逐文件进度、结果和失败原因，并可单独保存或保存全部。
 - 转换质量：HTML / Office 转 Markdown 保留标题、列表和代码块；CSV 支持 BOM、转义引号和字段内换行。
 - PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
+- PDF → Word（可编辑内容提取）：电子版 PDF 提取文字与简单表格生成可编辑 DOCX，扫描版自动 OCR 回退。注意：不保留原 PDF 的图片、字体、颜色、页眉页脚与复杂版式，属内容提取而非版式还原。
 - 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 500 页、OCR 100 页。
 
 > NCM 说明：仅保证支持 `music.163.com` 对应客户端下载的音乐文件。其他网站或来源虽然扩展名也可能是 `.ncm`，但内部格式不同，不属于本项目的兼容范围。
@@ -90,6 +91,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Batch conversion with per-file progress, results, error details, individual save, and Save All.
 - Higher-quality text conversion: structural HTML/Office Markdown plus standards-compliant quoted and multiline CSV parsing.
 - PDF → Excel smart table extraction for digital text and scanned pages, including multiple tables, continued pages, merged cells, confidence notes, and Raw fallback.
+- PDF → Word (editable content extraction): digital PDFs are converted to editable DOCX with text and simple tables; scanned PDFs fall back to OCR. Layout is not restored — images, fonts, colors, headers/footers, and complex page design are not preserved.
 - Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
 
 > NCM scope: compatibility is guaranteed only for files downloaded by the NetEase Cloud Music client associated with `music.163.com`. Files from other sites may use a different internal format despite sharing the `.ncm` extension.
