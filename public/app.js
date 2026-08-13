@@ -1094,7 +1094,15 @@ function renderUpdateStatus(status) {
   else if (kind === "downloaded") { text = t("update.downloaded", { version }); tone = "ok"; }
   else if (kind === "error") { text = t("update.error", { message }); tone = "error"; }
   else if (kind === "unavailable") text = t("update.unavailable");
-  if (!text) {
+
+  // 检测到新版本才亮出「检查更新」入口（默认隐藏，不打扰用户）。
+  if (kind === "available" || kind === "downloaded") {
+    updateButton.hidden = false;
+  }
+
+  // 状态文本：有新版本或手动检查中时显示；无更新/出错静默。
+  const showStatus = kind === "available" || kind === "downloaded" || kind === "checking";
+  if (!text || !showStatus) {
     updateStatusEl.hidden = true;
     return;
   }

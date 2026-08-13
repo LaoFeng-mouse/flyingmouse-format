@@ -106,6 +106,14 @@ test("video targets expose a codec selector (h264/h265/av1) for mp4/mov/mkv", ()
   assert.match(app, /form\.append\("videoCodec"/);
 });
 
+test("update entry is hidden by default and revealed only on update-available", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="updateButton"[^>]*hidden/);
+  assert.match(app, /kind === "available" \|\| kind === "downloaded"/);
+  assert.match(app, /updateButton\.hidden = false/);
+});
+
 test("renderer enforces the advertised 2 GB batch limit and localizes resource errors", () => {
   const app = readPublic("app.js");
   assert.match(app, /maxBatchBytes/);
