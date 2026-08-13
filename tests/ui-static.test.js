@@ -139,16 +139,16 @@ test("renderer labels experimental inputs and the macOS AV3A boundary bilinguall
   assert.match(app, /macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows/);
 });
 
-test("renderer surfaces a feedback email in the footer and on failures", () => {
+test("renderer surfaces a feedback email in the header and on failures", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
-  assert.match(html, /class="app-footer"/);
+  assert.match(html, /class="feedback-line"/);
   assert.match(html, /3465177342@qq\.com/);
   assert.match(app, /"feedback\.label": "问题反馈"/);
   assert.match(app, /"feedback\.label": "Feedback"/);
   assert.match(app, /"feedback\.hint": "如需帮助，请反馈至 3465177342@qq\.com"/);
   assert.match(app, /"feedback\.hint": "For help, please contact 3465177342@qq\.com"/);
   assert.match(app, /t\("feedback\.hint"\)/);
-  assert.match(css, /\.app-footer/);
+  assert.match(css, /\.feedback-line/);
 });
