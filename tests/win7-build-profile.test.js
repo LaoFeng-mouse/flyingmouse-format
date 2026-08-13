@@ -79,6 +79,7 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "av3a-format.js",
     "kgg-format.js",
     "mflac-format.js",
+    "kgma-format.js",
     "config.js",
     "utils.js",
     "media.js",
@@ -121,7 +122,8 @@ test("stage source entries contain runtime source and assets but exclude node_mo
     "office-engine.js",
     "ncm-format.js",
     "kgg-format.js",
-    "mflac-format.js"
+    "mflac-format.js",
+    "kgma-format.js"
   ]) {
     assert.ok(entries.includes(entry), `missing staged ${entry}`);
   }

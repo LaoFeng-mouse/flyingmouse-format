@@ -35,6 +35,7 @@ const { buildNcmFfmpegOptions } = require("./ncm-metadata");
 const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
 const { convertMflac } = require("./mflac-format");
+const { convertKgma } = require("./kgma-format");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
@@ -534,10 +535,11 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg")) {
+      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg" || inputExt === "kgma")) {
         let decrypted;
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
+        else if (inputExt === "kgma") decrypted = await convertKgma(file.path);
         else decrypted = await convertMflac(file.path);
         try {
           const conversionInput = inputExt === "ncm"
