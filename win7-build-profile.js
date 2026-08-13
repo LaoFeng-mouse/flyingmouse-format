@@ -30,6 +30,7 @@ const REQUIRED_RUNTIME_FILES = [
   "av3a-format.js",
   "kgg-format.js",
   "mflac-format.js",
+  "kgma-format.js",
   "config.js",
   "utils.js",
   "media.js",
