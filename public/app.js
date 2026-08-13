@@ -6,6 +6,8 @@ const state = {
   batchResults: [],
   isConverting: false,
   progressValue: 0,
+  previewResult: null,
+  previewOpener: null,
   settings: { schemaVersion: 2, targetBySource: {} }
 };
 
@@ -56,6 +58,13 @@ const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
 const downloadButton = document.querySelector("#downloadButton");
 const batchSaveButton = document.querySelector("#batchSaveButton");
+const previewButton = document.querySelector("#previewButton");
+const previewDrawer = document.querySelector("#previewDrawer");
+const previewBackdrop = document.querySelector("#previewBackdrop");
+const previewClose = document.querySelector("#previewClose");
+const previewTitle = document.querySelector("#previewTitle");
+const previewMeta = document.querySelector("#previewMeta");
+const previewContent = document.querySelector("#previewContent");
 const toolHealth = document.querySelector("#toolHealth");
 const formatTable = document.querySelector("#formatTable");
 const dropHint = document.querySelector("#dropHint");
@@ -68,6 +77,7 @@ const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
+const agentInstallButton = document.querySelector("#agentInstallButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
 const {
   STORAGE_KEY: LEGACY_TARGET_STORAGE_KEY,
@@ -83,6 +93,13 @@ const messages = {
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
+    "agent.install": "接入 Agent", "agent.checking": "正在检索已安装 Agent 的 skill 目录…",
+    "agent.none": "没有发现现有的 Agent skill 目录。请先安装 Codex、Claude 或创建 ~/.agents/skills。",
+    "agent.canceled": "已取消接入 Agent。", "agent.installed": "已接入 {count} 个 Agent：{paths}",
+    "agent.partial": "已接入 {count} 个 Agent，另有 {failed} 个失败：{message}", "agent.failed": "接入 Agent 失败：{message}",
+    "preview.open": "预览", "preview.eyebrow": "转换结果", "preview.title": "文件预览",
+    "preview.close": "关闭预览", "preview.loading": "正在载入预览…", "preview.unsupported": "此格式暂不支持内嵌预览，可以保存后使用系统应用打开。",
+    "preview.tooLarge": "文本文件超过 2 MB，为避免界面卡顿，请保存后查看。", "preview.failed": "预览失败：{message}",
     "update.check": "检查更新", "update.checking": "正在检查更新…",
     "update.latest": "已是最新版本", "update.available": "发现新版本 v{version}，正在下载…",
     "update.downloaded": "新版本 v{version} 已下载，重启后生效", "update.restart": "立即重启",
@@ -148,6 +165,13 @@ const messages = {
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
+    "agent.install": "Connect to Agent", "agent.checking": "Looking for existing Agent skill directories…",
+    "agent.none": "No existing Agent skill directory was found. Install Codex or Claude, or create ~/.agents/skills first.",
+    "agent.canceled": "Agent connection canceled.", "agent.installed": "Connected to {count} Agent target(s): {paths}",
+    "agent.partial": "Connected to {count} target(s); {failed} failed: {message}", "agent.failed": "Agent connection failed: {message}",
+    "preview.open": "Preview", "preview.eyebrow": "Conversion result", "preview.title": "File preview",
+    "preview.close": "Close preview", "preview.loading": "Loading preview…", "preview.unsupported": "This format cannot be previewed here. Save it and open it with a system application.",
+    "preview.tooLarge": "This text file is larger than 2 MB. Save it to view without slowing the app.", "preview.failed": "Preview failed: {message}",
     "update.check": "Check for Updates", "update.checking": "Checking for updates…",
     "update.latest": "You are up to date", "update.available": "New version v{version} found, downloading…",
     "update.downloaded": "v{version} downloaded; restart to apply", "update.restart": "Restart now",
@@ -363,6 +387,8 @@ function resetDownload() {
   downloadButton.removeAttribute("href");
   downloadButton.removeAttribute("download");
   batchSaveButton.hidden = true;
+  previewButton.hidden = true;
+  closePreview();
 }
 
 function clearFile() {
@@ -516,6 +542,10 @@ function renderBatchList() {
     }
     actions.append(createTextElement("span", "batch-status", batchStatusLabel(result.status)));
     if (result.status === "success" && result.result) {
+      const resultPreviewButton = createTextElement("button", "mini-button", t("preview.open"));
+      resultPreviewButton.type = "button";
+      resultPreviewButton.dataset.previewIndex = String(index);
+      actions.append(resultPreviewButton);
       const saveButton = createTextElement("button", "mini-button", t("action.save"));
       saveButton.type = "button";
       saveButton.dataset.saveIndex = String(index);
@@ -783,6 +813,7 @@ async function convertMergedImagesToPdf() {
     downloadButton.download = result.fileName;
     downloadButton.textContent = `${t("action.save")} ${result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `Images merged into ${result.fileName}.` : `图片已合并为：${result.fileName}。`, "success");
@@ -855,6 +886,7 @@ async function convertMergedPdfs() {
     downloadButton.download = result.fileName;
     downloadButton.textContent = `${t("action.save")} ${result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `PDF files merged into ${result.fileName}.` : `PDF 已合并为：${result.fileName}。`, "success");
@@ -948,6 +980,7 @@ async function convertCurrentFiles() {
     downloadButton.download = successful[0].result.fileName;
     downloadButton.textContent = `${t("action.save")} ${successful[0].result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
   }
 
   batchSaveButton.hidden = successful.length < 2;
@@ -986,6 +1019,94 @@ async function saveResult(result) {
   link.href = result.downloadUrl;
   link.download = result.fileName;
   link.click();
+}
+
+function previewFallback(result, message) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "preview-fallback";
+  wrapper.append(
+    createTextElement("p", "preview-fallback-name", result.fileName),
+    createTextElement("p", "", message),
+    createTextElement("p", "preview-fallback-meta", `${result.mimeType || "application/octet-stream"} · ${formatSize(result.previewSize || 0)}`)
+  );
+  previewContent.replaceChildren(wrapper);
+}
+
+async function renderPreview(result) {
+  previewTitle.textContent = result.fileName || t("preview.title");
+  previewMeta.textContent = `${result.mimeType || "application/octet-stream"} · ${formatSize(result.previewSize || 0)}`;
+  previewContent.replaceChildren(createTextElement("p", "preview-loading", t("preview.loading")));
+  const previewKind = result.previewKind;
+  if (!result.previewUrl || previewKind === "unsupported") {
+    previewFallback(result, t("preview.unsupported"));
+    return;
+  }
+  if (previewKind === "image") {
+    const image = document.createElement("img");
+    image.className = "preview-image";
+    image.alt = result.fileName;
+    image.src = result.previewUrl;
+    previewContent.replaceChildren(image);
+    return;
+  }
+  if (previewKind === "pdf") {
+    const frame = document.createElement("iframe");
+    frame.className = "preview-frame";
+    frame.title = result.fileName;
+    frame.src = result.previewUrl;
+    previewContent.replaceChildren(frame);
+    return;
+  }
+  if (previewKind === "audio" || previewKind === "video") {
+    const media = document.createElement(previewKind);
+    media.className = `preview-${previewKind}`;
+    media.controls = true;
+    media.preload = "metadata";
+    media.src = result.previewUrl;
+    previewContent.replaceChildren(media);
+    return;
+  }
+  if (previewKind === "text") {
+    if ((result.previewSize || 0) > 2 * 1024 * 1024) {
+      previewFallback(result, t("preview.tooLarge"));
+      return;
+    }
+    const response = await fetch(result.previewUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const pre = document.createElement("pre");
+    pre.className = "preview-text";
+    pre.textContent = await response.text();
+    previewContent.replaceChildren(pre);
+    return;
+  }
+  previewFallback(result, t("preview.unsupported"));
+}
+
+async function openPreview(result, opener) {
+  if (!result) return;
+  state.previewResult = result;
+  state.previewOpener = opener || document.activeElement;
+  previewDrawer.hidden = false;
+  previewBackdrop.hidden = false;
+  document.body.classList.add("preview-open");
+  previewClose.focus();
+  try {
+    await renderPreview(result);
+  } catch (error) {
+    previewFallback(result, t("preview.failed", { message: error.message || "unknown" }));
+  }
+}
+
+function closePreview() {
+  if (!previewDrawer || previewDrawer.hidden) return;
+  previewDrawer.hidden = true;
+  previewBackdrop.hidden = true;
+  previewContent.replaceChildren();
+  document.body.classList.remove("preview-open");
+  const opener = state.previewOpener;
+  state.previewResult = null;
+  state.previewOpener = null;
+  if (opener && document.contains(opener)) opener.focus();
 }
 
 async function saveConvertedFile(event) {
@@ -1057,6 +1178,12 @@ batchList.addEventListener("click", async (event) => {
     moveFileInQueue(Number(moveButton.dataset.move), moveButton.dataset.direction);
     return;
   }
+  const previewAction = event.target.closest("[data-preview-index]");
+  if (previewAction) {
+    const result = state.batchResults[Number(previewAction.dataset.previewIndex)]?.result;
+    await openPreview(result, previewAction);
+    return;
+  }
   const button = event.target.closest("[data-save-index]");
   if (!button) return;
   const index = Number(button.dataset.saveIndex);
@@ -1096,6 +1223,43 @@ targetSelect.addEventListener("change", async () => {
 });
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
+previewButton.addEventListener("click", () => openPreview(state.converted, previewButton));
+previewClose.addEventListener("click", closePreview);
+previewBackdrop.addEventListener("click", closePreview);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !previewDrawer.hidden) closePreview();
+});
+agentInstallButton.addEventListener("click", async () => {
+  if (typeof logBridge.inspectAgentSkillTargets !== "function" || typeof logBridge.installAgentSkill !== "function") return;
+  agentInstallButton.disabled = true;
+  setStatus(t("agent.checking"));
+  try {
+    const inspected = await logBridge.inspectAgentSkillTargets();
+    if (!inspected?.targets?.length) {
+      setStatus(t("agent.none"));
+      return;
+    }
+    const result = await logBridge.installAgentSkill({ targetIds: inspected.targets.map((item) => item.id) });
+    if (result?.canceled) {
+      setStatus(t("agent.canceled"));
+    } else if (result.failed?.length) {
+      setStatus(t("agent.partial", {
+        count: result.installed.length,
+        failed: result.failed.length,
+        message: result.failed.map((item) => item.error).join("；")
+      }), result.installed.length ? "success" : "error");
+    } else {
+      setStatus(t("agent.installed", {
+        count: result.installed.length,
+        paths: result.installed.map((item) => item.path).join("；")
+      }), "success");
+    }
+  } catch (error) {
+    setStatus(t("agent.failed", { message: error.message || "unknown" }), "error");
+  } finally {
+    agentInstallButton.disabled = false;
+  }
+});
 diagnosticsButton.addEventListener("click", async () => {
   if (typeof logBridge.exportDiagnostics !== "function") return;
   diagnosticsButton.disabled = true;

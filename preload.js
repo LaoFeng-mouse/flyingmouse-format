@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld("flyingMouseFormat", {
   exportDiagnostics() {
     return ipcRenderer.invoke("export-diagnostics");
   },
+  inspectAgentSkillTargets() {
+    return ipcRenderer.invoke("inspect-agent-skill-targets");
+  },
+  installAgentSkill(payload) {
+    return ipcRenderer.invoke("install-agent-skill", payload);
+  },
   saveConvertedFile(payload) {
     return ipcRenderer.invoke("save-converted-file", payload);
   },

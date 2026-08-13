@@ -223,7 +223,17 @@ function outputPathFor(originalName, targetExt, outputExt = targetExt) {
   return path.join(OUTPUT_DIR, `${Date.now()}-${randomUUID()}-${outputNameFor(originalName, targetExt, outputExt)}`);
 }
 
-function downloadUrlFor(filePath, downloadName, mimeType) {
+function previewKindFor(downloadName, mimeType) {
+  const ext = normalizeExt(extFromName(downloadName));
+  if (String(mimeType).startsWith("image/")) return "image";
+  if (mimeType === "application/pdf" || ext === "pdf") return "pdf";
+  if (String(mimeType).startsWith("audio/")) return "audio";
+  if (String(mimeType).startsWith("video/")) return "video";
+  if (["txt", "md", "json", "csv", "tsv", "xml", "yaml", "yml", "log", "html"].includes(ext)) return "text";
+  return "unsupported";
+}
+
+function registerDownload(filePath, downloadName, mimeType) {
   const id = randomUUID();
   downloads.set(id, {
     filePath,
@@ -231,7 +241,15 @@ function downloadUrlFor(filePath, downloadName, mimeType) {
     mimeType,
     createdAt: Date.now()
   });
-  return `/downloads/${id}`;
+  return {
+    downloadUrl: `/downloads/${id}`,
+    previewUrl: `/previews/${id}`,
+    previewKind: previewKindFor(downloadName, mimeType)
+  };
+}
+
+function downloadUrlFor(filePath, downloadName, mimeType) {
+  return registerDownload(filePath, downloadName, mimeType).downloadUrl;
 }
 
 function escapeHtml(value) {
@@ -257,6 +275,8 @@ module.exports = {
   outputExtFor,
   outputNameFor,
   outputPathFor,
+  previewKindFor,
+  registerDownload,
   downloadUrlFor,
   escapeHtml
 };
