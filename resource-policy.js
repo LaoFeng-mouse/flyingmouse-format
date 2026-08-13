@@ -5,6 +5,12 @@ const LIMITS = Object.freeze({
   maxBatchBytes: 2 * 1024 * 1024 * 1024
 });
 
+const STRUCTURE_LIMITS = Object.freeze({
+  maxBlocksPerPage: 5000,
+  maxTablesPerPage: 100,
+  maxCellsPerTable: 20000
+});
+
 const MESSAGES = Object.freeze({
   IMAGE_METADATA_INVALID: {
     zhCN: "无法读取图片尺寸，请确认图片文件完整。",
@@ -134,6 +140,7 @@ function assertPdfPages(pageCount) {
 
 module.exports = {
   LIMITS,
+  STRUCTURE_LIMITS,
   ResourceLimitError,
   imageDecodedPixels,
   assertImageMetadata,

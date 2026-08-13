@@ -14,6 +14,7 @@ const REQUIRED_RUNTIME_FILES = [
   "preload.js",
   "server.js",
   "resource-policy.js",
+  "pdf-structure-contract.js",
   "text-conversion.js",
   "office-engine.js",
   "office-quality.js",

@@ -86,6 +86,7 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "zip-util.js",
     "image.js",
     "ocr.js",
+    "pdf-structure-contract.js",
     "pdfjs.js",
     "pdf-classifier.js",
     "pdf-table.js",
@@ -164,6 +165,20 @@ test("derived package and staging entries restore the PDF classifier runtime mod
 
   assert.ok(packageJson.build.files.includes("pdf-classifier.js"));
   assert.ok(stagingEntries.includes("pdf-classifier.js"));
+});
+
+test("derived package and staging entries restore the PDF structure contract runtime module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-structure-contract.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-structure-contract.js"));
+  assert.ok(stagingEntries.includes("pdf-structure-contract.js"));
 });
 
 test("test script filtering rejects shell syntax and unknown command forms", () => {
