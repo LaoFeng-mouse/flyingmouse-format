@@ -8,7 +8,9 @@
 // 解密算法与酷狗 KGG v5 同源（QMC2：ekeyDecrypt + QMC2MAP/QMC2RC4），复用 kgg-format.js。
 const path = require("path");
 const os = require("os");
+const fs = require("fs");
 const fsp = require("fs/promises");
+const childProcess = require("child_process");
 
 const { ekeyDecrypt, createQMC2, QMC2MAP, QMC2RC4 } = require("./kgg-format");
 
@@ -20,9 +22,50 @@ const API_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
 const API_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 const API_PLATFORM = "20";
 
+// 解析 Windows 真实桌面目录。桌面可能被用户移到 D 盘、或 OneDrive 重定向，
+// os.homedir()+"Desktop" 只对默认位置有效。用 PowerShell [Environment]::GetFolderPath
+// 拿系统真实桌面路径；失败（精简系统/未装 PowerShell）则回退候选。结果缓存，避免
+// 每次解密都起一次 PowerShell。
+let cachedDesktopDir = null;
+let desktopDirResolved = false;
+
+function resolveWindowsDesktopDir() {
+  if (process.platform !== "win32") return null;
+  if (desktopDirResolved) return cachedDesktopDir;
+  desktopDirResolved = true;
+  try {
+    const out = childProcess.execFileSync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('Desktop')"],
+      { encoding: "utf8", timeout: 5000, windowsHide: true }
+    ).trim();
+    if (out && /^[A-Za-z]:[\\/]/.test(out)) cachedDesktopDir = out;
+  } catch {
+    // PowerShell 不可用时回退 os.homedir() 候选路径。
+  }
+  return cachedDesktopDir;
+}
+
 // 每次调用动态计算，便于测试通过 FLYINGMOUSE_QQ_COOKIE 覆盖（隔离真实桌面凭据）。
 function getDefaultCookiePath() {
-  return process.env.FLYINGMOUSE_QQ_COOKIE || path.join(os.homedir(), "Desktop", "QQ音乐_登录cookie.txt");
+  if (process.env.FLYINGMOUSE_QQ_COOKIE) return process.env.FLYINGMOUSE_QQ_COOKIE;
+  const fileName = "QQ音乐_登录cookie.txt";
+  const home = os.homedir();
+  const dirs = [];
+  const realDesktop = resolveWindowsDesktopDir();
+  if (realDesktop) dirs.push(realDesktop);
+  // 兜底候选：默认桌面、OneDrive 重定向桌面（个人版）。去重后返回第一个存在的文件。
+  dirs.push(path.join(home, "Desktop"));
+  dirs.push(path.join(home, "OneDrive", "Desktop"));
+  const seen = new Set();
+  for (const dir of dirs) {
+    const key = dir.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const candidate = path.join(dir, fileName);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(realDesktop || path.join(home, "Desktop"), fileName);
 }
 
 function qmcError(message, code = "MFLAC_DECRYPT_FAILED") {
