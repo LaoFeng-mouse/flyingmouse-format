@@ -1,29 +1,26 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-13（v0.5.0 已发布：KGMA + .mmp4 + PDF→Word/Excel + 视频编码 + 商店版隐藏解锁 + 云端发布；v0.5.x 待发：QQ 音乐登录教程弹窗）
+更新时间：2026-08-13（v0.5.1 已发布：QQ 音乐登录教程弹窗 + psrf cookie 兼容；v0.5.0 之前版本见下）
 
 ## 待办（下一窗口，2026-08-13 晚更新）
 
-- ① v0.5.1 发版进行中：bump 0.5.0→0.5.1 已完成，本地测试 336 全过；推送 main + 打 tag v0.5.1 触发 CI 云端发布（release.yml 三构建 job + publish job，约 1 小时）；发完后回读 Release 四平台资产 + 设 Latest 确认
+- ① v0.5.1 已发布（2026-08-13 晚）：GitHub Release 六件套已自动发布（x64 exe + blockmap + latest.yml + win7 + mac arm64/x64）；本地安装包四件套已复制桌面 v0.5.1分发\ 供 123 云盘上传（用户操作中）；商店 APPX 0.5.1 已构建校验（912MB，桌面，Identity 488B6338.354574AC174AD / 0.5.1.0 / 鼠鼠图标 / 商店隐藏解锁），Partner Center 上传归用户本人；README 版本号已同步 0.5.1
 - ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证
 - ③ 真实 RAW 样本验收（无真实相机样张）
 - ④ 真实 Win7/Mac 物理设备验收
-- ⑤ Partner Center 现场回读 v0.5.0 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
+- ⑤ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
 - ⑥ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
-- ⑦ 123 云盘上传：已交 Codex 接手，本窗口不处理
+- ⑦ 123 云盘上传：v0.5.1 四平台安装包（用户操作中）；分享需设「直链/免登录下载」
 - ⑧ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
 
-## 2026-08-13 晚：QQ 音乐登录教程弹窗 + psrf cookie 兼容（v0.5.1 发布中）
+## v0.5.1 已发布（2026-08-13 晚）
 
-- **feat bb0155c**：musicex 解密失败（MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK）时前端自动弹出「QQ 音乐登录教程」弹窗：
-  - 7 步图文教程：登录 y.qq.com → F12 → Application 标签 → Cookie 列表 → 复制 qm_keyst/uin → 桌面新建 QQ音乐_登录cookie.txt → 回软件重新转换
-  - 第 6 步「复制模板」按钮：一键复制 `uin=你的QQ号; qm_keyst=你复制的qm_keyst值` 模板（navigator.clipboard，失败降级选中提示 Ctrl+C）
-  - 6 张打码图解随包分发（public/assets/qq-tutorial/step1-6.png，真实 cookie 值/身份信息已打码；qm_keyst 行与新版 psrf_qqmusic_uin/psrf_qqmusic_key 名称清晰可见）
-  - 中英文双语 i18n；Esc / 遮罩 / × / 「我知道了」均可关闭；图片缺失时自动隐藏破图占位
-  - 测试：ui-static.test.js 新增 2 条静态断言
-- **fix fdc4300**：loadQqMusicCredentials 兼容新版扫码登录 cookie 名 `psrf_qqmusic_key`（旧版 qm_keyst / qqmusic_key 仍支持），避免用户复制新版 cookie 名读不到凭据；mflac-format.test.js 加单测
-- 验证：全量 336 = 334 pass + 2 skip + 0 fail；浏览器实测 6 图加载正常；`--dir` 打包同步桌面副本（C:\Users\34615\飞鼠格式\FlyingMouse Format）实测弹窗正常
-- 未推送未发版；本机桌面副本已含该功能（app.asar 20:18 同步）
+- **QQ 音乐登录教程弹窗**（bb0155c）：musicex 解密失败（MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK）时前端自动弹出 7 步图文教程（登录 y.qq.com → F12 → Application → Cookie 列表 → 复制 qm_keyst/uin → 桌面新建 cookie 文件 → 重试），第 6 步「复制模板」按钮一键复制模板；6 张打码图解随包分发；中英文双语；ui-static 断言保护
+- **psrf_qqmusic_key 兼容**（fdc4300）：loadQqMusicCredentials 接受新版扫码登录 cookie 名（旧版 qm_keyst / qqmusic_key 仍支持），mflac-format.test.js 加单测
+- GitHub Release v0.5.1 已发布并设 Latest（六件套齐全，自动更新闭环：装 0.5.0 用户开软件自动收更新）；CI run 31700878539 四 job 全绿（Windows + mac x64 + mac arm64 + publish 云端发布）
+- 本地安装包四件套：桌面 v0.5.1分发\（Win10/11 x64 646MB + win7 522MB + mac arm64 683MB + mac x64 719MB，与 Release 字节数一致），供 123 云盘分发
+- 商店 APPX：dist/FlyingMouse Format-Setup-0.5.1-x64.appx（912,294,218 字节，0.5.1.0 / Identity 488B6338.354574AC174AD / x64 / 鼠鼠图标非橙色 / qqTutorialModal×7 + psrf×4 + AUDIO_UNLOCK_UNAVAILABLE_ON_STORE×1 / 引擎齐全），桌面副本 FlyingMouse-Format-Setup-0.5.1-x64.appx；Partner Center 上传待用户
+- 验证：全量 336 = 334 pass + 2 skip + 0 fail；APPX 校验记录同 dist/ 校验脚本
 
 ## v0.4.1 发布状态（2026-08-13，已完成）
 
