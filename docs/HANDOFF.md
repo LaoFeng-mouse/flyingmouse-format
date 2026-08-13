@@ -4,7 +4,7 @@
 
 ## 待办（下一窗口，2026-08-13 晚更新）
 
-- ① 本次教程弹窗 + psrf cookie 兼容（bb0155c / fdc4300）已提交 main 未推送：推送走代理（HTTPS_PROXY=http://127.0.0.1:7897）；推送后可选择 bump 版本号（0.5.0→0.5.1）发版让用户拿到（本地已 --dir 打包同步桌面副本验证通过：弹窗自动弹出 + 6 图正常 + 复制模板按钮可用）
+- ① v0.5.1 发版进行中：bump 0.5.0→0.5.1 已完成，本地测试 336 全过；推送 main + 打 tag v0.5.1 触发 CI 云端发布（release.yml 三构建 job + publish job，约 1 小时）；发完后回读 Release 四平台资产 + 设 Latest 确认
 - ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证
 - ③ 真实 RAW 样本验收（无真实相机样张）
 - ④ 真实 Win7/Mac 物理设备验收
@@ -13,7 +13,7 @@
 - ⑦ 123 云盘上传：已交 Codex 接手，本窗口不处理
 - ⑧ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
 
-## 2026-08-13 晚：QQ 音乐登录教程弹窗 + psrf cookie 兼容（未发布）
+## 2026-08-13 晚：QQ 音乐登录教程弹窗 + psrf cookie 兼容（v0.5.1 发布中）
 
 - **feat bb0155c**：musicex 解密失败（MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK）时前端自动弹出「QQ 音乐登录教程」弹窗：
   - 7 步图文教程：登录 y.qq.com → F12 → Application 标签 → Cookie 列表 → 复制 qm_keyst/uin → 桌面新建 QQ音乐_登录cookie.txt → 回软件重新转换
