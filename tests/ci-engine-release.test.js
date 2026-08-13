@@ -1,11 +1,58 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 
 const root = path.join(__dirname, "..");
+const releaseNotesResolver = path.join(root, "scripts", "resolve-release-notes.js");
+
+function withReleaseNotesFixture(files, callback) {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "flyingmouse-release-notes-"));
+  try {
+    for (const [relativePath, content] of Object.entries(files)) {
+      const fullPath = path.join(fixtureRoot, relativePath);
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, content, "utf8");
+    }
+    callback(fixtureRoot);
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+test("release notes resolver preserves the markdown extension", () => {
+  withReleaseNotesFixture({ "docs/release-notes-050.md": "# v0.5.0" }, (fixtureRoot) => {
+    const result = spawnSync(process.execPath, [releaseNotesResolver, "v0.5.0", fixtureRoot], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "docs/release-notes-050.md");
+  });
+});
+
+test("release notes resolver falls back to the release guide", () => {
+  withReleaseNotesFixture({ "docs/RELEASE.md": "# Release guide" }, (fixtureRoot) => {
+    const result = spawnSync(process.execPath, [releaseNotesResolver, "v9.8.7", fixtureRoot], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "docs/RELEASE.md");
+  });
+});
+
+test("release notes resolver rejects malformed tags", () => {
+  withReleaseNotesFixture({}, (fixtureRoot) => {
+    const result = spawnSync(process.execPath, [releaseNotesResolver, "release/0.5.0", fixtureRoot], {
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Invalid release tag/);
+  });
+});
 
 test("ci-engines-v1 pins one immutable bundle and required engine files", () => {
   const manifest = require("../ci-engines-v1.json");
