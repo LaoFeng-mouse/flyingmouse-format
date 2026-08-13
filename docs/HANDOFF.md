@@ -12,15 +12,41 @@
 - **修复**：mac DMG 挂载检查卸载容错（release.yml trap 改 cleanup：hdiutil detach -force + 5 次重试 + 失败仅告警，v0.4.0/v0.4.1 实证的 Resource busy exit 16 不再导致发布失败）；APPX 商店 logo 换回鼠鼠
 - **提交（已推送 main，tag v0.4.1 指向 18f8cdf + 后续 workflow 修复 162763a 在 main）**：df8a2e2（musicex 降档+PDF）/ 725596b（PDF 不限）/ 18f8cdf（bump 0.4.1）/ 162763a（mac 容错）
 - **本机已升级 0.4.1**（%LOCALAPPDATA% + 项目目录副本 C:\Users\34615\飞鼠格式\FlyingMouse Format 两套 robocopy + 图标缓存刷新）
-- **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码），待用户本人在 Partner Center 上传（注意商店版本号必须递增，0.4.0 的 APPX 从未上传，直接传 0.4.1）
-- **待办（下一窗口）**：① 商店 Partner Center 上传 0.4.1 APPX（用户本人）；② 清理临时产物：output/ci-artifacts-040（v0.4.0 下载的 1.7GB 已无用）、output/ci-artifacts-041（下载解压后 1.7GB 可留作发布证据或删）、output/ci-engines-check（含 434MB 旧 bundle）、output/release-upload*（连字符副本）、scripts/tmp-* 临时脚本；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
+- **2026-08-13 会话调研结论（用户问过，避免重复排查）**：
+  - **KGG 需要密钥是格式客观限制**：KGG v5 文件只有 audioHash（72B 处），ekey 不嵌入文件，存在酷狗客户端 KGMusicV3.db（%APPDATA%\KuGou8\）按 hash 查表；流密钥每首歌独立（本机两首歌实测不同），不能内置固定 key。对方转不了 = 没装酷狗/这歌不是本机酷狗下载的/库过期。与 mflac musicex 同类（密钥不在文件里），非 bug。用户已决定不做"脱离酷狗"方案。
+  - **Word→PDF 反馈**：本机 0.4.1 普通 docx + WPS 风格 docx 转 PDF 均实测成功（%PDF 头正常）；外部反馈失败优先查：对方版本 < v0.3.8（WPS 修复 8d74720 未进包）、加密/损坏文件、杀软拦 soffice（OFFICE_ENGINE_MISSING/PROFILE_FAILED）。需对方版本号+错误文案+样本定位。
+  - **商店图标两套资源**：build/icon.png（NSIS/EXE）与 build/appx/（商店 4 logo）独立；源码与 dist 0.4.1 APPX 包内均已是鼠鼠（PIL 像素判定橙比 0%）；商店仍显示橙色闪电 = Partner Center 上架的仍是旧包/Store listing 素材未同步，非代码问题。
+- **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码）；**用户已确认上传到 Partner Center（2026-08-13）**。注意：商店展示图标来自 Partner Center 的 Store listing 素材与包内 assets 是两套，若商店页面仍显示橙色闪电，需检查 Store listing 的 logo 素材是否同步为鼠鼠；认证/发布状态需现场回读。
+- **待办（下一窗口）**：① Partner Center 现场回读 0.4.1 认证/发布状态 + 确认 Store listing 图标素材为鼠鼠；② 清理临时产物：output/.trash-ci-artifacts-040、output/.trash-ci-engines-check、output/.trash-release-upload*（均已确认无用，已移入 .trash-）、output/ci-artifacts-041（0.4.1 四平台发布证据，可留可删）、scripts/.trash-tmp/（75 个会话临时脚本）；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
+
+## 进行中（2026-08-13，未提交/未发布）
+
+### KGMA（酷狗会员加密音频）离线解密 —— 已完成，待提交
+- 新增 `kgma-format.js`：crypto_version=3 / crypto_slot=1，16B 密钥内嵌文件头 offset 0x2c，**完全离线可解**（无需酷狗客户端/密钥库）；算法移植 arcana6264/unlock-music `kgm_v3.rs`
+- 接线：config.js audioInput 加 `kgma` → server.js 音频解密分发五分支（ncm/kgg/kgma/mflac/mgg）→ 白名单四处（package.json build.files / win7-build-profile.js REQUIRED_RUNTIME_FILES / tests/win7-build-profile.test.js 两处清单）
+- 测试 `tests/kgma-format.test.js` 7 项（6 单测 + 1 真实样本 fixture 保护，本机 7/7）；fixture `tests/fixtures/sample.kgma` 被 gitignore 不入库（CI 自动 skip）
+- 真实样本 E2E：薛之谦《演员》/林俊杰《背对背拥抱》.kgma → FLAC → MP3 全链路通过
+- 与 KGG 区别：KGMA 密钥内嵌文件头（离线可解）；KGG v5 密钥在酷狗本地库 KGMusicV3.db（需装酷狗）。用户问「KGM 转不了 mp3」实际是 .kgma，现已支持
+
+### 视频输出编码选择（h264/h265/av1）—— 已完成，待提交
+- 后端 media.js `videoEncoderArgs`（h264=libx264/h265=libx265/av1=libsvtav1）+ server.js 读 `req.body.videoCodec`（白名单校验，非法回退 h264）
+- 前端 public/index.html + app.js「视频编码」下拉（目标 mp4/mov/mkv 时显示，仿 zip 压缩级别字段）
+- 测试 `tests/media-codec.test.js` 4 项 + `tests/ui-static.test.js` 新增 1 项静态断言
+- E2E 实测：mkv 源 → mp4 目标，h265→hevc / av1→av1 / 默认→h264 全链路通过（引擎 ffmpeg 实跑）
+
+### 待办（下一窗口）
+- ① 检测更新隐藏（自动检测、有更新才显示入口，现为固定显示）
+- ② 报错反馈入口（伸缩小窗 + 诊断包 + 邮件到 3465177342@qq.com）—— 需定「诊断包 + mailto 打开默认邮件客户端」还是「跳转邮箱页面」
+- ③ PDF→Word 版式还原 —— 需选方案（现方案只抽文字，不还原版式）
+- ④ 工程图纸大图上限 —— 需拍板：图片合并 PDF 是否同 PDF 页数一样完全放开，还是给明确上限（如 A0 400dpi ≈ 3 亿像素）
+- ⑤ KGMA 解密 FLAC 尾部 ~4B 残留清理（可在 convertKgma 里重封）—— 需拍板是否顺手做
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
 ## 项目边界
 
 - GitHub：<https://github.com/LaoFeng-mouse/flyingmouse-format>
-- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.3.5>
+- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.4.1>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
 - v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
 
