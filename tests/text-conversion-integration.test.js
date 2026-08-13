@@ -194,7 +194,7 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
     maxImagePdfPixels: Number.MAX_SAFE_INTEGER,
     maxBatchBytes: Number.MAX_SAFE_INTEGER
   });
-  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
+  assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif", "ico", "tga"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);

@@ -19,7 +19,30 @@ const {
   assertImagePdfBudget
 } = require("./resource-policy");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
-const { convertRasterImage } = require("./image-conversion");
+const { isIcoFileSync, extractBestFrame, encodeIco } = require("./ico-format");
+const { convertRasterImage, WARNING_MESSAGES } = require("./image-conversion");
+
+// ICO 输出：把输入图缩放到多尺寸（16/24/32/48/64/128/256）生成 PNG 帧，组装成 ICO 容器。
+// ICO 是静态格式；动图只取第一帧并附动画压平警告（与其它静态图片目标一致）。
+async function convertToIco(inputPath, outputPath) {
+  const metadata = await sharp(inputPath, { animated: true, limitInputPixels: LIMITS.maxImagePixels }).metadata();
+  const animated = Number(metadata.pages || 1) > 1;
+  const warnings = [];
+  if (animated) warnings.push({ code: "ANIMATION_FLATTENED", messages: WARNING_MESSAGES.ANIMATION_FLATTENED });
+
+  const sizes = [16, 24, 32, 48, 64, 128, 256];
+  const frames = [];
+  for (const size of sizes) {
+    const png = await sharp(inputPath, { page: 0, pages: 1, limitInputPixels: LIMITS.maxImagePixels })
+      .rotate()
+      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+    frames.push({ size, data: png });
+  }
+  await fsp.writeFile(outputPath, encodeIco(frames));
+  return { warnings };
+}
 
 async function convertImage(inputPath, outputPath, target) {
   const prepared = await prepareImageInput(inputPath);
@@ -33,6 +56,10 @@ async function convertImage(inputPath, outputPath, target) {
       const { convertImageToOcrText } = require("./ocr");
       await convertImageToOcrText(prepared.inputPath, outputPath);
       return { warnings: [] };
+    }
+
+    if (target === "ico") {
+      return await convertToIco(prepared.inputPath, outputPath);
     }
 
     if (target === "mp4" || target === "webm") {
@@ -57,6 +84,22 @@ async function convertImage(inputPath, outputPath, target) {
 // 让下游统一走 PNG。
 async function prepareImageInput(inputPath) {
   // 先读文件头判断（不整读大图）；只有需要中转的格式才解码进内存。
+  if (isIcoFileSync(inputPath)) {
+    // ICO 容器：提取最清晰帧（PNG 帧直接落盘；BMP DIB 帧解码成 raw 再转 PNG）。
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ico-input-"));
+    const pngPath = path.join(tempDir, "decoded.png");
+    const frame = extractBestFrame(await fsp.readFile(inputPath));
+    if (frame.png) {
+      await fsp.writeFile(pngPath, frame.data);
+    } else {
+      const { width, height, data } = decodeBmpToRaw(frame.data);
+      await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
+        .png()
+        .toFile(pngPath);
+    }
+    return { inputPath: pngPath, tempDir };
+  }
+
   if (isBmpFileSync(inputPath)) {
     const { width, height, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
@@ -74,6 +117,18 @@ async function prepareImageInput(inputPath) {
     if (!fs.existsSync(pngPath)) {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       throw new Error("HEIC 图片解码失败：无法从该文件提取像素数据。");
+    }
+    return { inputPath: pngPath, tempDir };
+  }
+
+  if (isTgaFileSync(inputPath)) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-tga-input-"));
+    const pngPath = path.join(tempDir, "decoded.png");
+    // -frames:v 1 确保只输出单帧（避免 image2 序列名警告，也防止多帧 TGA 撑爆输出）。
+    await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5 });
+    if (!fs.existsSync(pngPath)) {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw new Error("TGA 图片解码失败：无法从该文件提取像素数据。");
     }
     return { inputPath: pngPath, tempDir };
   }
@@ -131,6 +186,15 @@ function isHeicFileSync(filePath) {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+// TGA（Truevision Targa）是简单位图容器：18 字节头（imageType 字段）+ 可选调色板 +
+// 像素数据（未压缩或 RLE）。sharp/libvips 无 TGA 解码器，但内置 ffmpeg 支持，按扩展名
+// 分流（与 RAW 同理，TGA 无统一魔数）。旧版 TGA 尾部可能带 "TRUEVISION-XFILE." 签名，
+// 但很多软件不写，不能作为可靠判据。
+function isTgaFileSync(filePath) {
+  const ext = path.extname(filePath).toLowerCase().replace(/^\./, "");
+  return ext === "tga";
 }
 
 async function inspectImageMetadata(inputPath, animated = false) {
@@ -203,6 +267,18 @@ async function readImageForPdf(inputPath) {
     try {
       const pngPath = path.join(tempDir, "decoded.png");
       await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, pngPath], { timeout: 1000 * 60 * 5 });
+      return await readPngAsPdfImage(pngPath);
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  // TGA 同理：sharp 无解码器，用 ffmpeg 转 PNG 再提取 raw（图片合并 PDF 路径）。
+  if (isTgaFileSync(inputPath)) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-tga-pdf-"));
+    try {
+      const pngPath = path.join(tempDir, "decoded.png");
+      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5 });
       return await readPngAsPdfImage(pngPath);
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -323,6 +399,7 @@ module.exports = {
   convertImage,
   prepareImageInput,
   isHeicFileSync,
+  isTgaFileSync,
   isRawFileSync,
   inspectImageMetadata,
   convertImageToVideo,

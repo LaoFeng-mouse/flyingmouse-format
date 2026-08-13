@@ -99,10 +99,10 @@ const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
 const DOCENGINE_PATH = bundledDocenginePath();
 
-const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
+const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
 const rawInput = new Set(["cr2", "cr3", "crw", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "3fr", "erf", "fff", "iiq", "kdc", "mef", "mrw", "x3f"]);
-const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"];
+const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
@@ -126,7 +126,7 @@ const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "w
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
-  image: ["heic", "heif"],
+  image: ["heic", "heif", "ico", "tga"],
   raw: [...rawInput],
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
