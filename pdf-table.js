@@ -197,11 +197,31 @@ function camelotTablesToModel(tables) {
   return { summary, sheets, warnings: [] };
 }
 
+// camelot 结果质量门槛：平均准确率 + 非空单元格比例，避免「裁剪/特殊布局」表格被 camelot 错乱提取后不回退。
+function camelotTablesQualityOk(tables) {
+  if (!tables.length) return false;
+  let totalAccuracy = 0;
+  let totalCells = 0;
+  let nonEmptyCells = 0;
+  for (const t of tables) {
+    totalAccuracy += Number.isFinite(t.accuracy) ? t.accuracy : 0;
+    for (const row of (t.cells || [])) {
+      for (const cell of row) {
+        totalCells += 1;
+        if (String(cell ?? "").trim() !== "") nonEmptyCells += 1;
+      }
+    }
+  }
+  const avgAccuracy = totalAccuracy / tables.length;
+  const fillRatio = totalCells ? nonEmptyCells / totalCells : 0;
+  return avgAccuracy >= 60 && fillRatio >= 0.5;
+}
+
 async function extractComplexPdfTableModel(inputPath) {
-  // 优先用文档引擎（docengine table = camelot）提取表格；引擎缺失或无结果时回退到 PDF.js 自研提取。
+  // 优先用文档引擎（docengine table = camelot）提取表格；引擎缺失、无结果或质量差时回退到 PDF.js 自研提取。
   if (DOCENGINE_PATH) {
     const tables = await extractTablesViaDocengine(inputPath);
-    if (tables.length) {
+    if (camelotTablesQualityOk(tables)) {
       return camelotTablesToModel(tables);
     }
   }
