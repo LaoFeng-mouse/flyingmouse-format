@@ -139,8 +139,8 @@
           "to": "dcraw"
         },
         {
-          "from": "bin/pdf2docx",
-          "to": "pdf2docx"
+          "from": "bin/docengine",
+          "to": "docengine"
         },
         {
           "from": "node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz",
