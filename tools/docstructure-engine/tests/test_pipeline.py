@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
@@ -107,7 +108,7 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(raw["parsing_res_list"][0]["block_bbox"], [0, 5, 25, 30])
 
     def test_second_opinion_only_adds_candidates_when_pp_has_no_table(self):
-        raw = {"width": 100, "height": 100, "table_res_list": []}
+        raw = {"width": 100, "height": 100, "tableLike": True, "table_res_list": []}
         with mock.patch("flyingmouse_docstructure.img2table_adapter.detect_table_candidates",
                         return_value=[{"source": "img2table"}]) as detect:
             attach_second_opinion(raw, Path("page.png"), 2)
@@ -118,6 +119,57 @@ class PipelineTests(unittest.TestCase):
         with mock.patch("flyingmouse_docstructure.img2table_adapter.detect_table_candidates") as detect:
             attach_second_opinion(raw, Path("page.png"), 2)
         detect.assert_not_called()
+
+    def test_second_opinion_requires_table_like_evidence(self):
+        raw = {"width": 100, "height": 100, "table_res_list": [],
+               "parsing_res_list": [{"block_label": "text"}]}
+        with mock.patch("flyingmouse_docstructure.img2table_adapter.detect_table_candidates") as detect:
+            attach_second_opinion(raw, Path("page.png"), 1)
+        detect.assert_not_called()
+
+    def test_constructed_pipeline_invocation_never_calls_download_or_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); models = root / "models"; self._models(models)
+            output = root / "output"; output.mkdir(); source = root / "input.pdf"; source.write_bytes(b"%PDF")
+            downloads = mock.Mock()
+            for entrypoint in (downloads.paddleocr_download, downloads.paddle_download,
+                               downloads.paddlex_download, downloads.requests_get,
+                               downloads.requests_post, downloads.urlopen, downloads.urlretrieve):
+                entrypoint.side_effect = AssertionError("network/download entry point called")
+            backend = mock.Mock()
+            backend.predict.return_value = [SimpleNamespace(json={
+                "parsing_res_list": [{"block_label": "text", "block_bbox": [1, 1, 10, 10],
+                                      "block_content": "anonymous", "block_score": .9}],
+                "table_res_list": []})]
+            ppstructure = mock.Mock(return_value=backend)
+            fake_page = mock.Mock(rect=SimpleNamespace(width=20, height=30), rotation=0)
+            fake_pixmap = SimpleNamespace(width=40, height=60,
+                save=lambda target: Image.new("RGB", (40, 60), "white").save(target))
+            fake_page.get_pixmap.return_value = fake_pixmap
+            fake_document = mock.Mock(page_count=1, load_page=mock.Mock(return_value=fake_page))
+            fake_fitz = SimpleNamespace(open=mock.Mock(return_value=fake_document),
+                                        Matrix=lambda x, y: (x, y))
+            fake_paddleocr = SimpleNamespace(PPStructureV3=ppstructure,
+                                              download=downloads.paddleocr_download)
+            fake_paddle = SimpleNamespace(utils=SimpleNamespace(download=downloads.paddle_download))
+            fake_paddlex = SimpleNamespace(utils=SimpleNamespace(download=downloads.paddlex_download))
+            fake_requests = SimpleNamespace(get=downloads.requests_get,
+                                            post=downloads.requests_post)
+            fake_urlrequest = SimpleNamespace(urlopen=downloads.urlopen,
+                                              urlretrieve=downloads.urlretrieve)
+            with mock.patch.dict(sys.modules, {"paddleocr": fake_paddleocr, "paddle": fake_paddle,
+                "paddlex": fake_paddlex, "requests": fake_requests, "urllib.request": fake_urlrequest,
+                "fitz": fake_fitz}), \
+                mock.patch("flyingmouse_docstructure.pipeline.attach_second_opinion"):
+                pipeline = build_pipeline(models, "ch")
+                pages = pipeline.parse(source, output)
+                pipeline.close()
+            self.assertEqual(len(pages), 1)
+            self.assertEqual(downloads.mock_calls, [])
+            kwargs = ppstructure.call_args.kwargs
+            supplied = {Path(value).resolve() for key, value in kwargs.items()
+                        if key.endswith("_model_dir")}
+            self.assertEqual(supplied, {path.resolve() for path in models.iterdir()})
 
     @unittest.skipIf(os.name == "nt", "symlink creation is not reliably permitted on Windows")
     def test_symlink_model_is_rejected(self):

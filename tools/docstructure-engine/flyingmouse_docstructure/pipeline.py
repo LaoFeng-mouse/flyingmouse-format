@@ -263,6 +263,13 @@ def materialize_assets(raw: dict, reference: Path, output_dir: Path, page_number
 def attach_second_opinion(raw: dict, reference: Path, page_number: int) -> None:
     tables = raw.get("table_res_list", raw.get("tables", []))
     if tables: return
+    blocks = raw.get("parsing_res_list", raw.get("blocks", []))
+    layout_boxes = raw.get("layout_det_res", {}).get("boxes", [])
+    table_like = raw.get("tableLike") is True or any(
+        isinstance(block, dict) and block.get("block_label", block.get("type")) == "table"
+        for block in [*blocks, *layout_boxes]
+    )
+    if not table_like: return
     from .img2table_adapter import detect_table_candidates
     candidates = detect_table_candidates(reference, page_number, raw.get("overall_ocr_res"))
     if candidates:

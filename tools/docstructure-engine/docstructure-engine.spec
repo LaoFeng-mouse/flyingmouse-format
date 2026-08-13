@@ -13,6 +13,8 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="docstructure-engine",
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="docstructure-engine",
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=True, disable_windowed_traceback=True)
+dist = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False,
+               name="docstructure-engine")

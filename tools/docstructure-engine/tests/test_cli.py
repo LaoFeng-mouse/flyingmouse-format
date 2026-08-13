@@ -125,6 +125,59 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("SECRET", stderr)
         self.assertNotIn("Traceback", stderr)
 
+    def test_manifest_temp_collision_is_invalid_output_and_private(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / "private.pdf"; source.write_bytes(b"%PDF")
+            output = root / "out"; output.mkdir(); (output / ".manifest.json.tmp").write_bytes(b"x")
+            models = root / "models"; models.mkdir()
+            code, stdout, stderr = self.invoke(["parse", "--input", str(source),
+                "--output", str(output), "--models", str(models), "--language", "ch"])
+            self.assertEqual(list(output.iterdir()), [])
+        self.assertEqual((code, stdout), (22, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertEqual(json.loads(stderr)["code"], "INVALID_OUTPUT")
+        self.assertNotIn("private", stderr)
+
+    def test_manifest_replace_oserror_is_invalid_output_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / "private.pdf"; source.write_bytes(b"%PDF")
+            output = root / "out"; models = root / "models"; models.mkdir()
+            with mock.patch("flyingmouse_docstructure.__main__.os.replace",
+                            side_effect=OSError("private replacement path")):
+                code, stdout, stderr = self.invoke(["parse", "--input", str(source),
+                    "--output", str(output), "--models", str(models), "--language", "ch"])
+            self.assertEqual(list(output.iterdir()), [])
+        self.assertEqual((code, stdout), (22, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertEqual(json.loads(stderr)["code"], "INVALID_OUTPUT")
+        self.assertNotIn("private", stderr)
+
+    def test_manifest_write_oserror_is_invalid_output_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / "private.pdf"; source.write_bytes(b"%PDF")
+            output = root / "out"; models = root / "models"; models.mkdir()
+            original_open = Path.open
+
+            class FailingStream:
+                def __enter__(self): return self
+                def __exit__(self, *args): return False
+                def write(self, _data): raise OSError("private write path")
+
+            def open_with_write_failure(path, *args, **kwargs):
+                if path.name == ".manifest.json.tmp":
+                    path.touch()
+                    return FailingStream()
+                return original_open(path, *args, **kwargs)
+
+            with mock.patch("pathlib.Path.open", new=open_with_write_failure):
+                code, stdout, stderr = self.invoke(["parse", "--input", str(source),
+                    "--output", str(output), "--models", str(models), "--language", "ch"])
+            self.assertEqual(list(output.iterdir()), [])
+        self.assertEqual((code, stdout), (22, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertEqual(json.loads(stderr)["code"], "INVALID_OUTPUT")
+        self.assertNotIn("private", stderr)
+
     def test_import_does_not_load_heavy_dependencies_or_spawn(self):
         script = "import sys; import flyingmouse_docstructure.__main__; " \
                  "print(','.join(x for x in ('paddleocr','img2table','fitz','PIL') if x in sys.modules))"

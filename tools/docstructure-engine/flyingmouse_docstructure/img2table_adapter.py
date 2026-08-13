@@ -8,16 +8,6 @@ MAX_CELLS = 20_000
 MAX_OCR_TOKENS = 20_000
 
 
-def _clusters(values: list[int], tolerance: int) -> list[int]:
-    groups: list[list[int]] = []
-    for value in values:
-        if not groups or value - groups[-1][-1] > tolerance:
-            groups.append([value])
-        else:
-            groups[-1].append(value)
-    return [round(sum(group) / len(group)) for group in groups]
-
-
 def _ocr_for_box(box: list[int], ocr_result: dict | None) -> tuple[str, float]:
     if not isinstance(ocr_result, dict): return "", 0.75
     boxes = ocr_result.get("rec_boxes", [])
@@ -80,55 +70,4 @@ def _from_img2table(image_path: Path, page_number: int, ocr_result: dict | None)
 def detect_table_candidates(image_path: Path, page_number: int,
                             ocr_result: dict | None = None) -> list[dict]:
     extracted = _from_img2table(image_path, page_number, ocr_result)
-    if extracted:
-        return extracted
-    # Pillow remains lazy so importing the CLI never imports an imaging runtime.
-    from PIL import Image
-
-    with Image.open(image_path) as source:
-        gray = source.convert("L")
-        width, height = gray.size
-        pixels = gray.load()
-        vertical = []
-        minimum_rule = max(12, round(height * .20))
-        for x in range(width):
-            run = best = 0
-            for y in range(height):
-                if pixels[x, y] < 64:
-                    run += 1; best = max(best, run)
-                else:
-                    run = 0
-            if best >= minimum_rule:
-                vertical.append(x)
-        lines = _clusters(vertical, max(2, width // 500))
-        if len(lines) < 3:
-            return []
-        left, right = lines[0], lines[-1]
-        horizontal = []
-        minimum_width = max(12, round((right - left) * .60))
-        for y in range(height):
-            run = best = 0
-            for x in range(left, right + 1):
-                if pixels[x, y] < 64:
-                    run += 1; best = max(best, run)
-                else:
-                    run = 0
-            if best >= minimum_width:
-                horizontal.append(y)
-        rows = _clusters(horizontal, max(2, height // 700))
-        if len(rows) < 3:
-            return []
-        if (len(rows) - 1) * (len(lines) - 1) > MAX_CELLS: raise ResourceLimitError()
-        cells = []
-        for row in range(len(rows) - 1):
-            for column in range(len(lines) - 1):
-                box = [lines[column], rows[row], lines[column + 1], rows[row + 1]]
-                text, confidence = _ocr_for_box(box, ocr_result)
-                cells.append({"row": row, "column": column, "rowSpan": 1,
-                              "columnSpan": 1,
-                              "bbox": box, "text": text, "confidence": confidence})
-        return [{"source": "img2table", "id": f"img2table-{page_number:03d}-001",
-                 "rowCount": len(rows) - 1, "columnCount": len(lines) - 1,
-                 "bbox": [left, rows[0], right, rows[-1]],
-                 "confidence": sum(cell["confidence"] for cell in cells) / len(cells),
-                 "cells": cells}]
+    return extracted or []

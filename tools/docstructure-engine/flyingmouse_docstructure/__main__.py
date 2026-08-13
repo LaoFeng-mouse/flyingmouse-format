@@ -54,9 +54,14 @@ def _atomic_manifest(output: Path, manifest: dict) -> None:
     if len(encoded) > 512 * 1024 * 1024:
         raise ResourceLimitError()
     temporary = output / ".manifest.json.tmp"
-    with temporary.open("xb") as stream:
-        stream.write(encoded); stream.flush(); os.fsync(stream.fileno())
-    os.replace(temporary, output / "manifest.json")
+    try:
+        with temporary.open("xb") as stream:
+            stream.write(encoded); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, output / "manifest.json")
+    except OSError as error:
+        try: temporary.unlink(missing_ok=True)
+        except OSError: pass
+        raise InvalidOutputError() from error
 
 
 @contextlib.contextmanager
