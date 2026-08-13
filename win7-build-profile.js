@@ -125,12 +125,15 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
-  profile.build.extraResources = profile.build.win.extraResources.map((item) => ({
-    ...item,
-    from: item.from.startsWith("bin/")
-      ? path.join(projectRoot, ...item.from.split("/"))
-      : item.from
-  }));
+  // pdf2docx 引擎（Python 3.12 打包）不支持 Windows 7：win7 版排除它，PDF→docx 回退到文字提取。
+  profile.build.extraResources = profile.build.win.extraResources
+    .filter((item) => !item.from.includes("pdf2docx"))
+    .map((item) => ({
+      ...item,
+      from: item.from.startsWith("bin/")
+        ? path.join(projectRoot, ...item.from.split("/"))
+        : item.from
+    }));
   delete profile.build.win.extraResources;
   delete profile.build.mac;
 

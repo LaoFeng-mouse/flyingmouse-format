@@ -333,7 +333,8 @@ test("converts a PDF to DOCX with extracted text and tables", async () => {
   const documentXml = readZipEntry(packageBytes, "word/document.xml");
   assert.match(documentXml, /<w:document/);
   assert.match(documentXml, /<w:tbl>/);
-  assert.match(documentXml, /Page 1/);
+  // 表格内容两个路径都有：pdf2docx 引擎还原表格、文字提取回退提取多列行。
+  assert.match(documentXml, /Item/);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 

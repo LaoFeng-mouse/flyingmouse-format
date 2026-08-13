@@ -41,6 +41,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 ## Conversion boundaries
 
 - PDF → XLSX 是“智能表格提取”：优先 PDF.js 电子文字坐标，无有效文字时使用 Poppler + Tesseract blocks；支持有框/无框、多表、跨页续接、旋转、合并区域、低置信批注与 Raw 回退，但扫描件和复杂排版仍可能不完整。
+- PDF → DOCX 优先用内置 pdf2docx 引擎（spawn `bin/pdf2docx/pdf2docx.exe`）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。Windows 7 版不含该引擎（Python 3.12 不支持 Win7），始终回退文字提取。
 - HTML / Office → Markdown 必须共用 ATX 标题、fenced 代码块的 Turndown helper；CSV 使用锁定的 `csv-parse 5.6.0`，禁止退回按换行拆分的简易解析器。
 - 资源上限固定为：单图 50MP、单边 16384px、图片合并 PDF 总解码量 100MP、批量选择 2GB、PDF 不限页数（1:1 还原）、OCR 不限页数；Sharp 不得使用无约束 `limitInputPixels: false`。
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
