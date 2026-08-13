@@ -32,6 +32,7 @@
 - **mac/win7 禁用自动更新**（16f6881）：mac 无 latest-mac.yml 检查必 404；win7 的 latest.yml 指向标准版（Electron 43）会坑 Win7 用户
 - **商店版隐藏加密音频解锁入口**（5921971）：process.windowsStore 过滤 unlockAudioInputs（ncm/kgg/mflac/mgg/kgma/mmp4）+ 解密分发拒绝 AUDIO_UNLOCK_UNAVAILABLE_ON_STORE，降低 DRM 规避法律风险
 - **Release 云端发布**（29d4936）：CI 构建完自动创建 Release + 上传（publish job），免本地下载（GitHub 对象存储直连/代理都只有 35-56KB/s）
+- **报错反馈入口**（5d984ec）：转换失败提示 + 页脚展示反馈邮箱 3465177342@qq.com（不做 mailto/跳转，纯展示）
 
 ### 统一文档引擎 docengine
 - pdf2docx + camelot 合并打包成一个 `docengine.exe`（bin/docengine/，270MB），共享 numpy/opencv/pandas（分开打包要 374MB）
@@ -45,12 +46,11 @@
 - 发布流程改为 CI 云端发布（publish job），以后发版本地不用再下载 artifacts。
 
 ### 待办（下一窗口）
-- ① 报错反馈入口：直接展示邮箱 3465177342@qq.com（用户已定，不做 mailto/跳转）
-- ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证（本次跳过）
-- ③ 工程图纸大图无上限：用户已定完全放开，待实现（resource-policy 三道闸 + Sharp limitInputPixels）
-- ④ KGMA 解密 FLAC 尾部 ~4B 残留清理：用户已定清理，待实现（convertKgma 重封）
-- ⑤ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，需在许可页附文本 + 源码链接）
-- ⑥ 123 云盘上传：已交由 Codex 接手（2026-08-13），本窗口不处理
+- ① 酷我 KWM：算法调研到（kwm mask），待真实样本验证（本次跳过）
+- ② 工程图纸大图无上限：用户已定完全放开，待实现（resource-policy 三道闸 + Sharp limitInputPixels）
+- ③ KGMA 解密 FLAC 尾部 ~4B 残留清理：用户已定清理，待实现（convertKgma 重封）
+- ④ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，需在许可页附文本 + 源码链接）
+- ⑤ 123 云盘上传：已交由 Codex 接手（2026-08-13），本窗口不处理
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
