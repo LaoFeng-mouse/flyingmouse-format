@@ -628,11 +628,19 @@ select {
   overflow-wrap: anywhere;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .feedback-line {
-  margin: 4px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .feedback-email {
