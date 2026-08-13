@@ -114,10 +114,10 @@ test("update entry is hidden by default and revealed only on update-available", 
   assert.match(app, /updateButton\.hidden = false/);
 });
 
-test("renderer enforces the advertised 2 GB batch limit and localizes resource errors", () => {
+test("renderer no longer enforces a batch size limit and localizes resource errors", () => {
   const app = readPublic("app.js");
   assert.match(app, /maxBatchBytes/);
-  assert.match(app, /2 \* 1024 \* 1024 \* 1024/);
+  assert.match(app, /maxBatchBytes \|\| Number\.MAX_SAFE_INTEGER/);
   assert.match(app, /result\?\.messages\?\.enUS/);
   assert.match(app, /result\?\.messages\?\.zhCN/);
 });

@@ -189,10 +189,10 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.equal(response.status, 200);
   const capabilities = await response.json();
   assert.deepEqual(capabilities.limits, {
-    maxImagePixels: 50_000_000,
-    maxImageDimension: 16_384,
-    maxImagePdfPixels: 100_000_000,
-    maxBatchBytes: 2 * 1024 * 1024 * 1024
+    maxImagePixels: Number.MAX_SAFE_INTEGER,
+    maxImageDimension: Number.MAX_SAFE_INTEGER,
+    maxImagePdfPixels: Number.MAX_SAFE_INTEGER,
+    maxBatchBytes: Number.MAX_SAFE_INTEGER
   });
   assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
