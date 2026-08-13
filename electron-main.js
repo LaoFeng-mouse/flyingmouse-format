@@ -82,6 +82,11 @@ function pushUpdateStatus(status) {
 
 function setupAutoUpdater() {
   if (!app.isPackaged || process.windowsStore) return;
+  // mac（github-dmg）：Release 没有 latest-mac.yml 资产，检查更新必 404；不启用
+  if (process.platform === "darwin") return;
+  // win7 Legacy 构建（Electron 22）：latest.yml 指向标准版（Electron 43）安装包，
+  // Win7 装不上（PE 头要求 Win10+），自动更新会坑掉 win7 用户；不启用
+  if (Number(process.versions.electron.split(".")[0]) < 30) return;
   try {
     ({ autoUpdater: updater } = require("electron-updater"));
   } catch (error) {

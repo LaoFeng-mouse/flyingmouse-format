@@ -302,3 +302,13 @@ test("LibreOffice conversions without an output file surface the stable OFFICE_C
   assert.ok(branch, "findConvertedFile empty branch must throw the stable code");
   assert.doesNotMatch(server, /throw new Error\(\s*"文档转换失败，可能是不支持这个源格式或文件已损坏。"/);
 });
+
+test("auto-updater only runs on the standard Windows build (not mac/win7/store)", () => {
+  const main = readRoot("electron-main.js");
+  assert.match(main, /process\.windowsStore\) return/);
+  // mac 无 latest-mac.yml，禁用自动更新避免 404 报错
+  assert.match(main, /process\.platform === "darwin"\) return/);
+  // win7 Legacy（Electron 22）禁用，避免 latest.yml 指向标准版（Electron 43）坑掉 Win7 用户
+  assert.match(main, /process\.versions\.electron\.split/);
+  assert.match(main, /< 30\) return/);
+});
