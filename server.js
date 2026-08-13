@@ -14,7 +14,7 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
-const mammoth = require("mammoth");
+
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
@@ -563,7 +563,9 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
           ? String(req.body.videoCodec)
           : "h264";
-        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec });
+        // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
+        const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
+        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
       }
     } else {
       throw new Error("暂时无法识别这个文件类型。");
