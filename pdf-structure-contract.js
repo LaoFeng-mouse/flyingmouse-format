@@ -3,6 +3,10 @@ const path = require("node:path");
 
 const { STRUCTURE_LIMITS } = require("./resource-policy");
 
+// Schema v1 intentionally does not enforce tableId cross-references, page sequence,
+// or containment of cell boxes within table boxes. Those are writer/engine semantics,
+// not safety guarantees of this transport contract.
+
 const STRUCTURE_SCHEMA_VERSION = 1;
 const MAX_BLOCKS_PER_PAGE = STRUCTURE_LIMITS.maxBlocksPerPage;
 const MAX_TABLES_PER_PAGE = STRUCTURE_LIMITS.maxTablesPerPage;
@@ -10,6 +14,7 @@ const MAX_CELLS_PER_TABLE = STRUCTURE_LIMITS.maxCellsPerTable;
 
 const INVALID_ZH_CN = "PDF 结构清单格式无效，无法安全处理。";
 const INVALID_EN_US = "The PDF structure manifest is invalid and cannot be processed safely.";
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 function structureError(code, zhCN, enUS, cause) {
   const error = new Error(enUS, cause ? { cause } : undefined);
@@ -28,21 +33,119 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-function cloneJsonValue(value) {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw invalid();
-    return value;
+function hasDangerousOwnKey(value) {
+  for (const key of DANGEROUS_KEYS) {
+    if (Object.hasOwn(value, key)) return true;
   }
-  if (Array.isArray(value)) return value.map(cloneJsonValue);
-  if (!isPlainObject(value)) throw invalid();
+  return false;
+}
 
-  const clone = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested === undefined || typeof nested === "function" || typeof nested === "symbol") throw invalid();
-    clone[key] = cloneJsonValue(nested);
+function boundedCloneJsonValue(value) {
+  const holder = {};
+  const activeContainers = new WeakSet();
+  const stack = [{ kind: "visit", source: value, target: holder, key: "value", depth: 0 }];
+  let nodeCount = 0;
+
+  try {
+    while (stack.length > 0) {
+      const frame = stack.pop();
+      if (frame.kind === "leave") {
+        activeContainers.delete(frame.source);
+        continue;
+      }
+
+      const { source, target, key, depth } = frame;
+      nodeCount += 1;
+      if (nodeCount > STRUCTURE_LIMITS.maxManifestNodes || depth > STRUCTURE_LIMITS.maxNestingDepth) {
+        throw invalid();
+      }
+
+      if (source === null || typeof source === "string" || typeof source === "boolean") {
+        target[key] = source;
+        continue;
+      }
+      if (typeof source === "number") {
+        if (!Number.isFinite(source)) throw invalid();
+        target[key] = source;
+        continue;
+      }
+      if (!Array.isArray(source) && !isPlainObject(source)) throw invalid();
+      if (activeContainers.has(source)) throw invalid();
+
+      if (hasDangerousOwnKey(source)) throw invalid();
+
+      activeContainers.add(source);
+      stack.push({ kind: "leave", source });
+
+      if (Array.isArray(source)) {
+        if (source.length > STRUCTURE_LIMITS.maxManifestNodes - nodeCount) throw invalid();
+        const clone = new Array(source.length);
+        target[key] = clone;
+        for (let index = source.length - 1; index >= 0; index -= 1) {
+          stack.push({ kind: "visit", source: source[index], target: clone, key: index, depth: depth + 1 });
+        }
+        continue;
+      }
+
+      const keys = Object.keys(source);
+      if (keys.length > STRUCTURE_LIMITS.maxManifestNodes - nodeCount) throw invalid();
+      const clone = {};
+      target[key] = clone;
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        const nestedKey = keys[index];
+        stack.push({
+          kind: "visit",
+          source: source[nestedKey],
+          target: clone,
+          key: nestedKey,
+          depth: depth + 1
+        });
+      }
+    }
+  } catch (error) {
+    if (error?.code === "PDF_STRUCTURE_SCHEMA_INVALID") throw error;
+    throw invalid();
   }
-  return clone;
+
+  return holder.value;
+}
+
+function preflightStructureTotals(manifest) {
+  try {
+    if (!isPlainObject(manifest) || !Array.isArray(manifest.pages)) return;
+    // This is a generic manifest-node bound, not a PDF page-count policy.
+    if (manifest.pages.length > STRUCTURE_LIMITS.maxManifestNodes - 1) throw invalid();
+
+    let totalBlocks = 0;
+    let totalTables = 0;
+    for (const page of manifest.pages) {
+      if (!isPlainObject(page)) continue;
+      if (Array.isArray(page.blocks)) {
+        if (page.blocks.length > MAX_BLOCKS_PER_PAGE) throw invalid();
+        totalBlocks += page.blocks.length;
+        if (totalBlocks > STRUCTURE_LIMITS.maxTotalBlocks) throw invalid();
+      }
+      if (Array.isArray(page.tables)) {
+        if (page.tables.length > MAX_TABLES_PER_PAGE) throw invalid();
+        totalTables += page.tables.length;
+        if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw invalid();
+      }
+    }
+
+    let totalCells = 0;
+    for (const page of manifest.pages) {
+      if (!isPlainObject(page) || !Array.isArray(page.tables)) continue;
+      for (const table of page.tables) {
+        if (!isPlainObject(table) || !Array.isArray(table.cells)) continue;
+        if (table.cells.length > MAX_CELLS_PER_TABLE) throw invalid();
+        totalCells += table.cells.length;
+        if (totalCells > STRUCTURE_LIMITS.maxTotalCells) throw invalid();
+      }
+    }
+  } catch (error) {
+    if (error?.code === "PDF_STRUCTURE_SCHEMA_INVALID") throw error;
+    throw invalid();
+  }
 }
 
 function deepFreeze(value) {
@@ -81,6 +184,8 @@ function resolveAssetRoot(assetRoot) {
 }
 
 function validateAssetName(asset) {
+  // Portable manifests always use forward slashes, including when validated on POSIX.
+  // Rejecting backslashes avoids accepting one spelling on POSIX that becomes a path on Windows.
   if (typeof asset !== "string" || asset.length === 0 || asset.includes("\0") || asset.includes("\\")) {
     throw invalid();
   }
@@ -238,7 +343,8 @@ function validatePage(page, root) {
 
 function validateStructureManifest(manifest, assetRoot) {
   const root = resolveAssetRoot(assetRoot);
-  const normalized = cloneJsonValue(manifest);
+  preflightStructureTotals(manifest);
+  const normalized = boundedCloneJsonValue(manifest);
   if (!isPlainObject(normalized) || normalized.schemaVersion !== STRUCTURE_SCHEMA_VERSION) throw invalid();
   if (!isPlainObject(normalized.engine)
     || typeof normalized.engine.name !== "string"

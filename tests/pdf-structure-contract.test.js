@@ -9,12 +9,59 @@ const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64"
 );
+const expectedStructureLimits = Object.freeze({
+  maxBlocksPerPage: 5000,
+  maxTablesPerPage: 100,
+  maxCellsPerTable: 20000,
+  maxTotalBlocks: 50000,
+  maxTotalTables: 1000,
+  maxTotalCells: 200000,
+  maxManifestNodes: 1000000,
+  maxNestingDepth: 64
+});
 
 let scratch;
 let assetRoot;
 
 function fixture() {
   return JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+}
+
+function throwingFilledArray(length, sentinel, onRead = () => {}) {
+  return new Proxy(new Array(length).fill(null), {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) {
+        onRead();
+        throw new Error(sentinel);
+      }
+      return Reflect.get(target, property, receiver);
+    }
+  });
+}
+
+function manifestPage(pageNumber) {
+  return {
+    pageNumber,
+    width: 1653,
+    height: 2339,
+    rotation: 0,
+    referenceImage: "page-001.png",
+    blocks: [],
+    tables: [],
+    warnings: [],
+    elapsedMs: 0
+  };
+}
+
+function compactTable(id, cells = []) {
+  return {
+    id,
+    rowCount: Math.max(1, cells.length),
+    columnCount: 1,
+    bbox: [0, 0, 1, 1],
+    confidence: 1,
+    cells
+  };
 }
 
 function assertDeepFrozen(value) {
@@ -136,6 +183,7 @@ test("exports the schema contract, bilingual error helper, and shared resource l
   assert.equal(contract.MAX_BLOCKS_PER_PAGE, STRUCTURE_LIMITS.maxBlocksPerPage);
   assert.equal(contract.MAX_TABLES_PER_PAGE, STRUCTURE_LIMITS.maxTablesPerPage);
   assert.equal(contract.MAX_CELLS_PER_TABLE, STRUCTURE_LIMITS.maxCellsPerTable);
+  assert.deepEqual(STRUCTURE_LIMITS, expectedStructureLimits);
 
   const cause = new Error("private detail");
   const error = contract.structureError("EXAMPLE", "中文错误", "English error", cause);
@@ -162,6 +210,136 @@ test("accepts the anonymous fixture, normalizes confidence, deep-freezes output,
   assert.equal(normalized.pages[0].tables[0].cells[0].confidence, 0.6);
   assert.equal(Object.hasOwn(normalized.pages[0].blocks[2], "text"), false);
   assertDeepFrozen(normalized);
+});
+
+test("normalized objects retain safe prototypes", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const normalized = validateStructureManifest(fixture(), assetRoot);
+  const pending = [normalized];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== "object") continue;
+    assert.equal(
+      Object.getPrototypeOf(current),
+      Array.isArray(current) ? Array.prototype : Object.prototype
+    );
+    pending.push(...Object.values(current));
+  }
+});
+
+test("rejects prototype-polluting keys at every nesting level without polluting Object.prototype", () => {
+  const pollutionKey = "flyingMouseStructurePolluted";
+  assert.equal(Object.prototype[pollutionKey], undefined);
+  for (const dangerousKey of ["__proto__", "constructor", "prototype"]) {
+    const manifest = fixture();
+    manifest.metadata = { nested: JSON.parse(`{"${dangerousKey}":{"${pollutionKey}":true}}`) };
+    const { validateStructureManifest } = require("../pdf-structure-contract");
+    assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+    assert.equal(Object.prototype[pollutionKey], undefined);
+  }
+});
+
+test("rejects nesting deeper than the manifest budget with the stable schema error", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  let nested = { leaf: true };
+  for (let depth = 0; depth <= expectedStructureLimits.maxNestingDepth; depth += 1) {
+    nested = depth % 2 === 0 ? { nested } : [nested];
+  }
+  manifest.extra = nested;
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+});
+
+test("rejects a manifest wider than the structural node budget before reading its entries", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  const sentinel = "UNBOUNDED_WIDE_NODE_WALK";
+  manifest.extra = throwingFilledArray(expectedStructureLimits.maxManifestNodes + 1, sentinel);
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+});
+
+test("bounds aggregate preflight before reading an oversized pages array", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  let entriesRead = 0;
+  manifest.pages = throwingFilledArray(
+    expectedStructureLimits.maxManifestNodes + 1,
+    "UNBOUNDED_PAGE_PREFLIGHT",
+    () => { entriesRead += 1; }
+  );
+
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+  assert.equal(entriesRead, 0);
+});
+
+test("rejects manifest-wide block totals before cloning block entries", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  const perPage = expectedStructureLimits.maxBlocksPerPage;
+  const pageCount = Math.ceil((expectedStructureLimits.maxTotalBlocks + 1) / perPage);
+  manifest.pages = Array.from({ length: pageCount }, (_, index) => {
+    const page = manifestPage(index + 1);
+    const count = Math.min(perPage, expectedStructureLimits.maxTotalBlocks + 1 - index * perPage);
+    page.blocks = throwingFilledArray(count, "EXPENSIVE_BLOCK_VALIDATION_RAN");
+    return page;
+  });
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+});
+
+test("rejects manifest-wide table totals before cloning table entries", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  const perPage = expectedStructureLimits.maxTablesPerPage;
+  const pageCount = Math.ceil((expectedStructureLimits.maxTotalTables + 1) / perPage);
+  manifest.pages = Array.from({ length: pageCount }, (_, index) => {
+    const page = manifestPage(index + 1);
+    const count = Math.min(perPage, expectedStructureLimits.maxTotalTables + 1 - index * perPage);
+    page.tables = throwingFilledArray(count, "EXPENSIVE_TABLE_VALIDATION_RAN");
+    return page;
+  });
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+});
+
+test("rejects manifest-wide cell totals before cloning cell entries", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  const tableCount = Math.ceil(
+    (expectedStructureLimits.maxTotalCells + 1) / expectedStructureLimits.maxCellsPerTable
+  );
+  const page = manifestPage(1);
+  page.tables = Array.from({ length: tableCount }, (_, index) => {
+    const count = Math.min(
+      expectedStructureLimits.maxCellsPerTable,
+      expectedStructureLimits.maxTotalCells + 1 - index * expectedStructureLimits.maxCellsPerTable
+    );
+    return compactTable(
+      `table-${index}`,
+      throwingFilledArray(count, "EXPENSIVE_CELL_VALIDATION_RAN")
+    );
+  });
+  manifest.pages = [page];
+  assertSchemaError(() => validateStructureManifest(manifest, assetRoot));
+});
+
+test("accepts and freezes a valid table at the 20,000-cell boundary", () => {
+  const { STRUCTURE_LIMITS } = require("../resource-policy");
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const manifest = fixture();
+  const cells = Array.from({ length: STRUCTURE_LIMITS.maxCellsPerTable }, (_, row) => ({
+    row,
+    column: 0,
+    rowSpan: 1,
+    columnSpan: 1,
+    bbox: [0, 0, 1, 1],
+    confidence: 1
+  }));
+  manifest.pages[0].tables = [compactTable("boundary-table", cells)];
+
+  const normalized = validateStructureManifest(manifest, assetRoot);
+
+  assert.equal(normalized.pages[0].tables[0].cells.length, STRUCTURE_LIMITS.maxCellsPerTable);
+  assert.ok(Object.isFrozen(normalized.pages[0].tables[0].cells));
+  assert.ok(Object.isFrozen(normalized.pages[0].tables[0].cells.at(-1)));
 });
 
 test("safe asset resolution accepts contained regular files without changing manifest paths", () => {
