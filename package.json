@@ -10,8 +10,8 @@
   "description": "Windows desktop universal file format converter (offline, bundled FFmpeg/LibreOffice/Poppler/Tesseract).",
   "main": "electron-main.js",
   "scripts": {
-    "pretest": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js",
-    "pretest:ci": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js",
+    "pretest": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-office-xlsx.test.js",
+    "pretest:ci": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-office-xlsx.test.js",
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis --publish never",
@@ -75,6 +75,7 @@
       "pdf-structure-contract.js",
       "pdf-structure-engine.js",
       "pdf-office-docx.js",
+      "pdf-office-xlsx.js",
       "text-conversion.js",
       "office-engine.js",
       "office-quality.js",
