@@ -200,7 +200,8 @@ async function loadQqMusicCredentials(cookiePath) {
     try {
       const text = await fsp.readFile(file, "utf8");
       const uinMatch = /(?:^|;\s*)uin=(\d+)/.exec(text);
-      const authstMatch = /(?:^|;\s*)(qm_keyst|qqmusic_key)=([^;]+)/.exec(text);
+      // qm_keyst（旧版网页登录）与 psrf_qqmusic_key（新版扫码登录）都接受；值即 authst。
+      const authstMatch = /(?:^|;\s*)(qm_keyst|qqmusic_key|psrf_qqmusic_key)=([^;]+)/.exec(text);
       if (uinMatch && authstMatch) {
         return { uin: uinMatch[1], authst: authstMatch[2] };
       }

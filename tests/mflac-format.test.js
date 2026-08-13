@@ -107,6 +107,18 @@ test("loadQqMusicCredentials parses uin and qm_keyst from a cookie file", async 
   }
 });
 
+test("loadQqMusicCredentials accepts the newer psrf_qqmusic_key cookie name", async () => {
+  const dir = await tmpDir();
+  try {
+    const cookiePath = path.join(dir, "cookie.txt");
+    await fsp.writeFile(cookiePath, "uin=3461577342; psrf_qqmusic_key=PSRF_NEW_VALUE456; pgv_pvid=IGNORED", "utf8");
+    const creds = await loadQqMusicCredentials(cookiePath);
+    assert.deepEqual(creds, { uin: "3461577342", authst: "PSRF_NEW_VALUE456" });
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
 test("loadQqMusicCredentials returns null when no cookie file exists", async () => {
   const dir = await tmpDir();
   try {
