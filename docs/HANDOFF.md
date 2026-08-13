@@ -1,6 +1,6 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-13（v0.4.1 已发布：musicex 自动降档 + PDF 不限页数 + mac 构建容错）
+更新时间：2026-08-13（v0.5.0 已发布：KGMA + .mmp4 + PDF→Word/Excel + 视频编码 + 商店版隐藏解锁 + 云端发布）
 
 ## v0.4.1 发布状态（2026-08-13，已完成）
 
@@ -50,7 +50,7 @@
 - ③ 工程图纸大图无上限：用户已定完全放开，待实现（resource-policy 三道闸 + Sharp limitInputPixels）
 - ④ KGMA 解密 FLAC 尾部 ~4B 残留清理：用户已定清理，待实现（convertKgma 重封）
 - ⑤ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，需在许可页附文本 + 源码链接）
-- ⑥ 123 云盘上传（用户要传 win+mac 包，传法待定：cookie 帮传 or 用户手动）
+- ⑥ 123 云盘上传：已交由 Codex 接手（2026-08-13），本窗口不处理
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
