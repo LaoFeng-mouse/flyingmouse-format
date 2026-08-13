@@ -82,6 +82,17 @@ test("renderer exposes a bilingual diagnostics export through the trusted bridge
   assert.match(app, /error\.errorCode/);
 });
 
+test("renderer exposes Agent skill installation immediately before diagnostics", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="agentInstallButton"/);
+  assert.ok(html.indexOf('id="agentInstallButton"') < html.indexOf('id="diagnosticsButton"'));
+  assert.match(app, /"agent\.install": "接入 Agent"/);
+  assert.match(app, /"agent\.install": "Connect to Agent"/);
+  assert.match(app, /logBridge\.inspectAgentSkillTargets/);
+  assert.match(app, /logBridge\.installAgentSkill/);
+});
+
 test("PDF to XLSX uses a contextual bilingual smart-table label and warning", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");

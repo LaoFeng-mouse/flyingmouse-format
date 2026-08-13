@@ -22,6 +22,7 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <button class="ghost-button diagnostics-button" id="agentInstallButton" type="button" data-i18n="agent.install">接入 Agent</button>
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
             <button class="ghost-button" id="updateButton" type="button" data-i18n="update.check" hidden>检查更新</button>
             <span class="update-status" id="updateStatus" hidden></span>
@@ -130,6 +131,7 @@
             </div>
 
             <div class="status-box" id="statusBox" role="status" data-i18n="status.ready">选择文件后会显示可用的转换格式。</div>
+            <button class="ghost-button preview-button" id="previewButton" type="button" hidden data-i18n="preview.open">预览</button>
             <a class="download-button" id="downloadButton" hidden data-i18n="action.download">下载转换后的文件</a>
             <button class="download-button" id="batchSaveButton" type="button" hidden data-i18n="action.saveAll">保存全部</button>
           </aside>
@@ -144,6 +146,19 @@
         </section>
       </section>
     </main>
+
+    <div class="preview-backdrop" id="previewBackdrop" hidden></div>
+    <aside class="preview-drawer" id="previewDrawer" hidden aria-labelledby="previewTitle" aria-modal="true" role="dialog">
+      <div class="preview-header">
+        <div>
+          <p class="eyebrow" data-i18n="preview.eyebrow">转换结果</p>
+          <h2 id="previewTitle" data-i18n="preview.title">文件预览</h2>
+          <p class="preview-meta" id="previewMeta"></p>
+        </div>
+        <button class="ghost-button preview-close" id="previewClose" type="button" data-i18n-aria="preview.close" aria-label="关闭预览">×</button>
+      </div>
+      <div class="preview-content" id="previewContent"></div>
+    </aside>
 
     <aside class="sponsor-widget" id="sponsorWidget" data-i18n-aria="sponsor.aria" aria-label="支持鼠鼠">
       <button class="sponsor-toggle" id="sponsorToggle" type="button" data-i18n-title="sponsor.aria" title="支持鼠鼠" aria-expanded="false">

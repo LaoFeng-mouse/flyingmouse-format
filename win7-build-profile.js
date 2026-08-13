@@ -10,6 +10,8 @@ const STAGING_EXCLUDED_TESTS = new Set([
 
 const REQUIRED_RUNTIME_FILES = [
   "electron-main.js",
+  "cli.js",
+  "agent-skill-installer.js",
   "electron-security.js",
   "preload.js",
   "server.js",

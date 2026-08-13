@@ -62,7 +62,7 @@ const {
   outputExtFor,
   outputNameFor,
   outputPathFor,
-  downloadUrlFor,
+  registerDownload,
   escapeHtml
 } = require("./utils");
 const { convertMedia, probeAudioTrack } = require("./media");
@@ -191,6 +191,8 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self'",
   "img-src 'self' data:",
   "connect-src 'self'",
+  "frame-src 'self'",
+  "media-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
@@ -387,12 +389,15 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     const mimeType = "application/pdf";
     logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     res.json({
       ok: true,
       fileName: downloadName,
       category: "image",
       mimeType,
-      downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
+      ...registered,
+      previewSize
     });
   } catch (error) {
     logger.error(`Images-to-PDF failed: "${combinedName}"`, error);
@@ -439,12 +444,16 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
     await mergePdfFiles(pdfFiles, outputPath);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
+    const mimeType = "application/pdf";
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     res.json({
       ok: true,
       fileName: downloadName,
       category: "pdf",
-      mimeType: "application/pdf",
-      downloadUrl: downloadUrlFor(outputPath, downloadName, "application/pdf")
+      mimeType,
+      ...registered,
+      previewSize
     });
   } catch (error) {
     logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
@@ -573,12 +582,15 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
 
     await fsp.rm(file.path, { force: true }).catch(() => {});
     const mimeType = mime.lookup(downloadName) || "application/octet-stream";
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     const payload = {
       ok: true,
       fileName: downloadName,
       category,
       mimeType,
-      downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
+      ...registered,
+      previewSize
     };
     if (Array.isArray(conversionResult?.warnings) && conversionResult.warnings.length) {
       payload.warnings = conversionResult.warnings;
@@ -641,6 +653,27 @@ app.get("/downloads/:id", (req, res) => {
   }
 
   res.download(item.filePath, item.downloadName, (error) => {
+    if (!error) return;
+    if (!res.headersSent) res.status(500).send(error.message);
+  });
+});
+
+app.get("/previews/:id", (req, res) => {
+  const item = downloads.get(req.params.id);
+  if (!item || !/^[A-Za-z0-9-]+$/.test(req.params.id) || req.originalUrl.includes("?")) {
+    res.status(404).send("File expired or not found.");
+    return;
+  }
+  const inlineName = encodeURIComponent(path.basename(item.downloadName)).replaceAll("'", "%27");
+  res.setHeader("Content-Type", item.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="preview"; filename*=UTF-8''${inlineName}`);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (String(item.mimeType).includes("html")) {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox");
+  } else {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'");
+  }
+  res.sendFile(path.resolve(item.filePath), (error) => {
     if (!error) return;
     if (!res.headersSent) res.status(500).send(error.message);
   });

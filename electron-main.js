@@ -11,6 +11,7 @@ const {
 } = require("./electron-security");
 const logger = require("./logger");
 const { buildDiagnosticsReport } = require("./diagnostics");
+const { discoverSkillRoots, installAgentSkill } = require("./agent-skill-installer");
 const { resolveRuntimePaths } = require("./runtime-paths");
 const { zipDirectory } = require("./zip-util");
 const {
@@ -26,6 +27,8 @@ let server = null;
 let serverUrl = "";
 let serverRuntime = null;
 const settingsPath = path.join(app.getPath("userData"), "settings.json");
+const cliMarkerIndex = process.argv.indexOf("--cli");
+const cliMode = cliMarkerIndex >= 0;
 
 // Route all logging (including from server.js and renderer-forwarded IPC
 // messages) to a single debug.log in the Electron userData directory.
@@ -141,8 +144,7 @@ ipcMain.handle("check-for-updates", async (event) => {
   }
 });
 
-async function boot() {
-  log("Boot started");
+function configureRuntime() {
   process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
   const runtimePaths = resolveRuntimePaths({ resourcesPath: process.resourcesPath });
   process.env.FLYINGMOUSE_FFMPEG_PATH = runtimePaths.ffmpeg;
@@ -156,6 +158,11 @@ async function boot() {
   log(`AV3A decoder path: ${process.env.FLYINGMOUSE_AVS3_DECODER_PATH || "unavailable"}`);
   log(`LibreOffice path: ${process.env.FLYINGMOUSE_LIBREOFFICE_PATH}`);
   log(`Poppler path: ${process.env.FLYINGMOUSE_PDFTOPPM_PATH}`);
+}
+
+async function boot() {
+  log("Boot started");
+  configureRuntime();
   serverRuntime = require("./server");
 
   const started = await serverRuntime.startServer(0);
@@ -166,6 +173,49 @@ async function boot() {
   setupAutoUpdater();
   createWindow(started.url);
 }
+
+function bundledSkillSource() {
+  return path.join(app.getAppPath(), "agent-skill", "flyingmouse-format");
+}
+
+function currentCliLauncher() {
+  return {
+    executable: process.execPath,
+    args: app.isPackaged ? [] : [app.getAppPath()]
+  };
+}
+
+ipcMain.handle("inspect-agent-skill-targets", async (event) => {
+  assertTrustedIpc(event);
+  const targets = await discoverSkillRoots();
+  return { targets };
+});
+
+ipcMain.handle("install-agent-skill", async (event, payload) => {
+  assertTrustedIpc(event);
+  const discovered = await discoverSkillRoots();
+  const requested = new Set(Array.isArray(payload?.targetIds) ? payload.targetIds.map(String) : []);
+  const roots = discovered.filter((item) => requested.has(item.id));
+  if (!roots.length) return { canceled: false, installed: [], failed: [] };
+
+  const targetNames = roots.map((item) => `${item.name}: ${item.path}`).join("\n");
+  const confirmation = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    buttons: ["接入 / Connect", "取消 / Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "接入 Agent / Connect to Agent",
+    message: "将安装或更新 FlyingMouse Format skill",
+    detail: `应用会把轻量 skill 写入以下已存在的目录，并记录当前程序的 CLI 路径：\n\n${targetNames}`,
+    noLink: true
+  });
+  if (confirmation.response !== 0) return { canceled: true };
+  return installAgentSkill({
+    sourceDir: bundledSkillSource(),
+    roots,
+    launcher: currentCliLauncher()
+  });
+});
 
 function downloadToFile(url, destination) {
   const client = url.startsWith("https:") ? https : http;
@@ -400,13 +450,27 @@ if (process.platform === "win32") {
 process.on("uncaughtException", (error) => log("Uncaught exception", error));
 process.on("unhandledRejection", (error) => log("Unhandled rejection", error));
 
-app.whenReady().then(boot).catch((error) => {
-  log("Boot failed", error);
-  console.error(error);
-  app.quit();
-});
+if (cliMode) {
+  app.whenReady().then(async () => {
+    configureRuntime();
+    const { runCli } = require("./cli");
+    const code = await runCli(process.argv.slice(cliMarkerIndex + 1));
+    app.exit(code);
+  }).catch((error) => {
+    log("CLI boot failed", error);
+    console.error(error);
+    app.exit(1);
+  });
+} else {
+  app.whenReady().then(boot).catch((error) => {
+    log("Boot failed", error);
+    console.error(error);
+    app.quit();
+  });
+}
 
 app.on("window-all-closed", () => {
+  if (cliMode) return;
   log("All windows closed");
   if (process.platform !== "darwin") {
     app.quit();
@@ -414,7 +478,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (!mainWindow && server?.listening) {
+  if (!cliMode && !mainWindow && server?.listening) {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 5177;
     serverUrl = `http://127.0.0.1:${port}`;
@@ -423,6 +487,7 @@ app.on("activate", () => {
 });
 
 app.on("before-quit", () => {
+  if (cliMode) return;
   log("Before quit");
   if (server?.listening) {
     server.close();
@@ -430,6 +495,7 @@ app.on("before-quit", () => {
 });
 
 app.on("web-contents-created", (_event, contents) => {
+  if (cliMode) return;
   contents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) {
       setImmediate(() => {
