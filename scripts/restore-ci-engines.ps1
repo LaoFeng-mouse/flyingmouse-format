@@ -56,7 +56,7 @@ try {
   }
   $binRoot = Join-Path $projectRoot "bin"
   New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
-  foreach ($directory in @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw")) {
+  foreach ($directory in @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw", "docengine")) {
     $destination = Join-Path $binRoot $directory
     if (Test-Path -LiteralPath $destination) {
       throw "Engine destination already exists: $destination"
