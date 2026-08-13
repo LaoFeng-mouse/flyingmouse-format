@@ -13,6 +13,17 @@ async function probeAudioTrack(inputPath) {
   }
 }
 
+function videoEncoderArgs(codec) {
+  // 视频输出编码选择：默认 h264，可选 h265 / av1。
+  if (codec === "h265" || codec === "hevc") {
+    return ["-codec:v", "libx265", "-preset", "medium", "-crf", "28"];
+  }
+  if (codec === "av1") {
+    return ["-codec:v", "libsvtav1", "-preset", "8", "-crf", "32"];
+  }
+  return ["-codec:v", "libx264", "-preset", "medium", "-crf", "23"];
+}
+
 async function convertMedia(inputPath, outputPath, target, category, options = {}) {
   const args = ["-hide_banner", "-y", "-i", inputPath];
   for (const extraInput of options.extraInputs || []) args.push("-i", extraInput);
@@ -39,11 +50,11 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
   } else if (category === "audio") {
     throw new Error("音频文件不能直接转换为视频容器。请选择音频目标格式。");
   } else if (target === "mp4" || target === "mov") {
-    args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac", "-movflags", "+faststart");
+    args.push(...videoEncoderArgs(options.videoCodec), "-codec:a", "aac", "-movflags", "+faststart");
   } else if (target === "webm") {
     args.push("-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus");
   } else if (target === "mkv") {
-    args.push("-codec:v", "libx264", "-preset", "medium", "-crf", "23", "-codec:a", "aac");
+    args.push(...videoEncoderArgs(options.videoCodec), "-codec:a", "aac");
   } else if (target === "gif") {
     // 输出质量：宽度上限 480→720（保留更多细节）、fps 10→12（更流畅）、
     // palettegen stats_mode=diff（按帧差异生成调色板，减少闪烁）+ sierra2_4a 抖动（更平滑，减少色带）
@@ -64,5 +75,6 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
 
 module.exports = {
   probeAudioTrack,
+  videoEncoderArgs,
   convertMedia
 };

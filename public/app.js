@@ -45,6 +45,8 @@ const targetSelect = document.querySelector("#targetSelect");
 const pdfExcelHint = document.querySelector("#pdfExcelHint");
 const zipCompressionField = document.querySelector("#zipCompressionField");
 const zipCompression = document.querySelector("#zipCompression");
+const videoCodecField = document.querySelector("#videoCodecField");
+const videoCodec = document.querySelector("#videoCodec");
 const pdfPasswordField = document.querySelector("#pdfPasswordField");
 const pdfPassword = document.querySelector("#pdfPassword");
 const pdfActionField = document.querySelector("#pdfActionField");
@@ -97,6 +99,8 @@ const messages = {
     "formats.av3aMac": "macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows。",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
+    "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
+    "videoCodec.h265": "H.265（体积更小）", "videoCodec.av1": "AV1（压缩率最高）",
     "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
@@ -127,6 +131,8 @@ const messages = {
     "formats.av3aMac": "Standard NCM works on macOS; Audio Vivid AV3A currently requires Windows.",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
+    "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
+    "videoCodec.h265": "H.265 (smaller size)", "videoCodec.av1": "AV1 (highest compression)",
     "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
@@ -491,6 +497,11 @@ function syncZipCompressionField() {
   zipCompressionField.hidden = targetSelect.value !== "zip";
 }
 
+function syncVideoCodecField() {
+  if (!videoCodecField || !videoCodec) return;
+  videoCodecField.hidden = !["mp4", "mov", "mkv"].includes(targetSelect.value);
+}
+
 function syncPdfActionFields() {
   if (!pdfPasswordField || !pdfActionField) return;
   const isPdfToPdf = targetSelect.value === "pdf"
@@ -555,6 +566,7 @@ async function acceptFiles(fileList) {
         : (i18n.language === "en-US" ? "These files have no common target format. Batch files of the same type or select fewer files." : "这些文件没有共同的目标格式。请分成同类型文件批量转换，或减少选择的文件。"),
       "error");
       syncZipCompressionField();
+      syncVideoCodecField();
       syncPdfActionFields();
       setMouseState("error");
       return;
@@ -582,6 +594,7 @@ async function acceptFiles(fileList) {
     targetSelect.disabled = false;
     convertButton.disabled = false;
     syncZipCompressionField();
+    syncVideoCodecField();
     syncPdfActionFields();
     syncPdfExcelHint();
     setMouseState(files.length > 1 ? "batch" : "idle");
@@ -639,6 +652,9 @@ async function convertOneFile(file, targetFormat) {
   form.append("targetFormat", targetFormat);
   if (targetFormat === "zip") {
     form.append("compressionLevel", zipCompression?.value || "6");
+  }
+  if (["mp4", "mov", "mkv"].includes(targetFormat)) {
+    form.append("videoCodec", videoCodec?.value || "h264");
   }
   if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
     form.append("pdfAction", pdfAction?.value || "");
@@ -996,6 +1012,7 @@ languageSelect.addEventListener("change", async () => {
 });
 targetSelect.addEventListener("change", async () => {
   syncZipCompressionField();
+  syncVideoCodecField();
   syncPdfActionFields();
   syncPdfExcelHint();
   renderBatchList();

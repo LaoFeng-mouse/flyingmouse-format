@@ -80,6 +80,15 @@
               </select>
             </label>
 
+            <label class="field" id="videoCodecField" hidden>
+              <span data-i18n="videoCodec.label">视频编码</span>
+              <select id="videoCodec">
+                <option value="h264" selected data-i18n="videoCodec.h264">H.264（兼容性最好，默认）</option>
+                <option value="h265" data-i18n="videoCodec.h265">H.265（体积更小）</option>
+                <option value="av1" data-i18n="videoCodec.av1">AV1（压缩率最高）</option>
+              </select>
+            </label>
+
             <label class="field" id="pdfPasswordField" hidden>
               <span data-i18n="pdfPassword.label">PDF 密码（加密/解密）</span>
               <input id="pdfPassword" type="password" autocomplete="off">
