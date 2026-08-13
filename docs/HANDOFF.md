@@ -19,40 +19,31 @@
 - **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码）；**用户已确认上传到 Partner Center（2026-08-13）**。注意：商店展示图标来自 Partner Center 的 Store listing 素材与包内 assets 是两套，若商店页面仍显示橙色闪电，需检查 Store listing 的 logo 素材是否同步为鼠鼠；认证/发布状态需现场回读。
 - **待办（下一窗口）**：① Partner Center 现场回读 0.4.1 认证/发布状态 + 确认 Store listing 图标素材为鼠鼠；② 清理临时产物：output/.trash-ci-artifacts-040、output/.trash-ci-engines-check、output/.trash-release-upload*（均已确认无用，已移入 .trash-）、output/ci-artifacts-041（0.4.1 四平台发布证据，可留可删）、scripts/.trash-tmp/（75 个会话临时脚本）；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
 
-## 进行中（2026-08-13，已提交本地，未推送/未发布）
+## 待发版（2026-08-13，已提交本地 9 个提交，未推送/未发布，将 bump 0.5.0）
 
-### KGMA（酷狗会员加密音频）离线解密 —— 已提交 83a3cd5
-- 新增 `kgma-format.js`：crypto_version=3 / crypto_slot=1，16B 密钥内嵌文件头 offset 0x2c，**完全离线可解**（无需酷狗客户端/密钥库）；算法移植 arcana6264/unlock-music `kgm_v3.rs`
-- 接线：config.js audioInput 加 `kgma` → server.js 音频解密分发五分支（ncm/kgg/kgma/mflac/mgg）→ 白名单四处（package.json build.files / win7-build-profile.js REQUIRED_RUNTIME_FILES / tests/win7-build-profile.test.js 两处清单）
-- 测试 `tests/kgma-format.test.js` 7 项（6 单测 + 1 真实样本 fixture 保护，本机 7/7）；fixture `tests/fixtures/sample.kgma` 被 gitignore 不入库（CI 自动 skip）
-- 真实样本 E2E：薛之谦《演员》/林俊杰《背对背拥抱》.kgma → FLAC → MP3 全链路通过
-- 与 KGG 区别：KGMA 密钥内嵌文件头（离线可解）；KGG v5 密钥在酷狗本地库 KGMusicV3.db（需装酷狗）。用户问「KGM 转不了 mp3」实际是 .kgma，现已支持
+### 本次会话新增功能（全部已提交）
 
-### 视频输出编码选择（h264/h265/av1）—— 已提交 6c66f7b
-- 后端 media.js `videoEncoderArgs`（h264=libx264/h265=libx265/av1=libsvtav1）+ server.js 读 `req.body.videoCodec`（白名单校验，非法回退 h264）
-- 前端 public/index.html + app.js「视频编码」下拉（目标 mp4/mov/mkv 时显示，仿 zip 压缩级别字段）
-- 测试 `tests/media-codec.test.js` 4 项 + `tests/ui-static.test.js` 新增 1 项静态断言
-- E2E 实测：mkv 源 → mp4 目标，h265→hevc / av1→av1 / 默认→h264 全链路通过（引擎 ffmpeg 实跑）
+- **KGMA 离线解密**（83a3cd5）：酷狗会员格式，16B 密钥内嵌文件头 offset 0x2c，纯离线可解（无需酷狗客户端/密钥库）
+- **视频输出编码选择**（6c66f7b）：h264/h265/av1 可选，前端下拉（目标 mp4/mov/mkv 时显示）
+- **检测更新入口默认隐藏**（eafd3a5）：updateButton 默认 hidden，有更新才亮出
+- **PDF→Word 版式还原**（6c72c2d）：集成 pdf2docx（docengine convert），段落/表格/图片/字体还原，实测 3×3 表格/合并单元格/无框表格全保留
+- **PDF→Excel 表格提取改用 camelot**（28587bb + 88c6fba）：标准表格 100% 还原（旧自研有标题误判/列错位/OCR 认错），加质量门槛（裁剪/特殊布局回退自研）
+- **.mmp4 支持**（89d6db7）：QQ 音乐 musicex 变体（D0M1 档位），尾部 musicex footer，走现有 musicex 解密链路
 
-### 检测更新入口默认隐藏 —— 已提交 eafd3a5
-- updateButton 默认 hidden（不再常驻显示「检查更新」）；renderUpdateStatus 仅 available/downloaded 亮出按钮 + 状态提示，checking 给手动检查反馈，upToDate/error/unavailable 静默
-- electron-main.js 不需改：本就推 available/downloaded/upToDate/error 状态，前端按状态决定显隐
-
-### PDF→Word 版式还原（pdf2docx 引擎）—— 进行中，未提交
-- 集成 ArtifexSoftware/pdf2docx（MIT，3489⭐，版式还原开源界最好）：config.js 加 PDF2DOCX_PATH，pdf.js convertPdfToDocx 优先 spawn pdf2docx.exe，引擎缺失/失败回退 PDF.js 文字提取
-- 引擎：PyInstaller 打包 pdf2docx 0.5.13（含 PyMuPDF 1.28/opencv/numpy）→ bin/pdf2docx/pdf2docx.exe，224MB
-- 实测：真实 Word→PDF 还原后段落/表格(3×3 全对)/图片/字体/列表全保留；多行中文正确聚合成段
-- 打包：build.win.extraResources 加 pdf2docx；win7 版过滤掉（Python 3.12 不支持 Win7，回退文字提取）
-- 测试 tests/pdf2docx.test.js 2 项（fixture+引擎保护，本机 2/2）
+### 统一文档引擎 docengine
+- pdf2docx + camelot 合并打包成一个 `docengine.exe`（bin/docengine/，270MB），共享 numpy/opencv/pandas（分开打包要 374MB，省 104MB）
+- 子命令：`convert`（PDF→Word）+ `table`（PDF→Excel 表格，输出 JSON）
+- win7 版过滤掉（Python 3.12 不支持 Win7，PDF→docx/表格回退纯 JS 实现）
+- 依赖：PyMuPDF（AGPL-3.0）+ camelot（MIT，numpy/pandas/opencv/pypdfium2 全宽松）
 
 ### 待办（下一窗口）
-- ① 报错反馈入口 —— 用户已定：直接展示邮箱 3465177342@qq.com（不做 mailto/跳转），待实现
-- ② PDF 加密补全 —— 现 convertPdf 抛 PDF_ENCRYPT_UNAVAILABLE（缺加密引擎），用户要求处理
-- ③ PDF→XLSX 扫描件/复杂合并单元格优化 —— 尽力优化（OCR 客观限制，不承诺完美）
-- ④ 工程图纸大图无上限 —— 用户已定：完全放开（同 PDF 页数 1:1），待实现（resource-policy 三道闸 + Sharp limitInputPixels）
-- ⑤ KGMA 解密 FLAC 尾部残留清理 —— 用户已定：清理（convertKgma 重封）
-- ⑥ pdf2docx 体积优化（opencv 112MB 可裁）+ PyMuPDF AGPL 合规说明（附许可文本 + 源码链接）
-- ⑦ 推送 main + 发布（KGMA/视频编码/检测更新/PDF→Word 一批，bump 版本号让老用户更新到新版 PDF→Word）
+- ① 报错反馈入口：直接展示邮箱 3465177342@qq.com（用户已定，不做 mailto/跳转）
+- ② 酷我 KWM：算法调研到（kwm mask / 暴力找 key），待真实样本验证（本次跳过）
+- ③ 工程图纸大图无上限：用户已定完全放开，待实现（resource-policy 三道闸 + Sharp limitInputPixels）
+- ④ KGMA 解密 FLAC 尾部 ~4B 残留清理：用户已定清理，待实现（convertKgma 重封）
+- ⑤ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，需在许可页附文本 + 源码链接）
+- ⑥ PDF 加密：用户决定不做（已取消）
+- ⑦ 行车记录仪 BAT：实为 .mmp4（musicex），已解决（89d6db7）
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
