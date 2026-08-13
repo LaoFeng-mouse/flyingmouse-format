@@ -55,6 +55,51 @@ function multiplyTransforms(left, right) {
   ];
 }
 
+function finiteNumericArray(value, expectedLength) {
+  try {
+    const numbers = Array.from(value || [], Number);
+    return numbers.length === expectedLength && numbers.every(Number.isFinite)
+      ? numbers
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function transformedRectangleBounds(transform, rectangle) {
+  const points = [
+    [rectangle.x0, rectangle.y0],
+    [rectangle.x1, rectangle.y0],
+    [rectangle.x0, rectangle.y1],
+    [rectangle.x1, rectangle.y1]
+  ].map(([x, y]) => ({
+    x: transform[0] * x + transform[2] * y + transform[4],
+    y: transform[1] * x + transform[3] * y + transform[5]
+  }));
+  if (!points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) {
+    return null;
+  }
+  return {
+    x0: Math.min(...points.map((point) => point.x)),
+    y0: Math.min(...points.map((point) => point.y)),
+    x1: Math.max(...points.map((point) => point.x)),
+    y1: Math.max(...points.map((point) => point.y))
+  };
+}
+
+function intersectRectangles(left, right) {
+  if (!left || !right) return null;
+  const intersection = {
+    x0: Math.max(left.x0, right.x0),
+    y0: Math.max(left.y0, right.y0),
+    x1: Math.min(left.x1, right.x1),
+    y1: Math.min(left.y1, right.y1)
+  };
+  return intersection.x1 > intersection.x0 && intersection.y1 > intersection.y0
+    ? intersection
+    : null;
+}
+
 function rectangleUnionArea(rectangles) {
   const valid = rectangles.filter((rectangle) => {
     const values = [rectangle?.x0, rectangle?.y0, rectangle?.x1, rectangle?.y1];
@@ -101,49 +146,161 @@ function imageCoverageFromOperators(operatorList, OPS, viewport) {
   if (!(width > 0 && height > 0) || initialTransform.length !== 6 || !initialTransform.every(Number.isFinite)) {
     return 0;
   }
-  const imageOperators = new Set([
+  const directImageOperators = new Set([
     OPS.paintImageXObject,
     OPS.paintInlineImageXObject,
     OPS.paintImageMaskXObject
   ].filter(Number.isInteger));
-  let transform = initialTransform;
-  const stack = [];
+  const unitRectangle = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  const pageRectangle = { x0: 0, y0: 0, x1: width, y1: height };
+  let state = { transform: initialTransform, clip: pageRectangle };
+  let graphicsStack = [];
+  const formStack = [];
   const rectangles = [];
+  let malformed = false;
+
+  const cloneState = (source) => ({
+    transform: source.transform.slice(),
+    clip: source.clip && { ...source.clip }
+  });
+  const addPaintedUnitRectangle = (transform) => {
+    // PDF images paint a transformed unit rectangle. We intentionally retain
+    // its axis-aligned bounds: this is bounded and conservative, but can
+    // overcount rotated or sheared polygons until polygon union is warranted.
+    const bounds = transformedRectangleBounds(transform, unitRectangle);
+    const clipped = intersectRectangles(bounds, state.clip);
+    if (clipped) rectangles.push(clipped);
+  };
+  const addTransformedInstances = (transforms) => {
+    for (const instanceTransform of transforms) {
+      const parsed = finiteNumericArray(instanceTransform, 6);
+      if (!parsed) {
+        malformed = true;
+        continue;
+      }
+      addPaintedUnitRectangle(multiplyTransforms(state.transform, parsed));
+    }
+  };
+  const transformsFromPositions = (matrixValues, positions) => {
+    const parsedMatrix = finiteNumericArray(matrixValues, 4);
+    let parsedPositions;
+    try {
+      parsedPositions = Array.from(positions || [], Number);
+    } catch {
+      parsedPositions = [];
+    }
+    if (!parsedMatrix || parsedPositions.length % 2 !== 0 || !parsedPositions.every(Number.isFinite)) {
+      malformed = true;
+      return [];
+    }
+    const [a, b, c, d] = parsedMatrix;
+    const transforms = [];
+    for (let index = 0; index < parsedPositions.length; index += 2) {
+      transforms.push([a, b, c, d, parsedPositions[index], parsedPositions[index + 1]]);
+    }
+    return transforms;
+  };
+
   for (let index = 0; index < (operatorList?.fnArray || []).length; index += 1) {
     const operator = operatorList.fnArray[index];
+    const args = operatorList?.argsArray?.[index] || [];
     if (operator === OPS.save) {
-      stack.push(transform.slice());
+      graphicsStack.push(cloneState(state));
       continue;
     }
     if (operator === OPS.restore) {
-      if (stack.length) transform = stack.pop();
-      continue;
-    }
-    if (operator === OPS.transform) {
-      const next = Array.from(operatorList.argsArray[index] || [], Number);
-      if (next.length === 6 && next.every(Number.isFinite)) {
-        transform = multiplyTransforms(transform, next);
+      if (graphicsStack.length) {
+        state = graphicsStack.pop();
+      } else {
+        malformed = true;
       }
       continue;
     }
-    if (!imageOperators.has(operator)) continue;
-    const points = [
-      [0, 0],
-      [1, 0],
-      [0, 1],
-      [1, 1]
-    ].map(([x, y]) => ({
-      x: transform[0] * x + transform[2] * y + transform[4],
-      y: transform[1] * x + transform[3] * y + transform[5]
-    }));
-    if (!points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))) continue;
-    const x0 = Math.max(0, Math.min(...points.map((point) => point.x)));
-    const y0 = Math.max(0, Math.min(...points.map((point) => point.y)));
-    const x1 = Math.min(width, Math.max(...points.map((point) => point.x)));
-    const y1 = Math.min(height, Math.max(...points.map((point) => point.y)));
-    if (x1 > x0 && y1 > y0) rectangles.push({ x0, y0, x1, y1 });
+    if (operator === OPS.transform) {
+      const next = finiteNumericArray(args, 6);
+      if (next) {
+        state.transform = multiplyTransforms(state.transform, next);
+      } else {
+        malformed = true;
+      }
+      continue;
+    }
+    if (operator === OPS.paintFormXObjectBegin) {
+      formStack.push({
+        state: cloneState(state),
+        graphicsStack: graphicsStack.map(cloneState)
+      });
+      const formMatrix = args[0] == null ? null : finiteNumericArray(args[0], 6);
+      if (args[0] != null && !formMatrix) {
+        malformed = true;
+        state.clip = null;
+      } else if (formMatrix) {
+        state.transform = multiplyTransforms(state.transform, formMatrix);
+      }
+      if (args[1] != null) {
+        const bbox = finiteNumericArray(args[1], 4);
+        if (!bbox || bbox[2] <= bbox[0] || bbox[3] <= bbox[1]) {
+          malformed = true;
+          state.clip = null;
+        } else {
+          const formBounds = transformedRectangleBounds(state.transform, {
+            x0: bbox[0],
+            y0: bbox[1],
+            x1: bbox[2],
+            y1: bbox[3]
+          });
+          state.clip = intersectRectangles(state.clip, formBounds);
+        }
+      }
+      continue;
+    }
+    if (operator === OPS.paintFormXObjectEnd) {
+      const frame = formStack.pop();
+      if (!frame) {
+        malformed = true;
+      } else {
+        if (graphicsStack.length !== frame.graphicsStack.length) malformed = true;
+        state = frame.state;
+        graphicsStack = frame.graphicsStack;
+      }
+      continue;
+    }
+    if (directImageOperators.has(operator) || operator === OPS.paintSolidColorImageMask) {
+      addPaintedUnitRectangle(state.transform);
+      continue;
+    }
+    if (operator === OPS.paintImageXObjectRepeat) {
+      addTransformedInstances(transformsFromPositions([args[1], 0, 0, args[2]], args[3]));
+      continue;
+    }
+    if (operator === OPS.paintImageMaskXObjectRepeat) {
+      addTransformedInstances(transformsFromPositions(
+        [args[1], args[2] ?? 0, args[3] ?? 0, args[4]],
+        args[5]
+      ));
+      continue;
+    }
+    if (operator === OPS.paintImageMaskXObjectGroup) {
+      const images = args[0];
+      if (!Array.isArray(images)) {
+        malformed = true;
+      } else {
+        addTransformedInstances(images.map((image) => image?.transform));
+      }
+      continue;
+    }
+    if (operator === OPS.paintInlineImageXObjectGroup) {
+      const map = args[1];
+      if (!Array.isArray(map)) {
+        malformed = true;
+      } else {
+        addTransformedInstances(map.map((entry) => entry?.transform));
+      }
+    }
   }
-  return Math.min(1, Math.max(0, rectangleUnionArea(rectangles) / (width * height)));
+  if (graphicsStack.length || formStack.length) malformed = true;
+  const coverage = malformed ? 1 : rectangleUnionArea(rectangles) / (width * height);
+  return Math.min(1, Math.max(0, Number.isFinite(coverage) ? coverage : 1));
 }
 
 function textMetrics(textContent) {
