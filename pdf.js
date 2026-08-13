@@ -10,7 +10,7 @@ const path = require("path");
 const yazl = require("yazl");
 const sanitize = require("sanitize-filename");
 const { PDFDocument } = require("pdf-lib");
-const { PDFTOPPM_PATH, pdfImageTargets } = require("./config");
+const { PDFTOPPM_PATH, PDF2DOCX_PATH, pdfImageTargets } = require("./config");
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
 const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
@@ -164,6 +164,16 @@ function writeDocxZip(outputPath, entries) {
 }
 
 async function convertPdfToDocx(inputPath, outputPath, pages) {
+  // 优先用 pdf2docx 引擎做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
+  if (PDF2DOCX_PATH) {
+    try {
+      await run(PDF2DOCX_PATH, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
+      return;
+    } catch (error) {
+      // pdf2docx 转换失败（异常 PDF）→ 回退到文字提取，不中断转换。
+    }
+  }
+
   const source = pages || await extractPdfRowsByPage(inputPath);
   const hasExtractableRows = source.some((page) => page.rows.length);
   if (!hasExtractableRows) {

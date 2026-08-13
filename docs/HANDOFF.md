@@ -38,12 +38,21 @@
 - updateButton 默认 hidden（不再常驻显示「检查更新」）；renderUpdateStatus 仅 available/downloaded 亮出按钮 + 状态提示，checking 给手动检查反馈，upToDate/error/unavailable 静默
 - electron-main.js 不需改：本就推 available/downloaded/upToDate/error 状态，前端按状态决定显隐
 
+### PDF→Word 版式还原（pdf2docx 引擎）—— 进行中，未提交
+- 集成 ArtifexSoftware/pdf2docx（MIT，3489⭐，版式还原开源界最好）：config.js 加 PDF2DOCX_PATH，pdf.js convertPdfToDocx 优先 spawn pdf2docx.exe，引擎缺失/失败回退 PDF.js 文字提取
+- 引擎：PyInstaller 打包 pdf2docx 0.5.13（含 PyMuPDF 1.28/opencv/numpy）→ bin/pdf2docx/pdf2docx.exe，224MB
+- 实测：真实 Word→PDF 还原后段落/表格(3×3 全对)/图片/字体/列表全保留；多行中文正确聚合成段
+- 打包：build.win.extraResources 加 pdf2docx；win7 版过滤掉（Python 3.12 不支持 Win7，回退文字提取）
+- 测试 tests/pdf2docx.test.js 2 项（fixture+引擎保护，本机 2/2）
+
 ### 待办（下一窗口）
-- ① 报错反馈入口（伸缩小窗 + 诊断包 + 邮件到 3465177342@qq.com）—— 需定「诊断包 + mailto 打开默认邮件客户端」还是「跳转邮箱页面」
-- ② PDF→Word 版式还原 —— 需选方案（现方案只抽文字，不还原版式）
-- ③ 工程图纸大图上限 —— 需拍板：图片合并 PDF 是否同 PDF 页数一样完全放开，还是给明确上限（如 A0 400dpi ≈ 3 亿像素）
-- ④ KGMA 解密 FLAC 尾部 ~4B 残留清理（可在 convertKgma 里重封）—— 需拍板是否顺手做
-- ⑤ 推送 main + 发布：KGMA/视频编码/检测更新隐藏三个 feat 已提交本地，待用户过目 diff 后 push（走代理）+ 决定是否 bump 版本号发版
+- ① 报错反馈入口 —— 用户已定：直接展示邮箱 3465177342@qq.com（不做 mailto/跳转），待实现
+- ② PDF 加密补全 —— 现 convertPdf 抛 PDF_ENCRYPT_UNAVAILABLE（缺加密引擎），用户要求处理
+- ③ PDF→XLSX 扫描件/复杂合并单元格优化 —— 尽力优化（OCR 客观限制，不承诺完美）
+- ④ 工程图纸大图无上限 —— 用户已定：完全放开（同 PDF 页数 1:1），待实现（resource-policy 三道闸 + Sharp limitInputPixels）
+- ⑤ KGMA 解密 FLAC 尾部残留清理 —— 用户已定：清理（convertKgma 重封）
+- ⑥ pdf2docx 体积优化（opencv 112MB 可裁）+ PyMuPDF AGPL 合规说明（附许可文本 + 源码链接）
+- ⑦ 推送 main + 发布（KGMA/视频编码/检测更新/PDF→Word 一批，bump 版本号让老用户更新到新版 PDF→Word）
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
