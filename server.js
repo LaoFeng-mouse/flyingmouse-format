@@ -173,6 +173,7 @@ const {
   pdfTextTargets,
   pdfImageTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,
@@ -324,7 +325,7 @@ app.get("/api/capabilities", async (_req, res) => {
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
-      audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
+      audio: { inputs: [...audioInput].filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext)).sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
     },
@@ -535,7 +536,13 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg" || inputExt === "kgma" || inputExt === "mmp4")) {
+      if (category === "audio" && unlockAudioInputs.has(inputExt)) {
+        if (process.windowsStore) {
+          logger.warn(`Rejected encrypted-audio unlock on Store build: ${originalName}`);
+          await fsp.rm(file.path, { force: true }).catch(() => {});
+          res.status(400).json({ error: "商店版不支持加密音频解锁。", errorCode: "AUDIO_UNLOCK_UNAVAILABLE_ON_STORE" });
+          return;
+        }
         let decrypted;
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
