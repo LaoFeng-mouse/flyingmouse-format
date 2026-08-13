@@ -64,7 +64,7 @@ function manifest() {
     pages: [
       {
         pageNumber: 1, width: 1653, height: 2339, rotation: 0, referenceImage: "page-001.png",
-        classification: "scanned", warnings: ["bounded-warning"], elapsedMs: 10,
+        classification: "scanned", warnings: ["BOUNDED_WARNING"], elapsedMs: 10,
         blocks: [{ type: "table", bbox: first.bbox, tableId: first.id, confidence: first.confidence }],
         tables: [first]
       },
@@ -96,7 +96,7 @@ test("uses the documented hard and review confidence thresholds", () => {
   assert.equal(REVIEW_CELL_CONFIDENCE, 0.85);
 });
 
-test("writes deterministic structured sheets, typed values, merges, review records, metadata and references", async (t) => {
+test("writes deterministic structured sheets, exact recognized strings, merges, review records, metadata and references", async (t) => {
   const root = await workspace(t);
   const outputPath = path.join(root, "anonymous.xlsx");
   const result = await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath });
@@ -113,9 +113,10 @@ test("writes deterministic structured sheets, typed values, merges, review recor
   assert.equal(sheet.getCell("A1").value, "匿名数据");
   assert.equal(sheet.getCell("A3").value, "00123");
   assert.equal(sheet.getCell("A3").numFmt, "@");
-  assert.equal(sheet.getCell("B3").value, 12.5);
-  assert.ok(sheet.getCell("C3").value instanceof Date);
-  assert.equal(sheet.getCell("C3").numFmt, "yyyy-mm-dd");
+  assert.equal(sheet.getCell("B3").value, "12.50");
+  assert.equal(sheet.getCell("B3").numFmt, "@");
+  assert.equal(sheet.getCell("C3").value, "2026-08-13");
+  assert.equal(sheet.getCell("C3").numFmt, "@");
   assert.equal(sheet.getCell("D3").fill.fgColor.argb, "FFFFE2A8");
   assert.ok(sheet.getCell("D3").note);
   assert.equal(sheet.views[0].showGridLines, false);
@@ -129,6 +130,8 @@ test("writes deterministic structured sheets, typed values, merges, review recor
   assert.equal(info.getCell("B5").value, "ch");
   assert.equal(info.getCell("B6").value, HARD_TABLE_CONFIDENCE);
   assert.equal(info.getCell("B7").value, REVIEW_CELL_CONFIDENCE);
+  assert.deepEqual(info.getRow(11).values.slice(1), [1, "scanned", 1, 0.93, 1, 10, "BOUNDED_WARNING"]);
+  assert.deepEqual(info.getRow(12).values.slice(1), [2, "mixed", 1, 0.91, 0, 12, "无 / None"]);
   const references = workbook.getWorksheet("原件对照");
   assert.equal(references.getImages().length, 2);
   assert.equal(references.pageSetup.orientation, "portrait");
@@ -212,7 +215,7 @@ test("validator detects damaged required structure, review semantics and referen
   await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: basePath });
   for (const [name, mutate] of [
     ["missing-info", (workbook) => workbook.removeWorksheet(workbook.getWorksheet("识别说明").id)],
-    ["wrong-value", (workbook) => { workbook.getWorksheet("P001-T01").getCell("B3").value = "12.50"; }],
+    ["wrong-value", (workbook) => { workbook.getWorksheet("P001-T01").getCell("B3").value = 12.5; }],
     ["missing-merge", (workbook) => workbook.getWorksheet("P001-T01").unMergeCells("A1:D1")],
     ["missing-highlight", (workbook) => { workbook.getWorksheet("P001-T01").getCell("D3").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFFFF" } }; }],
     ["missing-review", (workbook) => workbook.getWorksheet("待核对").spliceRows(2, 1)],
@@ -223,8 +226,91 @@ test("validator detects damaged required structure, review semantics and referen
     mutate(workbook);
     const damaged = path.join(root, `${name}.xlsx`);
     await workbook.xlsx.writeFile(damaged);
-    await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: manifest() }), outputInvalid, name);
+    await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: manifest(), assetRoot: root }), outputInvalid, name);
   }
+});
+
+test("validator binds each sequential embedded reference image to trusted source bytes", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "valid-images.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  const workbook = await loadWorkbook(validPath);
+  const images = workbook.getWorksheet("原件对照").getImages();
+  const privateSentinel = "private-recognized-image-path";
+  const tampered = await sharp({ create: { width: 40, height: 40, channels: 4, background: "#000000" } }).png().toBuffer();
+  workbook.getImage(images[0].imageId).buffer = tampered;
+  const tamperedPath = path.join(root, `${privateSentinel}.xlsx`);
+  await workbook.xlsx.writeFile(tamperedPath);
+  await assert.rejects(
+    validatePdfOfficeXlsx(tamperedPath, { manifest: manifest(), assetRoot: root }),
+    (error) => outputInvalid(error, privateSentinel)
+  );
+});
+
+test("validator requires exact per-page classification, table confidence, warning details and timing", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "valid-summary.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  for (const [name, mutate] of [
+    ["classification", (sheet) => { sheet.getCell("B11").value = "native"; }],
+    ["table-count", (sheet) => { sheet.getCell("C11").value = 2; }],
+    ["average-confidence", (sheet) => { sheet.getCell("D11").value = 0.99; }],
+    ["warning-count", (sheet) => { sheet.getCell("E11").value = 0; }],
+    ["duration", (sheet) => { sheet.getCell("F11").value = 999; }],
+    ["warning-detail", (sheet) => { sheet.getCell("G11").value = "bogus-warning"; }]
+  ]) {
+    const workbook = await loadWorkbook(validPath);
+    mutate(workbook.getWorksheet("识别说明"));
+    const damaged = path.join(root, `${name}.xlsx`);
+    await workbook.xlsx.writeFile(damaged);
+    await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: manifest(), assetRoot: root }), outputInvalid, name);
+  }
+});
+
+test("warning details are bounded and redact unsafe path-like or raw text", async (t) => {
+  const root = await workspace(t);
+  const input = manifest();
+  const privatePath = "C:\\private\\recognized-content.pdf";
+  input.pages[0].warnings = ["SAFE_CODE", privatePath, "raw recognized sentence with spaces", "secretword", ...Array.from({ length: 20 }, (_, index) => `W${index}`)];
+  const outputPath = path.join(root, "bounded-warnings.xlsx");
+  await writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath });
+  const workbook = await loadWorkbook(outputPath);
+  const detail = String(workbook.getWorksheet("识别说明").getCell("G11").value);
+  assert.ok(detail.length <= 256);
+  assert.ok(detail.includes("SAFE_CODE"));
+  assert.ok(detail.includes("[redacted]"));
+  assert.ok(!detail.includes(privatePath));
+  assert.ok(!detail.includes("raw recognized sentence"));
+  assert.ok(!detail.includes("secretword"));
+});
+
+test("validator enforces exact bidirectional review highlights, notes and rows", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "valid-review.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  for (const [name, mutate] of [
+    ["unexpected-highlight", (workbook) => { workbook.getWorksheet("P001-T01").getCell("B3").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE2A8" } }; }],
+    ["unexpected-note", (workbook) => { workbook.getWorksheet("P001-T01").getCell("B3").note = "bogus"; }],
+    ["extra-review-row", (workbook) => { workbook.getWorksheet("待核对").addRow([9, "P999-T99", "A1", "bogus", 0.8, "第 9 页"]); }]
+  ]) {
+    const workbook = await loadWorkbook(validPath);
+    mutate(workbook);
+    const damaged = path.join(root, `${name}.xlsx`);
+    await workbook.xlsx.writeFile(damaged);
+    await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: manifest(), assetRoot: root }), outputInvalid, name);
+  }
+
+  const noReview = manifest();
+  noReview.pages[0].tables[0].cells.at(-1).confidence = 0.9;
+  const noReviewPath = path.join(root, "zero-review.xlsx");
+  await writePdfOfficeXlsx({ manifest: noReview, assetRoot: root, outputPath: noReviewPath });
+  const workbook = await loadWorkbook(noReviewPath);
+  workbook.getWorksheet("P001-T01").getCell("B3").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE2A8" } };
+  workbook.getWorksheet("P001-T01").getCell("B3").note = "bogus";
+  workbook.getWorksheet("待核对").addRow([1, "P001-T01", "B3", "bogus", 0.8, "第 1 页"]);
+  const damaged = path.join(root, "zero-review-bogus.xlsx");
+  await workbook.xlsx.writeFile(damaged);
+  await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: noReview, assetRoot: root }), outputInvalid);
 });
 
 test("validator rejects raw text or images without meaningful editable table data", async (t) => {
@@ -235,7 +321,7 @@ test("validator rejects raw text or images without meaningful editable table dat
   workbook.getWorksheet("P001-T01").getCell("A1").value = " ";
   workbook.getWorksheet("原件对照").addImage(workbook.addImage({ filename: path.join(root, "page-001.png"), extension: "png" }), "A1:D20");
   await workbook.xlsx.writeFile(outputPath);
-  await assert.rejects(validatePdfOfficeXlsx(outputPath, { manifest: manifest() }), outputInvalid);
+  await assert.rejects(validatePdfOfficeXlsx(outputPath, { manifest: manifest(), assetRoot: root }), outputInvalid);
 });
 
 test("preflights table and asset resource bounds before allocation or reads", async (t) => {
@@ -278,5 +364,5 @@ test("invalid packages and private failures use the bilingual redacted output er
   const root = await workspace(t);
   const invalidPath = path.join(root, "not-xlsx.xlsx");
   await fs.writeFile(invalidPath, "private recognized content");
-  await assert.rejects(validatePdfOfficeXlsx(invalidPath, { manifest: manifest() }), (error) => outputInvalid(error, "private recognized content"));
+  await assert.rejects(validatePdfOfficeXlsx(invalidPath, { manifest: manifest(), assetRoot: root }), (error) => outputInvalid(error, "private recognized content"));
 });

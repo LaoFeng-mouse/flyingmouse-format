@@ -13,10 +13,14 @@ const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 256 * 1024 * 1024;
 const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
 const REVIEW_FILL_ARGB = "FFFFE2A8";
+const MAX_DISPLAY_WARNING_COUNT = 8;
+const MAX_WARNING_DETAIL_CHARS = 256;
+const NO_REVIEW_MESSAGE = "没有低于人工复核阈值的单元格。";
 const SAFE_VALIDATION_REASONS = new Set([
   "sheet mismatch", "metadata mismatch", "table dimensions", "merge mismatch", "cell mismatch",
-  "review highlight mismatch", "no editable table content", "review row count", "review row mismatch",
-  "reference image count", "reference label mismatch", "missing reference media", "invalid package"
+  "summary mismatch", "review highlight mismatch", "review note mismatch", "no editable table content",
+  "review row count", "review row mismatch", "reference image count", "reference label mismatch",
+  "reference image mismatch", "missing reference media", "invalid package"
 ]);
 
 const ERROR_MESSAGES = Object.freeze({
@@ -99,28 +103,12 @@ function tableDescriptors(manifest) {
 }
 
 function normalizeCellText(value) {
-  return value === undefined || value === null ? "" : String(value).trim();
+  return value === undefined || value === null ? "" : String(value);
 }
 
-function typedCellValue(text) {
+function recognizedCellValue(text) {
   const value = normalizeCellText(text);
-  if (!value) return { value: null, numFmt: "@" };
-  if (/^0\d+$/.test(value)) return { value, numFmt: "@" };
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (dateMatch) {
-    const year = Number(dateMatch[1]);
-    const month = Number(dateMatch[2]);
-    const day = Number(dateMatch[3]);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
-      return { value: date, numFmt: "yyyy-mm-dd" };
-    }
-  }
-  if (/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(value)) {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) return { value: numeric, numFmt: value.includes(".") ? "0.00########" : "#,##0" };
-  }
-  return { value, numFmt: "@" };
+  return { value: value === "" ? null : value, numFmt: "@" };
 }
 
 function cellAddress(row, column) {
@@ -153,7 +141,7 @@ function expectedTable(descriptor) {
         occupied[row][column] = true;
       }
     }
-    const parsed = typedCellValue(sourceCell.text);
+    const parsed = recognizedCellValue(sourceCell.text);
     values[sourceCell.row][sourceCell.column] = parsed.value;
     formats[sourceCell.row][sourceCell.column] = parsed.numFmt;
     if (parsed.value !== null && String(parsed.value).trim()) meaningful += 1;
@@ -263,6 +251,39 @@ function configureSheet(sheet, freezeRows = 1) {
   sheet.properties.defaultRowHeight = 22;
 }
 
+function safeWarningDetails(warnings) {
+  const source = Array.isArray(warnings) ? warnings : [];
+  if (source.length === 0) return "无 / None";
+  const visible = source.slice(0, MAX_DISPLAY_WARNING_COUNT).map((warning) => {
+    const value = typeof warning === "string" ? warning : "";
+    return /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : "[redacted]";
+  });
+  if (source.length > MAX_DISPLAY_WARNING_COUNT) visible.push(`+${source.length - MAX_DISPLAY_WARNING_COUNT}`);
+  return visible.join("; ").slice(0, MAX_WARNING_DETAIL_CHARS);
+}
+
+function summaryRows(manifest, expectedTables) {
+  return manifest.pages.map((page, index) => {
+    const tables = expectedTables.filter((item) => item.pageIndex === index);
+    const average = tables.length
+      ? tables.reduce((sum, item) => sum + confidence(item.table.confidence), 0) / tables.length
+      : 0;
+    const warnings = Array.isArray(page.warnings) ? page.warnings : [];
+    const classification = /^[A-Za-z0-9_.:-]{1,32}$/.test(String(page.classification || ""))
+      ? String(page.classification)
+      : "unknown";
+    return [
+      Number.isSafeInteger(page.pageNumber) && page.pageNumber > 0 ? page.pageNumber : index + 1,
+      classification,
+      tables.length,
+      average,
+      Math.min(warnings.length, MAX_DISPLAY_WARNING_COUNT),
+      Number.isFinite(page.elapsedMs) && page.elapsedMs >= 0 ? page.elapsedMs : 0,
+      safeWarningDetails(warnings)
+    ];
+  });
+}
+
 function styleTableSheet(sheet, expected) {
   configureSheet(sheet, 1);
   for (let rowIndex = 1; rowIndex <= expected.table.rowCount; rowIndex += 1) {
@@ -291,7 +312,7 @@ function styleTableSheet(sheet, expected) {
 function addInfoSheet(workbook, manifest, expectedTables) {
   const sheet = workbook.addWorksheet("识别说明");
   configureSheet(sheet, 2);
-  sheet.mergeCells("A1:F1");
+  sheet.mergeCells("A1:G1");
   sheet.getCell("A1").value = "扫描 PDF 表格识别说明 / Recognition summary";
   sheet.getCell("A1").font = { name: "Microsoft YaHei", size: 16, bold: true, color: { argb: COLORS.white } };
   sheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.navy } };
@@ -320,23 +341,21 @@ function addInfoSheet(workbook, manifest, expectedTables) {
   sheet.getCell("B6").numFmt = "0%";
   sheet.getCell("B7").numFmt = "0%";
   const summaryStart = 10;
-  sheet.getRow(summaryStart).values = ["页码", "分类", "表格数", "平均表格置信度", "警告数", "耗时(ms)"];
+  sheet.getRow(summaryStart).values = ["页码", "分类", "表格数", "平均表格置信度", "警告数", "耗时(ms)", "警告详情"];
   sheet.getRow(summaryStart).eachCell((cell) => {
     cell.font = { name: "Microsoft YaHei", size: 10, bold: true, color: { argb: COLORS.white } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.navy } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = border();
   });
-  manifest.pages.forEach((page, index) => {
-    const tables = expectedTables.filter((item) => item.pageIndex === index);
-    const average = tables.length ? tables.reduce((sum, item) => sum + confidence(item.table.confidence), 0) / tables.length : 0;
+  summaryRows(manifest, expectedTables).forEach((values, index) => {
     const row = sheet.getRow(summaryStart + index + 1);
-    row.values = [page.pageNumber || index + 1, String(page.classification || "unknown"), tables.length, average, Array.isArray(page.warnings) ? page.warnings.length : 0, Number(page.elapsedMs) || 0];
-    row.eachCell((cell) => { cell.font = { name: "Microsoft YaHei", size: 10 }; cell.border = border(); cell.alignment = { vertical: "middle" }; });
+    row.values = values;
+    row.eachCell((cell) => { cell.font = { name: "Microsoft YaHei", size: 10 }; cell.border = border(); cell.alignment = { vertical: "middle", wrapText: true }; });
     row.getCell(4).numFmt = "0.0%";
   });
-  sheet.columns = [{ width: 20 }, { width: 42 }, { width: 14 }, { width: 20 }, { width: 12 }, { width: 14 }];
-  sheet.printArea = `A1:F${summaryStart + manifest.pages.length}`;
+  sheet.columns = [{ width: 20 }, { width: 34 }, { width: 12 }, { width: 18 }, { width: 10 }, { width: 12 }, { width: 34 }];
+  sheet.printArea = `A1:G${summaryStart + manifest.pages.length}`;
   return sheet;
 }
 
@@ -356,7 +375,7 @@ function addTableSheet(workbook, expected) {
   for (const item of expected.review) {
     const excelCell = sheet.getCell(item.address);
     excelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.review } };
-    excelCell.note = `识别置信度 ${(item.confidence * 100).toFixed(1)}%；请对照第 ${item.pageNumber} 页原件复核。`;
+    excelCell.note = reviewNote(item);
   }
   return sheet;
 }
@@ -381,7 +400,7 @@ function addReviewSheet(workbook, reviewItems) {
   });
   if (!reviewItems.length) {
     sheet.mergeCells("A2:F2");
-    sheet.getCell("A2").value = "没有低于人工复核阈值的单元格。";
+    sheet.getCell("A2").value = NO_REVIEW_MESSAGE;
     sheet.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.note } };
     sheet.getCell("A2").alignment = { horizontal: "center", vertical: "middle" };
   }
@@ -433,6 +452,10 @@ function expectedSheetNames(expectedTables) {
   return ["识别说明", ...expectedTables.map((item) => item.sheetName), "待核对", "原件对照"];
 }
 
+function reviewNote(item) {
+  return `识别置信度 ${(item.confidence * 100).toFixed(1)}%；请对照第 ${item.pageNumber} 页原件复核。`;
+}
+
 function comparable(value) {
   if (value instanceof Date) return `date:${value.toISOString().slice(0, 10)}`;
   if (value === null || value === undefined) return "null:";
@@ -444,11 +467,22 @@ function notePresent(note) {
   return Boolean(note && Array.isArray(note.texts) && note.texts.length);
 }
 
-async function validatePdfOfficeXlsx(packagePath, { manifest } = {}) {
+function noteText(note) {
+  if (typeof note === "string") return note;
+  if (!note || !Array.isArray(note.texts)) return "";
+  return note.texts.map((part) => String(part?.text || "")).join("");
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSystem = fs } = {}) {
   try {
-    const info = await fs.lstat(packagePath);
+    const info = await fileSystem.lstat(packagePath);
     if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > MAX_PACKAGE_BYTES) throw new Error("invalid package");
     const expectedTables = tableDescriptors(manifest).map(expectedTable);
+    const expectedAssets = await preflightReferenceAssets(manifest, assetRoot, fileSystem);
     const expectedNames = expectedSheetNames(expectedTables);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(packagePath);
@@ -461,6 +495,14 @@ async function validatePdfOfficeXlsx(packagePath, { manifest } = {}) {
         infoSheet.getCell("B5").value !== String(engine.language || "ch") ||
         Number(infoSheet.getCell("B6").value) !== HARD_TABLE_CONFIDENCE ||
         Number(infoSheet.getCell("B7").value) !== REVIEW_CELL_CONFIDENCE) throw new Error("metadata mismatch");
+    const expectedSummaries = summaryRows(manifest, expectedTables);
+    expectedSummaries.forEach((expected, index) => {
+      const actual = infoSheet.getRow(11 + index).values.slice(1, 8);
+      if (actual.length !== expected.length || actual.some((value, cellIndex) => comparable(value) !== comparable(expected[cellIndex]))) {
+        throw new Error("summary mismatch");
+      }
+    });
+    if (infoSheet.rowCount !== 10 + expectedSummaries.length) throw new Error("summary mismatch");
 
     let meaningful = 0;
     const expectedReview = [];
@@ -481,22 +523,36 @@ async function validatePdfOfficeXlsx(packagePath, { manifest } = {}) {
           if (expected.values[row][column] !== null && String(expected.values[row][column]).trim()) meaningful += 1;
         }
       }
-      for (const item of expected.review) {
-        const actual = sheet.getCell(item.address);
-        if (actual.fill?.fgColor?.argb !== REVIEW_FILL_ARGB || !notePresent(actual.note)) throw new Error("review highlight mismatch");
-        expectedReview.push(item);
+      const expectedReviewByAddress = new Map(expected.review.map((item) => [item.address, item]));
+      for (let row = 1; row <= expected.table.rowCount; row += 1) {
+        for (let column = 1; column <= expected.table.columnCount; column += 1) {
+          const actual = sheet.getCell(row, column);
+          if (actual.isMerged && actual.master?.address !== actual.address) continue;
+          const reviewItem = expectedReviewByAddress.get(actual.address);
+          const highlighted = actual.fill?.fgColor?.argb === REVIEW_FILL_ARGB;
+          const hasNote = notePresent(actual.note);
+          if (highlighted !== Boolean(reviewItem)) throw new Error("review highlight mismatch");
+          if (hasNote !== Boolean(reviewItem) || (reviewItem && noteText(actual.note) !== reviewNote(reviewItem))) {
+            throw new Error("review note mismatch");
+          }
+        }
       }
+      expectedReview.push(...expected.review);
     }
     if (!meaningful) throw new Error("no editable table content");
     const reviewSheet = workbook.getWorksheet("待核对");
-    if (expectedReview.length && reviewSheet.rowCount !== expectedReview.length + 1) throw new Error("review row count");
-    expectedReview.forEach((item, index) => {
-      const actual = reviewSheet.getRow(index + 2).values.slice(1, 7);
-      const expected = [item.pageNumber, item.sheetName, item.address, item.value, item.confidence, item.reference];
-      if (actual.length !== expected.length || actual.some((value, cellIndex) => comparable(value) !== comparable(expected[cellIndex]))) {
-        throw new Error("review row mismatch");
-      }
-    });
+    if (expectedReview.length) {
+      if (reviewSheet.rowCount !== expectedReview.length + 1) throw new Error("review row count");
+      expectedReview.forEach((item, index) => {
+        const actual = reviewSheet.getRow(index + 2).values.slice(1, 7);
+        const expected = [item.pageNumber, item.sheetName, item.address, item.value, item.confidence, item.reference];
+        if (actual.length !== expected.length || actual.some((value, cellIndex) => comparable(value) !== comparable(expected[cellIndex]))) {
+          throw new Error("review row mismatch");
+        }
+      });
+    } else if (reviewSheet.rowCount !== 2 || reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE) {
+      throw new Error("review row count");
+    }
     const referenceSheet = workbook.getWorksheet("原件对照");
     const images = referenceSheet.getImages();
     if (images.length !== manifest.pages.length) throw new Error("reference image count");
@@ -512,9 +568,12 @@ async function validatePdfOfficeXlsx(packagePath, { manifest } = {}) {
         new Set(images.map((image) => image.imageId)).size !== images.length) {
       throw new Error("reference label mismatch");
     }
-    for (const image of images) {
+    for (const [index, image] of images.entries()) {
       const media = workbook.getImage(image.imageId);
       if (!media || (!media.buffer && !media.filename)) throw new Error("missing reference media");
+      const actualBytes = media.buffer || await fileSystem.readFile(media.filename);
+      const expectedBytes = await fileSystem.readFile(expectedAssets[index].path);
+      if (sha256(actualBytes) !== sha256(expectedBytes)) throw new Error("reference image mismatch");
     }
     return {
       sheetNames: expectedNames,
@@ -593,7 +652,7 @@ async function writePdfOfficeXlsx({
     if (!temporaryInfo.isFile() || temporaryInfo.size < 1 || temporaryInfo.size > MAX_PACKAGE_BYTES) {
       throw stableError("PDF_OFFICE_OUTPUT_INVALID");
     }
-    const validation = await validateWorkbook(temporaryPath, { manifest });
+    const validation = await validateWorkbook(temporaryPath, { manifest, assetRoot, fileSystem });
     await publishAtomically(temporaryPath, outputPath, fileSystem);
     return validation;
   } catch (error) {
