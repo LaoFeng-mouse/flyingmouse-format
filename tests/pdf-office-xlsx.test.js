@@ -158,6 +158,35 @@ async function patchZipHeaders(filePath, patch) {
   await fs.writeFile(filePath, bytes);
 }
 
+async function patchZipEntryDeclaredSize(filePath, entryName, declaredSize) {
+  const bytes = await fs.readFile(filePath);
+  let patched = false;
+  for (let offset = 0; offset <= bytes.length - 46; offset += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) continue;
+    const nameLength = bytes.readUInt16LE(offset + 28);
+    const nameOffset = offset + 46;
+    if (bytes.subarray(nameOffset, nameOffset + nameLength).toString() !== entryName) continue;
+    const compressedSize = bytes.readUInt32LE(offset + 20);
+    const localOffset = bytes.readUInt32LE(offset + 42);
+    bytes.writeUInt32LE(declaredSize, offset + 24);
+    assert.equal(bytes.readUInt32LE(localOffset), 0x04034b50);
+    const flags = bytes.readUInt16LE(localOffset + 6);
+    const localNameLength = bytes.readUInt16LE(localOffset + 26);
+    const localExtraLength = bytes.readUInt16LE(localOffset + 28);
+    if (flags & 0x0008) {
+      const descriptorOffset = localOffset + 30 + localNameLength + localExtraLength + compressedSize;
+      const hasSignature = bytes.readUInt32LE(descriptorOffset) === 0x08074b50;
+      bytes.writeUInt32LE(declaredSize, descriptorOffset + (hasSignature ? 12 : 8));
+    } else {
+      bytes.writeUInt32LE(declaredSize, localOffset + 22);
+    }
+    patched = true;
+    break;
+  }
+  assert.equal(patched, true);
+  await fs.writeFile(filePath, bytes);
+}
+
 async function validateInvalidZip(root, fileName, input = manifest()) {
   const packagePath = path.join(root, fileName);
   await assert.rejects(validatePdfOfficeXlsx(packagePath, { manifest: input, assetRoot: root }), outputInvalid);
@@ -501,6 +530,44 @@ test("ZIP preflight rejects duplicate, unsafe, oversized and compression-bomb en
     name: `entries/e${String(index).padStart(4, "0")}.bin`, buffer: Buffer.alloc(0)
   })));
   await validateInvalidZip(root, "too-many-entries.xlsx");
+});
+
+test("ZIP preflight drains every binary entry and rejects lying actual size before ExcelJS", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "stream-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  const lyingPath = path.join(root, "lying-binary-entry.xlsx");
+  await rewriteZipEntry(validPath, lyingPath, "[Content_Types].xml", (buffer) => buffer, [
+    { name: "xl/unused.bin", buffer: Buffer.alloc(64 * 1024, 0x41) }
+  ]);
+  await patchZipEntryDeclaredSize(lyingPath, "xl/unused.bin", 1024);
+  let excelJsLoaded = false;
+  const OriginalWorkbook = ExcelJS.Workbook;
+  ExcelJS.Workbook = class extends OriginalWorkbook {
+    constructor(...args) { excelJsLoaded = true; super(...args); }
+  };
+  try { await assert.rejects(validatePdfOfficeXlsx(lyingPath, { manifest: manifest(), assetRoot: root }), outputInvalid); }
+  finally { ExcelJS.Workbook = OriginalWorkbook; }
+  assert.equal(excelJsLoaded, false);
+});
+
+test("package closure rejects orphan media and unexpected object relationships and parts", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "closure-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+
+  const orphanPath = path.join(root, "orphan-media.xlsx");
+  await rewriteZipEntry(validPath, orphanPath, "[Content_Types].xml", (buffer) => buffer, [
+    { name: "xl/media/image999.png", buffer: await fs.readFile(path.join(root, "page-001.png")) }
+  ]);
+  await assert.rejects(validatePdfOfficeXlsx(orphanPath, { manifest: manifest(), assetRoot: root }), outputInvalid);
+
+  const objectPath = path.join(root, "unexpected-object.xlsx");
+  await rewriteZipEntry(validPath, objectPath, "xl/worksheets/_rels/sheet2.xml.rels", (buffer) => {
+    const xml = buffer.toString("utf8");
+    return Buffer.from(xml.replace("</Relationships>", '<Relationship Id="rIdObject" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="../embeddings/object1.bin"/></Relationships>'));
+  }, [{ name: "xl/embeddings/object1.bin", buffer: Buffer.from("object") }]);
+  await assert.rejects(validatePdfOfficeXlsx(objectPath, { manifest: manifest(), assetRoot: root }), outputInvalid);
 });
 
 test("worksheet XML allowlist rejects formulas, covered merged text and hidden cells", async (t) => {

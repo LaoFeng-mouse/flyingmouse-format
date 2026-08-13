@@ -1,6 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { Transform, Writable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
+const zlib = require("node:zlib");
 const ExcelJS = require("exceljs");
 const { openZipEntries } = require("./zip-util");
 
@@ -518,6 +521,54 @@ function xmlEntryLimit(name) {
   return name.endsWith(".xml") ? MAX_CORE_XML_BYTES : MAX_ZIP_ENTRY_BYTES;
 }
 
+async function readZipBytes(packagePath, position, length) {
+  const handle = await fs.open(packagePath, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buffer, 0, length, position);
+    if (bytesRead !== length) throw new Error("invalid package");
+    return buffer;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function validateLocalZipMetadata(packagePath, entry) {
+  const offset = Number(entry.relativeOffsetOfLocalHeader);
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("invalid package");
+  const header = await readZipBytes(packagePath, offset, 30);
+  if (header.readUInt32LE(0) !== 0x04034b50) throw new Error("invalid package");
+  const flags = header.readUInt16LE(6);
+  const method = header.readUInt16LE(8);
+  const nameLength = header.readUInt16LE(26);
+  const extraLength = header.readUInt16LE(28);
+  if (flags !== entry.generalPurposeBitFlag || method !== entry.compressionMethod || (flags & 0x0001)) {
+    throw new Error("invalid package");
+  }
+  const localName = await readZipBytes(packagePath, offset + 30, nameLength);
+  if (!localName.equals(Buffer.from(entry.fileName, "utf8"))) throw new Error("invalid package");
+  const centralCrc = Number(entry.crc32) >>> 0;
+  const centralCompressed = Number(entry.compressedSize);
+  const centralUncompressed = Number(entry.uncompressedSize);
+  if (!(flags & 0x0008)) {
+    if (header.readUInt32LE(14) !== centralCrc || header.readUInt32LE(18) !== centralCompressed ||
+        header.readUInt32LE(22) !== centralUncompressed) throw new Error("invalid package");
+    return;
+  }
+  const descriptorOffset = offset + 30 + nameLength + extraLength + centralCompressed;
+  const descriptor = await readZipBytes(packagePath, descriptorOffset, 16);
+  const hasSignature = descriptor.readUInt32LE(0) === 0x08074b50;
+  const base = hasSignature ? 4 : 0;
+  if (descriptor.readUInt32LE(base) !== centralCrc || descriptor.readUInt32LE(base + 4) !== centralCompressed ||
+      descriptor.readUInt32LE(base + 8) !== centralUncompressed) throw new Error("invalid package");
+}
+
+function openRawZipEntryStream(zipfile, entry) {
+  return new Promise((resolve, reject) => {
+    zipfile.openReadStream(entry, { decompress: false }, (error, stream) => error ? reject(error) : resolve(stream));
+  });
+}
+
 async function inspectXlsxPackage(packagePath) {
   let zipfile;
   try { zipfile = await openZipEntries(packagePath); }
@@ -526,7 +577,8 @@ async function inspectXlsxPackage(packagePath) {
     const names = new Set();
     const buffers = new Map();
     let entryCount = 0;
-    let aggregate = 0;
+    let declaredAggregate = 0;
+    let actualAggregate = 0;
     let settled = false;
     const fail = () => {
       if (settled) return;
@@ -535,6 +587,7 @@ async function inspectXlsxPackage(packagePath) {
       reject(new Error("invalid package"));
     };
     zipfile.on("entry", (entry) => {
+      const processEntry = async () => {
       entryCount += 1;
       const declared = Number(entry.uncompressedSize);
       const compressed = Number(entry.compressedSize);
@@ -542,28 +595,46 @@ async function inspectXlsxPackage(packagePath) {
       if (entryCount > MAX_ZIP_ENTRIES || !safeZipEntryName(entry.fileName) || names.has(entry.fileName) ||
           !Number.isSafeInteger(declared) || declared < 0 || declared > limit ||
           !Number.isSafeInteger(compressed) || compressed < 0 ||
-          (declared > 64 * 1024 && (compressed === 0 || declared / compressed > MAX_ZIP_COMPRESSION_RATIO))) return fail();
+          (declared > 64 * 1024 && (compressed === 0 || declared / compressed > MAX_ZIP_COMPRESSION_RATIO))) throw new Error("invalid package");
       names.add(entry.fileName);
-      aggregate += declared;
-      if (!Number.isSafeInteger(aggregate) || aggregate > MAX_PACKAGE_BYTES || /^xl\/externalLinks\//.test(entry.fileName)) return fail();
-      const wanted = !entry.fileName.endsWith("/") && (entry.fileName.endsWith(".xml") || entry.fileName.endsWith(".rels"));
-      if (!wanted) { zipfile.readEntry(); return; }
-      zipfile.openReadStream(entry, (error, stream) => {
-        if (error) return fail();
-        const chunks = [];
-        let length = 0;
-        stream.on("data", (chunk) => {
-          length += chunk.length;
-          if (length > declared || length > limit) { stream.destroy(); fail(); return; }
-          chunks.push(chunk);
-        });
-        stream.on("error", fail);
-        stream.on("end", () => {
-          if (settled || length !== declared) return fail();
-          buffers.set(entry.fileName, Buffer.concat(chunks));
-          zipfile.readEntry();
-        });
-      });
+      declaredAggregate += declared;
+      if (!Number.isSafeInteger(declaredAggregate) || declaredAggregate > MAX_PACKAGE_BYTES || /^xl\/externalLinks\//.test(entry.fileName)) {
+        throw new Error("invalid package");
+      }
+      if (entry.fileName.endsWith("/")) { zipfile.readEntry(); return; }
+      await validateLocalZipMetadata(packagePath, entry);
+      const wanted = entry.fileName.endsWith(".xml") || entry.fileName.endsWith(".rels");
+      if (entry.compressionMethod !== 0 && entry.compressionMethod !== 8) throw new Error("invalid package");
+      const rawStream = await openRawZipEntryStream(zipfile, entry);
+      const chunks = [];
+      let compressedActual = 0;
+      let length = 0;
+      const compressedCounter = new Transform({ transform(chunk, encoding, callback) {
+        compressedActual += chunk.length;
+        callback(compressedActual > compressed ? new Error("invalid package") : null, chunk);
+      } });
+      const sink = new Writable({ write(chunk, encoding, callback) {
+        length += chunk.length;
+        actualAggregate += chunk.length;
+        if (length > declared || length > limit || actualAggregate > MAX_PACKAGE_BYTES) {
+          callback(new Error("invalid package"));
+          return;
+        }
+        if (wanted) chunks.push(chunk);
+        callback();
+      } });
+      const streams = entry.compressionMethod === 8
+        ? [rawStream, compressedCounter, zlib.createInflateRaw(), sink]
+        : [rawStream, compressedCounter, sink];
+      await pipeline(...streams);
+      if (compressedActual !== compressed || length !== declared ||
+          (length > 64 * 1024 && (compressed === 0 || length / compressed > MAX_ZIP_COMPRESSION_RATIO))) {
+        throw new Error("invalid package");
+      }
+      if (wanted) buffers.set(entry.fileName, Buffer.concat(chunks));
+      zipfile.readEntry();
+      };
+      processEntry().catch(fail);
     });
     zipfile.on("error", fail);
     zipfile.on("end", () => {
@@ -790,24 +861,102 @@ function worksheetRelationshipsPath(sheetPath) {
   return `${path.posix.dirname(sheetPath)}/_rels/${path.posix.basename(sheetPath)}.rels`;
 }
 
-function validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest) {
+const RELATIONSHIP_TYPES = Object.freeze({
+  officeDocument: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+  coreProperties: "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties",
+  extendedProperties: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties",
+  styles: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
+  theme: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
+  sharedStrings: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings",
+  worksheet: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
+  comments: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+  vmlDrawing: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+  drawing: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
+  image: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+});
+
+function relationshipKey(type, target) { return `${type}\n${target}`; }
+
+function requireExactRelationships(relationships, sourcePart, expected) {
+  const actual = relationships.map((item) => relationshipKey(item.Type, relationshipTarget(sourcePart, item.Target))).sort();
+  const wanted = expected.map((item) => relationshipKey(item.type, item.target)).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) throw new Error("invalid package");
+}
+
+function validateContentTypes(buffer, allowedParts) {
+  const defaults = new Set();
+  const overrides = new Set();
+  const allowedContentTypes = new Set([
+    "application/xml", "application/vnd.openxmlformats-package.relationships+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+    "application/vnd.openxmlformats-officedocument.theme+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+    "application/vnd.openxmlformats-officedocument.drawing+xml",
+    "application/vnd.openxmlformats-officedocument.vmlDrawing",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml",
+    "application/vnd.openxmlformats-package.core-properties+xml",
+    "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+    "image/png", "image/jpeg", "image/gif", "image/bmp"
+  ]);
+  tokenizeXml(buffer, { open(name, attrs) {
+    const local = localName(name);
+    if (local === "Default") {
+      const key = String(attrs.Extension || "").toLowerCase();
+      if (!key || defaults.has(key) || !allowedContentTypes.has(attrs.ContentType)) throw new Error("invalid package");
+      defaults.add(key);
+    } else if (local === "Override") {
+      const part = String(attrs.PartName || "");
+      if (!part.startsWith("/") || overrides.has(part) || !allowedParts.has(part.slice(1)) ||
+          !allowedContentTypes.has(attrs.ContentType)) throw new Error("invalid package");
+      overrides.add(part);
+    }
+  } });
+}
+
+function validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest, expectedAssets) {
   const workbookXml = packageInfo.buffers.get("xl/workbook.xml");
   const workbookRelsXml = packageInfo.buffers.get("xl/_rels/workbook.xml.rels");
-  if (!workbookXml || !workbookRelsXml) throw new Error("invalid package");
+  const rootRelsXml = packageInfo.buffers.get("_rels/.rels");
+  const contentTypesXml = packageInfo.buffers.get("[Content_Types].xml");
+  if (!workbookXml || !workbookRelsXml || !rootRelsXml || !contentTypesXml) throw new Error("invalid package");
   for (const [name, buffer] of packageInfo.buffers) if (name.endsWith(".rels")) parseRelationships(buffer);
+  const allowedParts = new Set([
+    "[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels",
+    "xl/styles.xml", "xl/theme/theme1.xml", "xl/sharedStrings.xml", "docProps/core.xml", "docProps/app.xml"
+  ]);
+  requireExactRelationships(parseRelationships(rootRelsXml), "", [
+    { type: RELATIONSHIP_TYPES.officeDocument, target: "xl/workbook.xml" },
+    { type: RELATIONSHIP_TYPES.coreProperties, target: "docProps/core.xml" },
+    { type: RELATIONSHIP_TYPES.extendedProperties, target: "docProps/app.xml" }
+  ]);
   const sheets = parseWorkbookSheets(workbookXml);
   if (sheets.length !== expectedNames.length || sheets.some((sheet, index) => sheet.name !== expectedNames[index] || !sheet.relationshipId)) {
     throw new Error("sheet mismatch");
   }
-  const workbookRels = new Map(parseRelationships(workbookRelsXml).map((relationship) => [relationship.Id, relationship]));
+  const workbookRelationships = parseRelationships(workbookRelsXml);
+  const workbookRels = new Map(workbookRelationships.map((relationship) => [relationship.Id, relationship]));
+  requireExactRelationships(workbookRelationships, "xl/workbook.xml", [
+    { type: RELATIONSHIP_TYPES.styles, target: "xl/styles.xml" },
+    { type: RELATIONSHIP_TYPES.theme, target: "xl/theme/theme1.xml" },
+    { type: RELATIONSHIP_TYPES.sharedStrings, target: "xl/sharedStrings.xml" },
+    ...sheets.map((sheet) => {
+      const relationship = workbookRels.get(sheet.relationshipId);
+      if (!relationship || relationship.Type !== RELATIONSHIP_TYPES.worksheet) throw new Error("sheet mismatch");
+      return { type: RELATIONSHIP_TYPES.worksheet, target: relationshipTarget("xl/workbook.xml", relationship.Target) };
+    })
+  ]);
   const referencedComments = new Set();
   const referencedSheets = new Set();
+  const referencedMedia = new Set();
   sheets.forEach((sheet) => {
     const relationship = workbookRels.get(sheet.relationshipId);
-    if (!relationship || !relationship.Type.endsWith("/worksheet")) throw new Error("sheet mismatch");
+    if (!relationship || relationship.Type !== RELATIONSHIP_TYPES.worksheet) throw new Error("sheet mismatch");
     const sheetPath = relationshipTarget("xl/workbook.xml", relationship.Target);
     if (referencedSheets.has(sheetPath)) throw new Error("sheet mismatch");
     referencedSheets.add(sheetPath);
+    allowedParts.add(sheetPath);
     const xml = packageInfo.buffers.get(sheetPath);
     if (!xml || !/^xl\/worksheets\/[^/]+\.xml$/.test(sheetPath)) throw new Error("sheet mismatch");
     const spec = worksheetXmlSpec(sheet.name, expectedTables, expectedReview, manifest);
@@ -826,15 +975,44 @@ function validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables,
     }
     const relsPath = worksheetRelationshipsPath(sheetPath);
     const rels = packageInfo.buffers.has(relsPath) ? parseRelationships(packageInfo.buffers.get(relsPath)) : [];
-    const commentRelationships = rels.filter((item) => item.Type.endsWith("/comments"));
-    if (commentRelationships.length > 1) throw new Error("review note mismatch");
     let comments = new Set();
-    if (commentRelationships.length) {
-      const commentsPath = relationshipTarget(sheetPath, commentRelationships[0].Target);
+    if (spec.comments.size) {
+      const number = /sheet(\d+)\.xml$/.exec(sheetPath)?.[1];
+      const commentsPath = `xl/comments${number}.xml`;
+      const vmlPath = `xl/drawings/vmlDrawing${number}.vml`;
+      requireExactRelationships(rels, sheetPath, [
+        { type: RELATIONSHIP_TYPES.comments, target: commentsPath },
+        { type: RELATIONSHIP_TYPES.vmlDrawing, target: vmlPath }
+      ]);
+      allowedParts.add(relsPath);
+      allowedParts.add(commentsPath);
+      allowedParts.add(vmlPath);
       const commentsXml = packageInfo.buffers.get(commentsPath);
       if (!commentsXml || referencedComments.has(commentsPath)) throw new Error("review note mismatch");
       referencedComments.add(commentsPath);
       comments = parseCommentRefs(commentsXml);
+    } else if (sheet.name === "原件对照") {
+      const drawingPath = "xl/drawings/drawing1.xml";
+      const drawingRelsPath = "xl/drawings/_rels/drawing1.xml.rels";
+      requireExactRelationships(rels, sheetPath, [{ type: RELATIONSHIP_TYPES.drawing, target: drawingPath }]);
+      allowedParts.add(relsPath);
+      allowedParts.add(drawingPath);
+      allowedParts.add(drawingRelsPath);
+      const drawingRelsXml = packageInfo.buffers.get(drawingRelsPath);
+      if (!packageInfo.buffers.get(drawingPath) || !drawingRelsXml) throw new Error("invalid package");
+      const expectedImageRelationships = expectedAssets.map((asset, index) => ({
+        type: RELATIONSHIP_TYPES.image,
+        target: `xl/media/image${index + 1}.${asset.extension}`
+      }));
+      const drawingRelationships = parseRelationships(drawingRelsXml);
+      requireExactRelationships(drawingRelationships, drawingPath, expectedImageRelationships);
+      for (const expected of expectedImageRelationships) {
+        if (referencedMedia.has(expected.target)) throw new Error("invalid package");
+        referencedMedia.add(expected.target);
+        allowedParts.add(expected.target);
+      }
+    } else if (rels.length || packageInfo.names.has(relsPath)) {
+      throw new Error("invalid package");
     }
     if (comments.size !== spec.comments.size || [...comments].some((address) => !spec.comments.has(address) || covered.has(address))) {
       throw new Error("review note mismatch");
@@ -843,7 +1021,12 @@ function validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables,
   for (const name of packageInfo.names) {
     if (/^xl\/worksheets\/[^/]+\.xml$/.test(name) && !referencedSheets.has(name)) throw new Error("sheet mismatch");
     if (/^xl\/comments\d+\.xml$/.test(name) && !referencedComments.has(name)) throw new Error("review note mismatch");
+    if (!name.endsWith("/") && !allowedParts.has(name)) throw new Error("invalid package");
   }
+  if ([...allowedParts].some((name) => !packageInfo.names.has(name)) || referencedMedia.size !== manifest.pages.length) {
+    throw new Error("invalid package");
+  }
+  validateContentTypes(contentTypesXml, allowedParts);
 }
 
 function validateZeroReviewSheet(reviewSheet) {
@@ -870,7 +1053,7 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
     const expectedNames = expectedSheetNames(expectedTables);
     const expectedReview = expectedTables.flatMap((expected) => expected.review);
     const packageInfo = await inspectXlsxPackage(packagePath);
-    validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest);
+    validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest, expectedAssets);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(packagePath);
     if (workbook.worksheets.length !== expectedNames.length ||
