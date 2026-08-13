@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { test } = require("node:test");
 
-const { convertPdf } = require("../pdf");
+const { convertPdf, convertStructuredPdf } = require("../pdf");
 const { createScannedTablePdf } = require("./helpers/scanned-pdf-fixture");
 
 test("creates deterministic scanned PDF fixtures", async (t) => {
@@ -38,4 +38,98 @@ test("routes scanned DOCX through the structure converter", async (t) => {
   assert.equal(calls[0].outputPath, outputPath);
   assert.equal(calls[0].target, "docx");
   assert.deepEqual(calls[0].classification, classification);
+});
+
+function structuredManifest({ tables = [], blocks = [], tableLike = tables.length > 0 } = {}) {
+  return {
+    schemaVersion: 1,
+    engine: { name: "fixture", version: "1" },
+    pages: [{
+      pageNumber: 1, width: 100, height: 100, rotation: 0,
+      referenceImage: "page.png", tableLike, blocks, tables, warnings: []
+    }]
+  };
+}
+
+function acceptedTable() {
+  return {
+    id: "t1", rowCount: 2, columnCount: 2, bbox: [0, 0, 100, 50], confidence: 0.99,
+    cells: [
+      { row: 0, column: 0, rowSpan: 1, columnSpan: 1, bbox: [0, 0, 50, 25], text: "A", confidence: 0.99 },
+      { row: 0, column: 1, rowSpan: 1, columnSpan: 1, bbox: [50, 0, 100, 25], text: "B", confidence: 0.99 },
+      { row: 1, column: 0, rowSpan: 1, columnSpan: 1, bbox: [0, 25, 50, 50], text: "1", confidence: 0.99 },
+      { row: 1, column: 1, rowSpan: 1, columnSpan: 1, bbox: [50, 25, 100, 50], text: "2", confidence: 0.99 }
+    ]
+  };
+}
+
+test("composes scanned and mixed structured DOCX/XLSX writers", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structured-compose-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const manifest = structuredManifest({ tables: [acceptedTable()] });
+  const seen = [];
+  for (const target of ["docx", "xlsx"]) {
+    const outputPath = path.join(scratch, `out.${target}`);
+    await convertPdf("input.pdf", outputPath, target, {
+      classifyPdf: async () => ({ kind: target === "docx" ? "mixed" : "scanned", pages: [] }),
+      withStructuredPdf: async (_input, _options, consume) => consume(Object.freeze(manifest), scratch),
+      [`writePdfOffice${target === "docx" ? "Docx" : "Xlsx"}`]: async ({ manifest: selected, outputPath: output }) => {
+        seen.push({ target, selected });
+        await fsp.writeFile(output, target);
+      }
+    });
+    assert.equal(await fsp.readFile(outputPath, "utf8"), target);
+  }
+  assert.deepEqual(seen.map((item) => item.target), ["docx", "xlsx"]);
+  assert.equal(manifest.pages[0].tables.length, 1, "composition must not mutate a frozen/source manifest");
+});
+
+test("structured XLSX rejects zero tables before output publication", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-zero-table-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const outputPath = path.join(scratch, "out.xlsx");
+  let writerCalled = false;
+  await assert.rejects(convertStructuredPdf({
+    inputPath: "input.pdf", outputPath, target: "xlsx", options: {
+      withStructuredPdf: async (_input, _options, consume) => consume(structuredManifest(), scratch),
+      writePdfOfficeXlsx: async () => { writerCalled = true; }
+    }
+  }), (error) => error.code === "PDF_TABLE_NOT_DETECTED");
+  assert.equal(writerCalled, false);
+  assert.equal(await fsp.stat(outputPath).then(() => true, () => false), false);
+});
+
+test("structured XLSX rejects low-confidence table candidates before output publication", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-low-table-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const outputPath = path.join(scratch, "out.xlsx");
+  const weak = acceptedTable();
+  weak.source = "pp-structure-v3";
+  weak.confidence = 0.2;
+  weak.cells = weak.cells.map((cell) => ({ ...cell, confidence: 0.2, text: "" }));
+  const manifest = structuredManifest({ tableLike: true });
+  manifest.pages[0].tableCandidates = [weak];
+  await assert.rejects(convertStructuredPdf({
+    inputPath: "input.pdf", outputPath, target: "xlsx", options: {
+      withStructuredPdf: async (_input, _options, consume) => consume(manifest, scratch),
+      writePdfOfficeXlsx: async () => { throw new Error("writer must not run"); }
+    }
+  }), (error) => error.code === "PDF_TABLE_OCR_LOW_QUALITY");
+  assert.equal(await fsp.stat(outputPath).then(() => true, () => false), false);
+});
+
+test("structured conversion preserves low-quality and invalid errors and removes nominal output", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structured-errors-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  for (const code of ["PDF_TABLE_OCR_LOW_QUALITY", "PDF_STRUCTURE_SCHEMA_INVALID"]) {
+    const outputPath = path.join(scratch, `${code}.xlsx`);
+    await fsp.writeFile(outputPath, "partial");
+    const failure = Object.assign(new Error("private"), { code });
+    await assert.rejects(convertStructuredPdf({
+      inputPath: "input.pdf", outputPath, target: "xlsx", options: {
+        withStructuredPdf: async () => { throw failure; }
+      }
+    }), (error) => error.code === code);
+    assert.equal(await fsp.stat(outputPath).then(() => true, () => false), false);
+  }
 });

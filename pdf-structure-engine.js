@@ -11,7 +11,7 @@ const DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024;
 const execFileAsync = promisify(childProcess.execFile);
 
 const ERROR_MESSAGES = Object.freeze({
-  PDF_STRUCTURE_ENGINE_MISSING: { zhCN: "PDF 结构识别引擎不可用。", enUS: "The PDF structure engine is unavailable." },
+  PDF_STRUCTURE_ENGINE_MISSING: { zhCN: "PDF 结构化转换引擎不可用。", enUS: "The structured PDF conversion engine is unavailable." },
   PDF_STRUCTURE_MODEL_MISSING: { zhCN: "PDF 结构识别模型不可用。", enUS: "The PDF structure models are unavailable." },
   PDF_STRUCTURE_PARSE_FAILED: { zhCN: "PDF 结构识别失败。", enUS: "PDF structure recognition failed." },
   PDF_STRUCTURE_SCHEMA_INVALID: { zhCN: "PDF 结构识别结果无效。", enUS: "The PDF structure result is invalid." }
@@ -81,7 +81,8 @@ function createStructuredPdfBoundary(dependencies = {}) {
     try {
       const manifest = JSON.parse(serialized);
       return (options.validateManifest || validateStructureManifest)(manifest, temporaryDirectory);
-    } catch {
+    } catch (error) {
+      if (error?.code === "PDF_TABLE_OCR_LOW_QUALITY") throw error;
       throw stableError("PDF_STRUCTURE_SCHEMA_INVALID");
     }
   }

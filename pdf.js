@@ -24,6 +24,11 @@ const {
 } = require("./pdf-table");
 const { assertPdfPages } = require("./resource-policy");
 const { OfficeQualityError } = require("./office-quality");
+const { withStructuredPdf } = require("./pdf-structure-engine");
+const { chooseTableCandidate } = require("./pdf-structure-score");
+const { structureError } = require("./pdf-structure-contract");
+const { writePdfOfficeDocx } = require("./pdf-office-docx");
+const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const data = await fsp.readFile(inputPath);
@@ -33,16 +38,54 @@ async function convertPdfDecrypt(inputPath, outputPath, password) {
 
 const OCR_QUALITY_THRESHOLD = 0.65;
 
-async function convertStructuredPdf() {
-  const error = new Error(
-    "PDF 结构化转换引擎尚未提供，无法安全转换扫描版或混合版 PDF。The structured PDF conversion engine is not available, so scanned or mixed PDFs cannot be converted safely."
+function selectedStructureManifest(manifest) {
+  const copy = structuredClone(manifest);
+  copy.pages = (copy.pages || []).map((page) => {
+    if (!Array.isArray(page.tableCandidates)) return page;
+    const selected = chooseTableCandidate(page.tableCandidates).table;
+    const copyPage = { ...page, tables: [structuredClone(selected)] };
+    delete copyPage.tableCandidates;
+    return copyPage;
+  });
+  return copy;
+}
+
+function tableNotDetectedError() {
+  return structureError(
+    "PDF_TABLE_NOT_DETECTED",
+    "未检测到可可靠编辑的表格，无法生成 Excel。",
+    "No reliably editable table was detected, so an Excel workbook cannot be created."
   );
-  error.code = "PDF_STRUCTURE_ENGINE_MISSING";
-  error.messages = {
-    zhCN: "PDF 结构化转换引擎尚未提供，无法安全转换扫描版或混合版 PDF。",
-    enUS: "The structured PDF conversion engine is not available, so scanned or mixed PDFs cannot be converted safely."
-  };
-  throw error;
+}
+
+async function removeNominalOutput(outputPath) {
+  await fsp.rm(outputPath, { force: true }).catch(() => {});
+}
+
+async function convertStructuredPdf({ inputPath, outputPath, target, options = {} }) {
+  const boundary = options.withStructuredPdf || withStructuredPdf;
+  try {
+    return await boundary(inputPath, options, async (manifest, assetRoot) => {
+      const selected = selectedStructureManifest(manifest);
+      if (target === "xlsx") {
+        const tables = selected.pages.reduce((total, page) => total + (page.tables || []).length, 0);
+        if (tables === 0) throw tableNotDetectedError();
+        return (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
+          manifest: selected, assetRoot, outputPath
+        });
+      }
+      if (target === "docx") {
+        return (options.writePdfOfficeDocx || writePdfOfficeDocx)({
+          manifest: selected, assetRoot, outputPath
+        });
+      }
+      throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
+        "不支持该结构化输出格式。", "Unsupported structured PDF target.");
+    });
+  } catch (error) {
+    await removeNominalOutput(outputPath);
+    throw error;
+  }
 }
 
 function assertPdfTableOcrQuality(model) {
@@ -156,7 +199,7 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
   }
 
   if (target === "docx") {
-    await convertPdfToDocx(inputPath, outputPath, pages);
+    await convertPdfToDocx(inputPath, outputPath, pages, options);
     return;
   }
 
@@ -190,14 +233,71 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
-async function convertPdfToDocx(inputPath, outputPath, pages) {
+async function readZipEntryBuffer(zipPath, wanted) {
+  const zipfile = await openZipEntries(zipPath);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let found = false;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      try { zipfile.close(); } catch {}
+      error ? reject(error) : resolve(value);
+    };
+    zipfile.on("entry", (entry) => {
+      if (entry.fileName !== wanted) return zipfile.readEntry();
+      if (found || Number(entry.uncompressedSize) > 20 * 1024 * 1024) {
+        return finish(new Error("unsafe DOCX document part"));
+      }
+      found = true;
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error) return finish(error);
+        const chunks = [];
+        let length = 0;
+        stream.on("data", (chunk) => {
+          length += chunk.length;
+          if (length > 20 * 1024 * 1024) {
+            stream.destroy(new Error("DOCX document part is too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        stream.on("error", finish);
+        stream.on("end", () => finish(null, Buffer.concat(chunks)));
+      });
+    });
+    zipfile.on("end", () => finish(new Error("missing DOCX document part")));
+    zipfile.on("error", finish);
+    zipfile.readEntry();
+  });
+}
+
+async function validateNativePdfDocx(outputPath) {
+  const documentXml = (await readZipEntryBuffer(outputPath, "word/document.xml")).toString("utf8");
+  const editableText = [...documentXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
+    .some((match) => match[1].replace(/<[^>]+>/g, "").trim().length > 0);
+  if (!editableText) {
+    const error = new Error("Native PDF conversion produced no editable content.");
+    error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
+    throw error;
+  }
+  return { hasEditableContent: true };
+}
+
+async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
-  if (DOCENGINE_PATH) {
+  const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
+  if (docenginePath) {
     try {
-      await run(DOCENGINE_PATH, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
+      await (options.run || run)(docenginePath, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
+      await (options.validateNativeDocx || validateNativePdfDocx)(outputPath);
       return;
     } catch (error) {
-      // 文档引擎转换失败（异常 PDF）→ 回退到文字提取，不中断转换。
+      await removeNominalOutput(outputPath);
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath, outputPath, target: "docx", options
+      });
+      return;
     }
   }
 
@@ -501,6 +601,7 @@ module.exports = {
   xmlDocxParagraph,
   writeDocxZip,
   convertPdfToDocx,
+  validateNativePdfDocx,
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,
