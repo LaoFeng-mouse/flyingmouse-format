@@ -16,6 +16,7 @@ const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
 const { ocrAvailable, createOcrWorker, recognizeImageTextWithWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
+const { classifyPdf } = require("./pdf-classifier");
 const {
   extractPdfRowsByPage,
   extractComplexPdfTableModel,
@@ -31,6 +32,18 @@ async function convertPdfDecrypt(inputPath, outputPath, password) {
 }
 
 const OCR_QUALITY_THRESHOLD = 0.65;
+
+async function convertStructuredPdf() {
+  const error = new Error(
+    "PDF 结构化转换引擎尚未提供，无法安全转换扫描版或混合版 PDF。The structured PDF conversion engine is not available, so scanned or mixed PDFs cannot be converted safely."
+  );
+  error.code = "PDF_STRUCTURE_ENGINE_MISSING";
+  error.messages = {
+    zhCN: "PDF 结构化转换引擎尚未提供，无法安全转换扫描版或混合版 PDF。",
+    enUS: "The structured PDF conversion engine is not available, so scanned or mixed PDFs cannot be converted safely."
+  };
+  throw error;
+}
 
 function assertPdfTableOcrQuality(model) {
   const ocrPages = (model?.summary || []).filter((page) => page.source === "ocr" && page.tableCount > 0);
@@ -71,6 +84,20 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (pdfImageTargets.includes(target)) {
     await convertPdfPagesToImagesZip(inputPath, outputPath, target);
     return;
+  }
+
+  if (target === "docx" || target === "xlsx") {
+    const classification = await (options.classifyPdf || classifyPdf)(inputPath);
+    if (classification.kind !== "native") {
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath,
+        outputPath,
+        target,
+        classification,
+        options
+      });
+      return;
+    }
   }
 
   if (target === "xlsx") {
@@ -468,6 +495,7 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
 module.exports = {
   convertPdfDecrypt,
   assertPdfTableOcrQuality,
+  convertStructuredPdf,
   convertPdf,
   xmlDocxText,
   xmlDocxParagraph,
