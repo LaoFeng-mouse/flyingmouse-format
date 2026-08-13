@@ -109,7 +109,39 @@ const messages = {
     "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
     "sponsor.description": "如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费",
     "sponsor.qrAlt": "微信收款码",
-    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com"
+    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
+    "tutorial.qq.title": "QQ 音乐登录教程",
+    "tutorial.close": "关闭",
+    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。",
+    "tutorial.qq.s1.title": "① 打开网页版 QQ 音乐并登录",
+    "tutorial.qq.s1.desc": "用电脑浏览器打开 y.qq.com，点右上角「登录」，用你下载歌曲的 QQ 账号登录。",
+    "tutorial.qq.s1.alt": "QQ 音乐网页版登录后的页面",
+    "tutorial.qq.s1.cap": "图 1：登录后的网页版 QQ 音乐",
+    "tutorial.qq.s2.title": "② 打开开发者工具",
+    "tutorial.qq.s2.desc": "在网页上按键盘 F12（笔记本可能需同时按 Fn），或右键 →「检查」。浏览器下方/右侧会出现开发者工具面板。",
+    "tutorial.qq.s2.alt": "按 F12 后开发者工具打开",
+    "tutorial.qq.s2.cap": "图 2：开发者工具面板",
+    "tutorial.qq.s3.title": "③ 切到「应用程序 / Application」标签",
+    "tutorial.qq.s3.desc": "在开发者工具顶部标签栏找到「Application」（中文浏览器显示为「应用程序」），点它。如果顶部没有，点 » 展开更多标签。",
+    "tutorial.qq.s3.alt": "开发者工具顶部的 Application 标签",
+    "tutorial.qq.s3.cap": "图 3：顶部标签栏的 Application",
+    "tutorial.qq.s4.title": "④ 找到 Cookie 列表",
+    "tutorial.qq.s4.desc": "在左侧菜单展开「Storage → Cookies」，点下面的 https://y.qq.com，右侧会出现这个网站的 Cookie 列表。",
+    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com 的列表",
+    "tutorial.qq.s4.cap": "图 4：Cookie 列表",
+    "tutorial.qq.s5.title": "⑤ 复制 qm_keyst 和 uin",
+    "tutorial.qq.s5.desc": "在列表里找到 qm_keyst（新版登录可能显示为 psrf_qqmusic_key）这一行，双击它的「值 / Value」列，Ctrl+C 复制整串内容。再找到 uin 行，复制你的 QQ 号。两个值都要复制。",
+    "tutorial.qq.s5.alt": "qm_keyst 和 uin 两行 Cookie",
+    "tutorial.qq.s5.cap": "图 5：qm_keyst 与 uin",
+    "tutorial.qq.s6.title": "⑥ 在桌面新建 cookie 文件",
+    "tutorial.qq.s6.desc": "在桌面空白处点鼠标右键 →「新建」→「文本文档」，把文件名改成 QQ音乐_登录cookie.txt（保留 .txt 后缀）。双击打开，点下面的「复制模板」，到记事本里粘贴，把「你的QQ号」和「你复制的qm_keyst值」替换成你自己的，然后 Ctrl+S 保存。",
+    "tutorial.qq.s6.alt": "记事本里 cookie 文件的格式",
+    "tutorial.qq.s6.cap": "图 6：cookie 文件内容格式",
+    "tutorial.copyTemplate": "复制模板",
+    "tutorial.copied": "模板已复制，粘贴到记事本后替换成你的信息",
+    "tutorial.qq.s7.title": "⑦ 回到鼠鼠重新转换",
+    "tutorial.qq.s7.desc": "文件放好后，回到本软件重新拖入那个加密音频转换即可。cookie 偶尔会过期，提示需要凭据时重复上面的步骤更新一次就好。",
+    "tutorial.gotIt": "我知道了"
   },
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
@@ -142,7 +174,39 @@ const messages = {
     "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
     "sponsor.description": "If FlyingMouse Format helped you, you can buy Mouse a snack. Completely optional; the app stays free.",
     "sponsor.qrAlt": "WeChat payment QR code",
-    "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com"
+    "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
+    "tutorial.qq.title": "QQ Music Login Guide",
+    "tutorial.close": "Close",
+    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again.",
+    "tutorial.qq.s1.title": "① Open QQ Music web and sign in",
+    "tutorial.qq.s1.desc": "Open y.qq.com in your computer browser, click \"Sign in\" at the top right, and log in with the QQ account you used to download the song.",
+    "tutorial.qq.s1.alt": "QQ Music web page after signing in",
+    "tutorial.qq.s1.cap": "Fig. 1: QQ Music web after sign-in",
+    "tutorial.qq.s2.title": "② Open Developer Tools",
+    "tutorial.qq.s2.desc": "Press F12 on the page (Fn+F12 on some laptops), or right-click → \"Inspect\". The developer tools panel opens at the bottom or right side.",
+    "tutorial.qq.s2.alt": "Developer Tools opened after pressing F12",
+    "tutorial.qq.s2.cap": "Fig. 2: Developer Tools panel",
+    "tutorial.qq.s3.title": "③ Switch to the \"Application\" tab",
+    "tutorial.qq.s3.desc": "In the developer tools top tab bar, click \"Application\" (shown as 应用程序 in Chinese browsers). If it is hidden, click » to reveal more tabs.",
+    "tutorial.qq.s3.alt": "Application tab in the developer tools tab bar",
+    "tutorial.qq.s3.cap": "Fig. 3: Application tab",
+    "tutorial.qq.s4.title": "④ Open the Cookie list",
+    "tutorial.qq.s4.desc": "In the left menu expand \"Storage → Cookies\" and click https://y.qq.com below it. The cookie list for this site appears on the right.",
+    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com list",
+    "tutorial.qq.s4.cap": "Fig. 4: Cookie list",
+    "tutorial.qq.s5.title": "⑤ Copy qm_keyst and uin",
+    "tutorial.qq.s5.desc": "Find the qm_keyst row (newer sign-ins may show it as psrf_qqmusic_key), double-click its Value column, press Ctrl+C to copy the whole string. Then find the uin row and copy your QQ number. Copy both values.",
+    "tutorial.qq.s5.alt": "qm_keyst and uin cookie rows",
+    "tutorial.qq.s5.cap": "Fig. 5: qm_keyst and uin",
+    "tutorial.qq.s6.title": "⑥ Create the cookie file on your desktop",
+    "tutorial.qq.s6.desc": "Right-click an empty area of your desktop → \"New\" → \"Text Document\", rename it to QQ音乐_登录cookie.txt (keep the .txt extension). Double-click to open it, click \"Copy template\" below, paste into Notepad, replace \"your QQ number\" and \"the qm_keyst value you copied\" with your own, then press Ctrl+S to save.",
+    "tutorial.qq.s6.alt": "Cookie file format in Notepad",
+    "tutorial.qq.s6.cap": "Fig. 6: Cookie file content format",
+    "tutorial.copyTemplate": "Copy template",
+    "tutorial.copied": "Template copied. Paste it into Notepad and replace the placeholders with your info.",
+    "tutorial.qq.s7.title": "⑦ Convert again in Mouse",
+    "tutorial.qq.s7.desc": "Once the file is in place, drag the encrypted audio into this app and convert again. The cookie expires occasionally; when credentials are requested again, repeat the steps above to refresh it.",
+    "tutorial.gotIt": "Got it"
   }
 };
 
@@ -865,6 +929,7 @@ async function convertCurrentFiles() {
       failCount += 1;
       rendererLog("warn", `转换失败: "${file.name || "未知文件"}" -> ${targetFormat}: ${error.message || error}`);
       setBatchResult(index, { status: "error", detail: error.message || (i18n.language === "en-US" ? "Unknown error" : "未知错误") });
+      maybeShowQqTutorial(error);
     }
   }
 
@@ -1161,3 +1226,66 @@ sponsorClose.addEventListener("click", () => setSponsorOpen(false));
 document.addEventListener("click", (event) => {
   if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) setSponsorOpen(false);
 });
+
+/* --- QQ 音乐登录教程弹窗 --- */
+const qqTutorialModal = document.querySelector("#qqTutorialModal");
+const qqTutorialBackdrop = document.querySelector("#qqTutorialBackdrop");
+const qqTutorialClose = document.querySelector("#qqTutorialClose");
+const qqTutorialGotIt = document.querySelector("#qqTutorialGotIt");
+
+function openQqTutorial() {
+  qqTutorialModal.hidden = false;
+}
+
+function closeQqTutorial() {
+  qqTutorialModal.hidden = true;
+}
+
+qqTutorialClose.addEventListener("click", closeQqTutorial);
+qqTutorialGotIt.addEventListener("click", closeQqTutorial);
+qqTutorialBackdrop.addEventListener("click", closeQqTutorial);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !qqTutorialModal.hidden) closeQqTutorial();
+});
+
+// 图解缺失时隐藏破图占位，只保留文字步骤（图片在弹窗打开前就 404 时触发）。
+qqTutorialModal.querySelectorAll(".step-figure img").forEach((img) => {
+  img.addEventListener("error", () => {
+    img.hidden = true;
+  });
+});
+
+// musicex 解密需要 QQ 音乐登录凭据：失败时自动弹出教程。
+const QQ_COOKIE_ERROR_CODES = new Set(["MFLAC_EKEY_REQUIRED", "MFLAC_EKEY_NETWORK"]);
+
+function maybeShowQqTutorial(error) {
+  if (error && QQ_COOKIE_ERROR_CODES.has(String(error.errorCode || ""))) {
+    openQqTutorial();
+    return true;
+  }
+  return false;
+}
+
+// 复制 cookie 模板到剪贴板（供用户粘贴到桌面 QQ音乐_登录cookie.txt）
+const qqCookieTemplate = document.querySelector("#qqCookieTemplate");
+const qqCookieTemplateCopy = document.querySelector("#qqCookieTemplateCopy");
+
+async function copyQqCookieTemplate() {
+  const templateText = qqCookieTemplate.textContent;
+  try {
+    await navigator.clipboard.writeText(templateText);
+    setStatus(t("tutorial.copied"), "success");
+  } catch {
+    // clipboard API 不可用时选中模板文本，提示用户手动 Ctrl+C
+    const range = document.createRange();
+    range.selectNodeContents(qqCookieTemplate);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    setStatus(i18n.language === "en-US"
+      ? "Template selected. Press Ctrl+C to copy it, then paste into Notepad."
+      : "模板已选中，请按 Ctrl+C 复制，再到记事本粘贴。", "success");
+  }
+}
+
+qqCookieTemplateCopy.addEventListener("click", copyQqCookieTemplate);
