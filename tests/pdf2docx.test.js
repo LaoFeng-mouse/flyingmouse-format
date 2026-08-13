@@ -36,7 +36,8 @@ test("pdf.js 的 PDF→docx 在引擎缺失/失败时回退到文字提取", () 
 
 async function fixtureDocx(outputPath, text = "", {
   malformed = false, invalidXml = false, image = false, brokenImage = false,
-  danglingRelationship = false, alternatePrefixes = false, defaultWordNamespace = false
+  danglingRelationship = false, alternatePrefixes = false, defaultWordNamespace = false,
+  wrapperRoot = ""
 } = {}) {
   await new Promise((resolve, reject) => {
     const zip = new yazl.ZipFile();
@@ -47,17 +48,24 @@ async function fixtureDocx(outputPath, text = "", {
       ? `xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:${a.slice(0, -1)}="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:${r.slice(0, -1)}="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`
       : `xmlns:${w.slice(0, -1)}="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:${a.slice(0, -1)}="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:${r.slice(0, -1)}="http://schemas.openxmlformats.org/officeDocument/2006/relationships"`;
     const drawing = image || brokenImage ? `<${w}drawing><${a}blip ${r}embed="rId2"/></${w}drawing>` : "";
-    zip.addBuffer(Buffer.from(`<${w}document ${documentNamespaces}><${w}body><${w}p><${w}r><${w}t>${text}</${w}t>${drawing}</${w}r></${w}p></${w}body></${w}document>`), "word/document.xml");
+    const wrap = (part, xml) => wrapperRoot === part
+      ? `<evil:wrapper xmlns:evil="urn:flyingmouse:invalid-wrapper">${xml}</evil:wrapper>`
+      : xml;
+    const documentXml = `<${w}document ${documentNamespaces}><${w}body><${w}p><${w}r><${w}t>${text}</${w}t>${drawing}</${w}r></${w}p></${w}body></${w}document>`;
+    zip.addBuffer(Buffer.from(wrap("document", documentXml)), "word/document.xml");
     if (!malformed) {
       const c = alternatePrefixes ? "ct:" : "";
       const o = alternatePrefixes ? "opc:" : "";
       const contentNamespace = alternatePrefixes ? `xmlns:ct="http://schemas.openxmlformats.org/package/2006/content-types"` : `xmlns="http://schemas.openxmlformats.org/package/2006/content-types"`;
       const relationshipsNamespace = alternatePrefixes ? `xmlns:opc="http://schemas.openxmlformats.org/package/2006/relationships"` : `xmlns="http://schemas.openxmlformats.org/package/2006/relationships"`;
-      zip.addBuffer(Buffer.from(invalidXml ? "<Types><Override></Types>" : `<?xml version="1.0"?><${c}Types ${contentNamespace}><${c}Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><${c}Default Extension="xml" ContentType="application/xml"/><${c}Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></${c}Types>`), "[Content_Types].xml");
-      zip.addBuffer(Buffer.from(`<?xml version="1.0"?><${o}Relationships ${relationshipsNamespace}><${o}Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></${o}Relationships>`), "_rels/.rels");
+      const contentTypesXml = invalidXml ? "<Types><Override></Types>" : `<${c}Types ${contentNamespace}><${c}Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><${c}Default Extension="xml" ContentType="application/xml"/><${c}Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></${c}Types>`;
+      zip.addBuffer(Buffer.from(wrap("contentTypes", contentTypesXml)), "[Content_Types].xml");
+      const packageRelationshipsXml = `<${o}Relationships ${relationshipsNamespace}><${o}Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></${o}Relationships>`;
+      zip.addBuffer(Buffer.from(wrap("packageRelationships", packageRelationshipsXml)), "_rels/.rels");
       const imageRelationship = (image || brokenImage) && !danglingRelationship ? `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${brokenImage ? "missing" : "page"}.png"/>` : "";
       const namespacedImageRelationship = alternatePrefixes ? imageRelationship.replaceAll("Relationship", "opc:Relationship") : imageRelationship;
-      zip.addBuffer(Buffer.from(`<?xml version="1.0"?><${o}Relationships ${relationshipsNamespace}>${namespacedImageRelationship}</${o}Relationships>`), "word/_rels/document.xml.rels");
+      const documentRelationshipsXml = `<${o}Relationships ${relationshipsNamespace}>${namespacedImageRelationship}</${o}Relationships>`;
+      zip.addBuffer(Buffer.from(wrap("documentRelationships", documentRelationshipsXml)), "word/_rels/document.xml.rels");
       if (image) zip.addBuffer(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"), "word/media/page.png");
     }
     const output = fs.createWriteStream(outputPath);
@@ -147,6 +155,22 @@ test("accepts editable WordprocessingML under its default namespace", async (t) 
   await fixtureDocx(outputPath, "Editable default namespace", { defaultWordNamespace: true });
   assert.equal((await validateNativePdfDocx(outputPath)).hasEditableContent, true);
 });
+
+for (const [part, options] of [
+  ["contentTypes", {}],
+  ["packageRelationships", {}],
+  ["document", {}],
+  ["documentRelationships", { image: true }]
+]) {
+  test(`rejects a valid ${part} element nested under an invalid wrapper root`, async (t) => {
+    const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), `fm-wrapper-${part}-`));
+    t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+    const outputPath = path.join(scratch, `${part}.docx`);
+    await fixtureDocx(outputPath, "Editable", { ...options, alternatePrefixes: true, wrapperRoot: part });
+    await assert.rejects(validateNativePdfDocx(outputPath),
+      (error) => error.code === "PDF_OFFICE_OUTPUT_INVALID");
+  });
+}
 
 test("rejects alternate-prefix DrawingML with a dangling relationship or media target", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-alt-prefix-broken-"));

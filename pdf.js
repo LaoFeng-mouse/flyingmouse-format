@@ -393,13 +393,19 @@ function namespaceElements(parsed) {
   return elements;
 }
 
-function parseNamespaceElements(xml) {
-  return namespaceElements(parseXmlToJson(xml));
+function parseNamespaceDocument(xml) {
+  const elements = namespaceElements(parseXmlToJson(xml));
+  if (elements.length === 0) throw nativeDocxInvalid();
+  return { root: elements[0], elements };
 }
 
 function elementsNamed(elements, namespaceURI, localName) {
   return elements.filter((element) =>
     element.namespaceURI === namespaceURI && element.localName === localName);
+}
+
+function rootNamed(document, namespaceURI, localName) {
+  return document.root.namespaceURI === namespaceURI && document.root.localName === localName;
 }
 
 function elementAttribute(element, namespaceURI, localName) {
@@ -420,14 +426,17 @@ async function validateNativePdfDocx(outputPath) {
     const rootRelationships = inspected.buffers.get("_rels/.rels")?.toString("utf8");
     const documentXml = inspected.buffers.get("word/document.xml")?.toString("utf8");
     if (!contentTypes || !rootRelationships || !documentXml) throw nativeDocxInvalid();
-    const contentTypeElements = parseNamespaceElements(contentTypes);
-    const rootRelationshipElements = parseNamespaceElements(rootRelationships);
-    const documentElements = parseNamespaceElements(documentXml);
-    if (elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Types").length !== 1
-      || elementsNamed(rootRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationships").length !== 1
-      || elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "document").length !== 1) {
+    const contentTypeDocument = parseNamespaceDocument(contentTypes);
+    const rootRelationshipDocument = parseNamespaceDocument(rootRelationships);
+    const wordDocument = parseNamespaceDocument(documentXml);
+    if (!rootNamed(contentTypeDocument, OPC_CONTENT_TYPES_NAMESPACE, "Types")
+      || !rootNamed(rootRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")
+      || !rootNamed(wordDocument, WORDPROCESSING_NAMESPACE, "document")) {
       throw nativeDocxInvalid();
     }
+    const contentTypeElements = contentTypeDocument.elements;
+    const rootRelationshipElements = rootRelationshipDocument.elements;
+    const documentElements = wordDocument.elements;
     const mainOverride = elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Override")
       .some((element) => elementAttribute(element, "", "PartName") === "/word/document.xml"
         && elementAttribute(element, "", "ContentType")
@@ -445,10 +454,11 @@ async function validateNativePdfDocx(outputPath) {
     if (blipIds.length) {
       const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
       if (!documentRelationships) throw nativeDocxInvalid();
-      const documentRelationshipElements = parseNamespaceElements(documentRelationships);
-      if (elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationships").length !== 1) {
+      const documentRelationshipDocument = parseNamespaceDocument(documentRelationships);
+      if (!rootNamed(documentRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")) {
         throw nativeDocxInvalid();
       }
+      const documentRelationshipElements = documentRelationshipDocument.elements;
       const relationships = new Map();
       for (const element of elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")) {
         const id = elementAttribute(element, "", "Id");
