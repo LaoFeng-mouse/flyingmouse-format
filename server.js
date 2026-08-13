@@ -535,7 +535,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg" || inputExt === "kgma")) {
+      if (category === "audio" && (inputExt === "ncm" || inputExt === "kgg" || inputExt === "mflac" || inputExt === "mgg" || inputExt === "kgma" || inputExt === "mmp4")) {
         let decrypted;
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
