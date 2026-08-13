@@ -60,7 +60,7 @@ before(() => {
 
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
-test("computes the exact weighted score from confidence, populated slots, grid coverage, and spans", () => {
+test("computes the exact weighted score from confidence, populated anchors, grid coverage, and spans", () => {
   const { scoreTableCandidate } = require("../pdf-structure-score");
   const result = scoreTableCandidate(candidate({
     cells: [cell(0, 0, "A", 0.8), cell(0, 1, "", 1), cell(1, 0, "B", 0.9)]
@@ -73,6 +73,19 @@ test("computes the exact weighted score from confidence, populated slots, grid c
   assert.equal(result.score, 0.785);
   assert.equal(result.accepted, true);
   assert.deepEqual(result.reasons, []);
+});
+
+test("counts populated anchor cells rather than slots covered by a spanning cell", () => {
+  const { scoreTableCandidate } = require("../pdf-structure-score");
+  const result = scoreTableCandidate(candidate({
+    rows: 4,
+    columns: 4,
+    cells: [cell(0, 0, "one anchor", 1, 4, 4)]
+  }));
+  assert.equal(result.populatedCellRatio, 1 / 16);
+  assert.equal(result.gridConsistency, 1);
+  assert.equal(result.accepted, false);
+  assert.deepEqual(result.reasons, ["TABLE_POPULATED_RATIO_LOW"]);
 });
 
 test("rejects empty tables, low populated ratio, and scores below the hard threshold with bounded codes", () => {
@@ -102,13 +115,20 @@ test("rejects impossible and overlapping spans without allocating the declared g
   }
 });
 
-test("normalizes only approved sources and enforces candidate geometry and cell budgets", () => {
+test("normalizes only approved sources and enforces product and cell budgets without extra dimension caps", () => {
   const { MAX_CANDIDATES, normalizeTableCandidate, scoreTableCandidate } = require("../pdf-structure-score");
   assert.equal(MAX_CANDIDATES, 2);
   assert.equal(normalizeTableCandidate(candidate({ source: "img2table" })).source, "img2table");
   lowQuality(() => normalizeTableCandidate(candidate({ source: "private-engine-secret" })), ["private-engine-secret"]);
-  lowQuality(() => scoreTableCandidate(candidate({ rows: 10001, columns: 1, cells: [] })));
-  lowQuality(() => scoreTableCandidate(candidate({ rows: 1, columns: 64, cells: [] })));
+  const wide = scoreTableCandidate(candidate({ rows: 1, columns: 64,
+    cells: Array.from({ length: 16 }, (_, column) => cell(0, column, "x", 1)) }));
+  const tall = scoreTableCandidate(candidate({ rows: 20000, columns: 1,
+    cells: Array.from({ length: 5000 }, (_, row) => cell(row, 0, "x", 1)) }));
+  assert.equal(wide.table.columnCount, 64);
+  assert.equal(wide.accepted, true);
+  assert.equal(tall.table.rowCount, 20000);
+  assert.equal(tall.accepted, true);
+  lowQuality(() => scoreTableCandidate(candidate({ rows: Number.MAX_SAFE_INTEGER, columns: 1, cells: [] })));
   lowQuality(() => scoreTableCandidate(candidate({ rows: 200, columns: 200, cells: [] })));
 });
 
@@ -149,6 +169,62 @@ test("compares cell occupancy positions without inspecting OCR text", () => {
   assert.equal(disagreement.rowRatio, 0);
   assert.equal(disagreement.columnRatio, 0);
   assert.equal(disagreement.occupancyRatio, 1);
+});
+
+test("compares aligned anchor values in memory using NFKC and collapsed whitespace", () => {
+  const { structuralDisagreement } = require("../pdf-structure-score");
+  const left = candidate({ cells: [
+    cell(0, 0, "ＡＢＣ", 0.4), cell(0, 1, "one\n two", 0.4),
+    cell(1, 0, "same", 0.4), cell(1, 1, "", 0.4)
+  ] });
+  const equivalent = candidate({ source: "img2table", cells: [
+    cell(0, 0, " ABC ", 0.4), cell(0, 1, "one   two", 0.4),
+    cell(1, 0, "same", 0.4), cell(1, 1, "", 0.4)
+  ] });
+  const result = structuralDisagreement(left, equivalent);
+  assert.equal(result.valueRatio, 0);
+  assert.deepEqual(Object.keys(result), ["rowRatio", "columnRatio", "occupancyRatio", "valueRatio", "maximum"]);
+});
+
+test("conflicts on over 25 percent differing or missing aligned values when neither score reaches 0.8", () => {
+  const { chooseTableCandidate, structuralDisagreement } = require("../pdf-structure-score");
+  const secretLeft = "PRIVATE_LEFT_VALUE";
+  const secretRight = "PRIVATE_RIGHT_VALUE";
+  const left = candidate({ cells: [
+    cell(0, 0, secretLeft, 0.4), cell(0, 1, "same", 0.4),
+    cell(1, 0, "left-only", 0.4), cell(1, 1, "stable", 0.4)
+  ] });
+  const right = candidate({ source: "img2table", cells: [
+    cell(0, 0, secretRight, 0.4), cell(0, 1, "same", 0.4),
+    cell(1, 1, "stable", 0.4)
+  ] });
+  const disagreement = structuralDisagreement(left, right);
+  assert.equal(disagreement.valueRatio, 0.5);
+  assert.equal(disagreement.maximum, 0.5);
+  lowQuality(() => chooseTableCandidate([left, right]), [secretLeft, secretRight, "left-only"]);
+});
+
+test("does not let mutually empty aligned anchors dilute populated value disagreement", () => {
+  const { chooseTableCandidate, structuralDisagreement } = require("../pdf-structure-score");
+  const cellsFor = (changed) => Array.from({ length: 16 }, (_, index) => {
+    const populated = index < 4;
+    const text = populated ? (changed && index < 2 ? `changed-${index}` : `value-${index}`) : "";
+    return cell(Math.floor(index / 4), index % 4, text, 0.8);
+  });
+  const left = candidate({ rows: 4, columns: 4, cells: cellsFor(false) });
+  const right = candidate({ source: "img2table", rows: 4, columns: 4, cells: cellsFor(true) });
+  assert.equal(structuralDisagreement(left, right).valueRatio, 0.5);
+  lowQuality(() => chooseTableCandidate([left, right]), ["changed-0", "changed-1"]);
+});
+
+test("bounds normalized OCR values before comparison", () => {
+  const { MAX_COMPARE_VALUE_LENGTH, structuralDisagreement } = require("../pdf-structure-score");
+  assert.equal(MAX_COMPARE_VALUE_LENGTH, 4096);
+  const oversized = "x".repeat(MAX_COMPARE_VALUE_LENGTH + 1);
+  lowQuality(() => structuralDisagreement(
+    candidate({ cells: [cell(0, 0, oversized)] }),
+    candidate({ source: "img2table" })
+  ), [oversized]);
 });
 
 test("allows a score of at least 0.8 to resolve structural disagreement", () => {
