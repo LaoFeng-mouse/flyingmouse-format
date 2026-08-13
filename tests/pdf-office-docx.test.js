@@ -113,6 +113,10 @@ function outputInvalid(error, privateValue = "") {
     && (!privateValue || !JSON.stringify(error).includes(privateValue));
 }
 
+function cloneManifest() {
+  return structuredClone(manifest());
+}
+
 test("writes editable source-order content, merged tables, supported images and page references", async (t) => {
   const root = await workspace(t);
   const input = manifest();
@@ -190,7 +194,7 @@ test("writes one original-reference image for every source page", async (t) => {
   assert.equal(validation.referenceImageCount, 2);
 });
 
-test("fails closed and deletes output when the manifest has images but no editable content", async (t) => {
+test("fails closed without leaving a new output when the manifest has images but no editable content", async (t) => {
   const root = await workspace(t);
   const outputPath = path.join(root, "must-not-exist.docx");
   const imageOnly = manifest();
@@ -225,6 +229,60 @@ test("maps output write failures to the bilingual redacted Office error", async 
     (error) => outputInvalid(error, "private-output.docx")
   );
   await assert.rejects(fs.access(outputPath));
+});
+
+test("preserves a pre-existing output when build or validation fails", async (t) => {
+  const root = await workspace(t);
+  const outputPath = path.join(root, "existing.docx");
+  const sentinel = Buffer.from("existing-user-output");
+  await fs.writeFile(outputPath, sentinel);
+  const input = cloneManifest();
+  input.pages[0].blocks.at(-1).asset = "missing.png";
+  await assert.rejects(writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath }), outputInvalid);
+  assert.deepEqual(await fs.readFile(outputPath), sentinel);
+
+  await assert.rejects(
+    writePdfOfficeDocx({
+      manifest: manifest(), assetRoot: root, outputPath,
+      validateDocument: async () => { throw new Error("private validation content"); }
+    }),
+    (error) => outputInvalid(error, "private validation content")
+  );
+  assert.deepEqual(await fs.readFile(outputPath), sentinel);
+});
+
+test("rolls back a pre-existing output when atomic publish rename fails", async (t) => {
+  const root = await workspace(t);
+  const outputPath = path.join(root, "existing.docx");
+  const sentinel = Buffer.from("existing-user-output");
+  await fs.writeFile(outputPath, sentinel);
+  let renames = 0;
+  const fileSystem = {
+    ...fs,
+    async rename(from, to) {
+      renames += 1;
+      if (renames === 2) throw Object.assign(new Error("private rename failure"), { code: "EACCES" });
+      return fs.rename(from, to);
+    }
+  };
+  await assert.rejects(
+    writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath, fileSystem }),
+    (error) => outputInvalid(error, "private rename failure")
+  );
+  assert.deepEqual(await fs.readFile(outputPath), sentinel);
+  assert.equal((await fs.readdir(root)).some((name) => name.includes(".backup-") || name.includes(".tmp-")), false);
+});
+
+test("atomically replaces a pre-existing regular output and rejects directory targets", async (t) => {
+  const root = await workspace(t);
+  const outputPath = path.join(root, "existing.docx");
+  await fs.writeFile(outputPath, "old");
+  await writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath });
+  assert.notDeepEqual(await fs.readFile(outputPath), Buffer.from("old"));
+  const directoryTarget = path.join(root, "directory.docx");
+  await fs.mkdir(directoryTarget);
+  await assert.rejects(writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath: directoryTarget }), outputInvalid);
+  assert.equal((await fs.lstat(directoryTarget)).isDirectory(), true);
 });
 
 test("validator rejects an image-only reference package even when its media relationship is valid", async (t) => {
@@ -279,6 +337,141 @@ test("validator requires manifest table dimensions and populated editable cells"
     expectedTables: [{ rows: 2, columns: 2 }]
   });
   assert.equal(result.hasEditableContent, true);
+});
+
+test("table expectations follow emitted block reference order, not page table array order", async (t) => {
+  const root = await workspace(t);
+  const input = cloneManifest();
+  const tableA = input.pages[0].tables[0];
+  tableA.id = "A";
+  tableA.rowCount = 3;
+  tableA.columnCount = 3;
+  tableA.cells = tableA.cells.filter((cell) => cell.row < 3 && cell.column < 3).map((cell) => ({
+    ...cell, columnSpan: Math.min(cell.columnSpan, 3 - cell.column)
+  }));
+  const tableB = {
+    id: "B", rowCount: 1, columnCount: 2, bbox: [100, 1200, 1550, 1400], confidence: 0.95,
+    cells: [
+      { row: 0, column: 0, rowSpan: 1, columnSpan: 1, bbox: [100, 1200, 825, 1400], text: "B1", confidence: 0.95 },
+      { row: 0, column: 1, rowSpan: 1, columnSpan: 1, bbox: [825, 1200, 1550, 1400], text: "B2", confidence: 0.95 }
+    ]
+  };
+  input.pages[0].tables = [tableA, tableB];
+  input.pages[0].blocks = input.pages[0].blocks.filter((block) => block.type !== "table");
+  input.pages[0].blocks.splice(2, 0,
+    { type: "table", bbox: tableB.bbox, tableId: "B", confidence: 0.95 },
+    { type: "table", bbox: tableA.bbox, tableId: "A", confidence: 0.96 }
+  );
+  const outputPath = path.join(root, "block-order.docx");
+  const result = await writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath });
+  assert.deepEqual(result.tables, [{ rows: 1, columns: 2 }, { rows: 3, columns: 3 }]);
+});
+
+test("validator rejects malformed effective row coverage and vertical-merge continuations", async (t) => {
+  const root = await workspace(t);
+  const cases = [
+    `<w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+    `<w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:vMerge w:val="continue"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl>`,
+    `<w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge w:val="continue"/></w:tcPr><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl>`
+  ];
+  for (const [index, table] of cases.entries()) {
+    const packagePath = path.join(root, `malformed-row-${index}.docx`);
+    await writeZip(packagePath, referencePackageXml({ bodyBeforeReference: table }));
+    await assert.rejects(validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1 }), outputInvalid);
+  }
+});
+
+test("one non-whitespace character is meaningful editable prose or table content", async (t) => {
+  const root = await workspace(t);
+  for (const [name, bodyBeforeReference] of [
+    ["prose", "<w:p><w:r><w:t>中</w:t></w:r></w:p>"],
+    ["table", "<w:tbl><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"]
+  ]) {
+    const packagePath = path.join(root, `one-char-${name}.docx`);
+    await writeZip(packagePath, referencePackageXml({ bodyBeforeReference }));
+    assert.equal((await validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1 })).hasEditableContent, true);
+  }
+});
+
+test("writer rejects oversized table dimensions before grid allocation", async (t) => {
+  const root = await workspace(t);
+  for (const mutate of [
+    (table) => { table.columnCount = 64; },
+    (table) => { table.rowCount = 20_001; },
+    (table) => { table.rowCount = 10_000; table.columnCount = 63; }
+  ]) {
+    const input = cloneManifest();
+    mutate(input.pages[0].tables[0]);
+    await assert.rejects(
+      writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath: path.join(root, `bounded-${Math.random()}.docx`) }),
+      outputInvalid
+    );
+  }
+
+  const aggregate = cloneManifest();
+  aggregate.pages[0].tables = Array.from({ length: 11 }, (_, index) => ({
+    id: `T${index}`, rowCount: 1000, columnCount: 20, bbox: [100, 400, 1500, 1200], confidence: 0.9, cells: []
+  }));
+  aggregate.pages[0].blocks = aggregate.pages[0].blocks.filter((block) => block.type !== "table");
+  aggregate.pages[0].blocks.push(...aggregate.pages[0].tables.map((table) => ({
+    type: "table", tableId: table.id, bbox: table.bbox, confidence: table.confidence
+  })));
+  await assert.rejects(
+    writePdfOfficeDocx({ manifest: aggregate, assetRoot: root, outputPath: path.join(root, "aggregate-grid.docx") }),
+    outputInvalid
+  );
+});
+
+test("writer stats asset budgets before reading oversized media", async (t) => {
+  const root = await workspace(t);
+  let readAttempted = false;
+  const fileSystem = {
+    ...fs,
+    async lstat(filePath) {
+      const info = await fs.lstat(filePath);
+      if (String(filePath).endsWith("seal.png")) {
+        return { ...info, isFile: () => true, isSymbolicLink: () => false, size: 70 * 1024 * 1024 };
+      }
+      return info;
+    },
+    async readFile(filePath, ...args) {
+      if (String(filePath).endsWith("seal.png")) readAttempted = true;
+      return fs.readFile(filePath, ...args);
+    }
+  };
+  await assert.rejects(
+    writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath: path.join(root, "oversized.docx"), fileSystem }),
+    outputInvalid
+  );
+  assert.equal(readAttempted, false);
+
+  await png(path.join(root, "figure-2.png"), 120, 80, "#8844aa");
+  const aggregateInput = cloneManifest();
+  aggregateInput.pages[0].blocks.push(
+    { type: "signature", bbox: [100, 1450, 400, 1550], asset: "signature.png", confidence: 0.9 },
+    { type: "figure", bbox: [100, 1560, 500, 1760], asset: "figure.png", confidence: 0.9 },
+    { type: "figure", bbox: [520, 1560, 920, 1760], asset: "figure-2.png", confidence: 0.9 }
+  );
+  let aggregateReadAttempted = false;
+  const aggregateFileSystem = {
+    ...fs,
+    async lstat(filePath) {
+      const info = await fs.lstat(filePath);
+      if (/\.(?:png|jpg)$/i.test(String(filePath))) {
+        return { ...info, isFile: () => true, isSymbolicLink: () => false, size: 60 * 1024 * 1024 };
+      }
+      return info;
+    },
+    async readFile(filePath, ...args) {
+      if (/\.(?:png|jpg)$/i.test(String(filePath))) aggregateReadAttempted = true;
+      return fs.readFile(filePath, ...args);
+    }
+  };
+  await assert.rejects(
+    writePdfOfficeDocx({ manifest: aggregateInput, assetRoot: root, outputPath: path.join(root, "aggregate-assets.docx"), fileSystem: aggregateFileSystem }),
+    outputInvalid
+  );
+  assert.equal(aggregateReadAttempted, false);
 });
 
 function referencePackageXml({

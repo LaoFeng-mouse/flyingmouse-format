@@ -23,6 +23,7 @@ const {
   WidthType
 } = require("docx");
 const { openZipEntries } = require("./zip-util");
+const { STRUCTURE_LIMITS } = require("./resource-policy");
 
 const A4_WIDTH_DXA = 11906;
 const A4_HEIGHT_DXA = 16838;
@@ -36,6 +37,10 @@ const REFERENCE_HEADING = "原件对照 / Original reference";
 const RECONSTRUCTED_IMAGE_TYPES = new Set(["seal", "signature", "figure"]);
 const MAX_XML_BYTES = 20 * 1024 * 1024;
 const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
+const MAX_WORD_COLUMNS = 63;
+const MAX_WORD_ROWS = 10_000;
+const MAX_ASSET_BYTES = 64 * 1024 * 1024;
+const MAX_TOTAL_ASSET_BYTES = 256 * 1024 * 1024;
 
 const ERROR_MESSAGES = Object.freeze({
   PDF_DOCX_NO_EDITABLE_CONTENT: Object.freeze({
@@ -79,24 +84,55 @@ function imageType(relativePath) {
   throw stableError("PDF_OFFICE_OUTPUT_INVALID");
 }
 
-async function readAsset(assetRoot, relativePath) {
-  if (typeof assetRoot !== "string" || typeof relativePath !== "string" ||
-      !relativePath || relativePath.includes("\\") || path.isAbsolute(relativePath)) {
+function assetPathParts(relativePath) {
+  if (typeof relativePath !== "string" || !relativePath ||
+      relativePath.includes("\\") || path.isAbsolute(relativePath)) {
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   const pieces = relativePath.split("/");
   if (pieces.some((piece) => !piece || piece === "." || piece === "..")) {
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
+  return pieces;
+}
+
+async function preflightAssets(manifest, assetRoot, fileSystem) {
   try {
-    const root = await fs.realpath(assetRoot);
-    const candidate = path.resolve(root, ...pieces);
-    const info = await fs.lstat(candidate);
-    if (!info.isFile() || info.isSymbolicLink()) throw new Error("untrusted asset");
-    const real = await fs.realpath(candidate);
+    if (typeof assetRoot !== "string") throw new Error("invalid root");
+    const root = await fileSystem.realpath(assetRoot);
     const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
-    if (!real.startsWith(prefix)) throw new Error("asset escaped root");
-    return { data: await fs.readFile(real), type: imageType(relativePath) };
+    const relativePaths = [];
+    for (const page of Array.isArray(manifest.pages) ? manifest.pages : []) {
+      relativePaths.push(page.referenceImage);
+      for (const block of Array.isArray(page.blocks) ? page.blocks : []) {
+        if (RECONSTRUCTED_IMAGE_TYPES.has(block.type)) relativePaths.push(block.asset);
+      }
+    }
+    const catalog = new Map();
+    let totalBytes = 0;
+    for (const relativePath of new Set(relativePaths)) {
+      const pieces = assetPathParts(relativePath);
+      const candidate = path.resolve(root, ...pieces);
+      const info = await fileSystem.lstat(candidate);
+      if (!info.isFile() || info.isSymbolicLink() || !Number.isSafeInteger(info.size) || info.size < 0 ||
+          info.size > MAX_ASSET_BYTES) throw new Error("untrusted asset");
+      totalBytes += info.size;
+      if (!Number.isSafeInteger(totalBytes) || totalBytes > MAX_TOTAL_ASSET_BYTES) throw new Error("asset budget");
+      const real = await fileSystem.realpath(candidate);
+      if (!real.startsWith(prefix)) throw new Error("asset escaped root");
+      catalog.set(relativePath, { real, type: imageType(relativePath) });
+    }
+    return catalog;
+  } catch {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+}
+
+async function readAsset(catalog, relativePath, fileSystem) {
+  const asset = catalog.get(relativePath);
+  if (!asset) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  try {
+    return { data: await fileSystem.readFile(asset.real), type: asset.type };
   } catch {
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
@@ -110,6 +146,28 @@ function imageSize(width, height, maxWidth, maxHeight) {
     width: Math.max(1, Math.round(sourceWidth * scale)),
     height: Math.max(1, Math.round(sourceHeight * scale))
   };
+}
+
+function validateWriterBounds(manifest) {
+  let totalGridCells = 0;
+  for (const page of Array.isArray(manifest.pages) ? manifest.pages : []) {
+    for (const table of Array.isArray(page.tables) ? page.tables : []) {
+      const rows = Number(table.rowCount);
+      const columns = Number(table.columnCount);
+      if (!Number.isSafeInteger(rows) || rows < 1 || rows > MAX_WORD_ROWS ||
+          !Number.isSafeInteger(columns) || columns < 1 || columns > MAX_WORD_COLUMNS) {
+        throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+      }
+      const gridCells = rows * columns;
+      if (!Number.isSafeInteger(gridCells) || gridCells > STRUCTURE_LIMITS.maxCellsPerTable) {
+        throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+      }
+      totalGridCells += gridCells;
+      if (!Number.isSafeInteger(totalGridCells) || totalGridCells > STRUCTURE_LIMITS.maxTotalCells) {
+        throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+      }
+    }
+  }
 }
 
 function tableRows(table) {
@@ -193,7 +251,7 @@ function makeTable(table) {
   });
 }
 
-async function reconstructedChildren(manifest, assetRoot) {
+async function reconstructedChildren(manifest, assetCatalog, fileSystem) {
   const children = [];
   let editableText = false;
   let editableTable = false;
@@ -212,7 +270,7 @@ async function reconstructedChildren(manifest, assetRoot) {
         continue;
       }
       if (RECONSTRUCTED_IMAGE_TYPES.has(block.type)) {
-        const asset = await readAsset(assetRoot, block.asset);
+        const asset = await readAsset(assetCatalog, block.asset, fileSystem);
         const bbox = Array.isArray(block.bbox) ? block.bbox : [0, 0, 1, 1];
         const imageLimits = block.type === "figure" ? [560, 500]
           : block.type === "signature" ? [280, 120]
@@ -249,7 +307,7 @@ async function reconstructedChildren(manifest, assetRoot) {
   return children;
 }
 
-async function referenceChildren(manifest, assetRoot) {
+async function referenceChildren(manifest, assetCatalog, fileSystem) {
   const children = [
     new Paragraph({ text: REFERENCE_HEADING, heading: HeadingLevel.HEADING_1 })
   ];
@@ -257,7 +315,7 @@ async function referenceChildren(manifest, assetRoot) {
   for (let index = 0; index < pages.length; index += 1) {
     if (index > 0) children.push(new Paragraph({ children: [new PageBreak()] }));
     const page = pages[index];
-    const asset = await readAsset(assetRoot, page.referenceImage);
+    const asset = await readAsset(assetCatalog, page.referenceImage, fileSystem);
     const size = imageSize(page.width, page.height, 560, 800);
     children.push(new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -404,14 +462,66 @@ function tableDimensions(tableXml) {
       columns = Math.max(columns, rowColumns);
     }
   }
-  return { rows: rows.length, columns, populated: xmlTexts(tableXml).some((text) => text.length >= 2) };
+  if (!Number.isSafeInteger(columns) || columns < 1 || columns > MAX_WORD_COLUMNS ||
+      rows.length < 1 || rows.length > MAX_WORD_ROWS) {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  const activeVerticalMerges = Array(columns).fill(null);
+  let mergeSequence = 0;
+  let populatedCells = 0;
+  for (const row of rows) {
+    const cells = [...row[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/gi)].map((match) => match[0]);
+    let column = 0;
+    for (const cell of cells) {
+      const spanMatch = cell.match(/<w:gridSpan\b[^>]*\bw:val=["'](\d+)["']/i);
+      const span = spanMatch ? Number(spanMatch[1]) : 1;
+      if (!Number.isSafeInteger(span) || span < 1 || column + span > columns) {
+        throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+      }
+      const merge = cell.match(/<w:vMerge\b([^>]*)\/?\s*>/i);
+      if (merge) {
+        const value = attribute(merge[1], "w:val") || attribute(merge[1], "val") || "continue";
+        if (value === "continue") {
+          const mergeId = activeVerticalMerges[column];
+          if (!mergeId) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+          for (let index = column; index < column + span; index += 1) {
+            if (activeVerticalMerges[index] !== mergeId) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+          }
+          if (activeVerticalMerges.filter((value) => value === mergeId).length !== span) {
+            throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+          }
+        } else if (value === "restart") {
+          mergeSequence += 1;
+          for (let index = column; index < column + span; index += 1) activeVerticalMerges[index] = mergeSequence;
+        } else {
+          throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+        }
+      } else {
+        for (let index = column; index < column + span; index += 1) activeVerticalMerges[index] = null;
+      }
+      if (xmlTexts(cell).some((text) => text.length >= 1)) populatedCells += 1;
+      column += span;
+    }
+    if (column !== columns) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  return { rows: rows.length, columns, populated: populatedCells > 0, populatedCells };
 }
 
 function expectedTablesFromManifest(manifest) {
   const expected = [];
   for (const page of Array.isArray(manifest.pages) ? manifest.pages : []) {
-    for (const table of Array.isArray(page.tables) ? page.tables : []) {
-      expected.push({ rows: Number(table.rowCount), columns: Number(table.columnCount) });
+    const tables = new Map((Array.isArray(page.tables) ? page.tables : []).map((table) => [table.id, table]));
+    for (const block of Array.isArray(page.blocks) ? page.blocks : []) {
+      if (block.type !== "table") continue;
+      const table = tables.get(block.tableId);
+      if (!table) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+      expected.push({
+        id: table.id,
+        rows: Number(table.rowCount),
+        columns: Number(table.columnCount),
+        populatedCells: (Array.isArray(table.cells) ? table.cells : [])
+          .filter((cell) => safeText(cell.text).trim().length >= 1).length
+      });
     }
   }
   return expected;
@@ -425,7 +535,8 @@ function validateExpectedTables(actualTables, expectedTables) {
   for (let index = 0; index < expectedTables.length; index += 1) {
     const expected = expectedTables[index];
     if (!expected || !Number.isSafeInteger(expected.rows) || !Number.isSafeInteger(expected.columns) ||
-        actualTables[index].rows !== expected.rows || actualTables[index].columns !== expected.columns) {
+        actualTables[index].rows !== expected.rows || actualTables[index].columns !== expected.columns ||
+        (Number.isSafeInteger(expected.populatedCells) && actualTables[index].populatedCells !== expected.populatedCells)) {
       throw stableError("PDF_OFFICE_OUTPUT_INVALID");
     }
   }
@@ -497,7 +608,7 @@ async function validatePdfOfficeDocx(docxPath, options = {}) {
     const actualTables = tableXml.map(tableDimensions);
     validateExpectedTables(actualTables, options.expectedTables);
     const proseXml = reconstructedXml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi, "");
-    const meaningfulProse = xmlTexts(proseXml).some((text) => text.length >= 2);
+    const meaningfulProse = xmlTexts(proseXml).some((text) => text.length >= 1);
     const meaningfulTable = actualTables.some((table) => table.populated);
     const hasEditableContent = meaningfulProse || meaningfulTable;
     if (!hasEditableContent) {
@@ -510,28 +621,89 @@ async function validatePdfOfficeDocx(docxPath, options = {}) {
   }
 }
 
-async function writePdfOfficeDocx({ manifest, assetRoot, outputPath }) {
+async function existingOutputInfo(outputPath, fileSystem) {
+  try {
+    return await fileSystem.lstat(outputPath);
+  } catch (error) {
+    if (error && error.code === "ENOENT") return null;
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+}
+
+async function publishAtomically(temporaryPath, outputPath, fileSystem) {
+  const existing = await existingOutputInfo(outputPath, fileSystem);
+  if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  if (!existing) {
+    try {
+      await fileSystem.rename(temporaryPath, outputPath);
+      return;
+    } catch {
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    }
+  }
+
+  const backupPath = `${outputPath}.backup-${crypto.randomUUID()}`;
+  try {
+    await fileSystem.rename(outputPath, backupPath);
+  } catch {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  try {
+    await fileSystem.rename(temporaryPath, outputPath);
+  } catch {
+    try {
+      await fileSystem.rename(backupPath, outputPath);
+    } catch {
+      try {
+        await fileSystem.copyFile(backupPath, outputPath);
+        await fileSystem.rm(backupPath, { force: true });
+      } catch {
+        // Preserve the recoverable sibling backup when rollback cannot be completed.
+      }
+    }
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  try {
+    await fileSystem.rm(backupPath, { force: true });
+  } catch {
+    // Publishing has completed; a bounded best-effort backup cleanup must not invalidate it.
+  }
+}
+
+async function writePdfOfficeDocx({
+  manifest,
+  assetRoot,
+  outputPath,
+  fileSystem = fs,
+  validateDocument = validatePdfOfficeDocx
+}) {
   if (!manifest || typeof outputPath !== "string" || !outputPath) {
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   const temporaryPath = `${outputPath}.tmp-${crypto.randomUUID()}`;
   try {
-    await fs.rm(outputPath, { force: true });
-    const content = await reconstructedChildren(manifest, assetRoot);
-    const references = await referenceChildren(manifest, assetRoot);
+    validateWriterBounds(manifest);
+    const assetCatalog = await preflightAssets(manifest, assetRoot, fileSystem);
+    const content = await reconstructedChildren(manifest, assetCatalog, fileSystem);
+    const references = await referenceChildren(manifest, assetCatalog, fileSystem);
     const buffer = await Packer.toBuffer(createDocument(content, references));
-    await fs.writeFile(temporaryPath, buffer, { flag: "wx" });
-    const validation = await validatePdfOfficeDocx(temporaryPath, {
+    if (buffer.length > MAX_PACKAGE_BYTES) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    await fileSystem.writeFile(temporaryPath, buffer, { flag: "wx" });
+    const validation = await validateDocument(temporaryPath, {
       expectedReferenceImages: Array.isArray(manifest.pages) ? manifest.pages.length : 0,
       expectedTables: expectedTablesFromManifest(manifest)
     });
-    await fs.rename(temporaryPath, outputPath);
+    await publishAtomically(temporaryPath, outputPath, fileSystem);
     return validation;
   } catch (error) {
-    await Promise.allSettled([
-      fs.rm(temporaryPath, { force: true }),
-      fs.rm(outputPath, { force: true })
-    ]);
+    try {
+      const temporaryInfo = await fileSystem.lstat(temporaryPath);
+      if (temporaryInfo.isFile() && !temporaryInfo.isSymbolicLink()) {
+        await fileSystem.rm(temporaryPath, { force: true });
+      }
+    } catch {}
     if (isStable(error)) throw error;
     throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
