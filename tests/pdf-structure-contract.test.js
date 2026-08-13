@@ -23,6 +23,75 @@ function assertDeepFrozen(value) {
   for (const nested of Object.values(value)) assertDeepFrozen(nested);
 }
 
+function inspectThrownValue(value) {
+  const seen = new WeakSet();
+
+  function snapshot(current) {
+    if (current === null || typeof current !== "object") return current;
+    if (seen.has(current)) return "[Circular]";
+    seen.add(current);
+
+    const result = {};
+    const keys = new Set([
+      ...Reflect.ownKeys(current),
+      "name",
+      "message",
+      "stack",
+      "code",
+      "path",
+      "dest",
+      "syscall",
+      "cause",
+      "messages"
+    ]);
+    for (const key of keys) {
+      const label = typeof key === "symbol" ? key.toString() : key;
+      try {
+        if (key in current) result[label] = snapshot(current[key]);
+      } catch (error) {
+        result[label] = `[Unreadable: ${String(error)}]`;
+      }
+    }
+    return result;
+  }
+
+  return `${String(value)}\n${JSON.stringify(snapshot(value))}`;
+}
+
+function assertPrivateDetailsRedacted(action, forbidden) {
+  let thrown;
+  try {
+    action();
+  } catch (error) {
+    thrown = error;
+  }
+  assert.ok(thrown, "expected an error");
+  assert.equal(thrown.code, "PDF_STRUCTURE_SCHEMA_INVALID");
+  const inspected = inspectThrownValue(thrown);
+  for (const secret of forbidden) {
+    assert.ok(!inspected.includes(secret), `error leaked private value: ${secret}`);
+  }
+}
+
+function withNativeRealpathFailure(target, sentinelText, action) {
+  const original = fs.realpathSync.native;
+  fs.realpathSync.native = (candidate) => {
+    if (path.resolve(candidate) === path.resolve(target)) {
+      const error = new Error(`private filesystem failure ${target} ${sentinelText}`);
+      error.code = "EIO";
+      error.path = target;
+      error.recognizedText = sentinelText;
+      throw error;
+    }
+    return original(candidate);
+  };
+  try {
+    action();
+  } finally {
+    fs.realpathSync.native = original;
+  }
+}
+
 function assertSchemaError(action) {
   assert.throws(action, (error) => {
     assert.equal(error.code, "PDF_STRUCTURE_SCHEMA_INVALID");
@@ -145,6 +214,65 @@ test("rejects missing assets, directories, unexpected asset types, and invalid r
   fs.writeFileSync(fileRoot, "not a directory");
   invalidWith(() => {}, missingRoot);
   invalidWith(() => {}, fileRoot);
+});
+
+test("root stat failures redact private filesystem details recursively", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const recognizedSentinel = "RECOGNIZED_PRIVATE_ROOT_TEXT_7D91";
+  const missingRoot = path.join(scratch, `private-root-${recognizedSentinel}`);
+  assertPrivateDetailsRedacted(
+    () => validateStructureManifest(fixture(), missingRoot),
+    [missingRoot, path.basename(missingRoot), recognizedSentinel]
+  );
+});
+
+test("root realpath failures redact private filesystem details recursively", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const recognizedSentinel = "RECOGNIZED_PRIVATE_ROOT_REALPATH_TEXT_3B18";
+  const privateRoot = path.join(scratch, `real-root-${recognizedSentinel}`);
+  fs.mkdirSync(privateRoot);
+  withNativeRealpathFailure(privateRoot, recognizedSentinel, () => {
+    assertPrivateDetailsRedacted(
+      () => validateStructureManifest(fixture(), privateRoot),
+      [privateRoot, path.basename(privateRoot), recognizedSentinel]
+    );
+  });
+});
+
+test("asset stat failures redact private paths and recognized-like filenames recursively", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const recognizedSentinel = "RECOGNIZED_PRIVATE_ASSET_TEXT_4A26";
+  const privateRoot = path.join(scratch, `asset-root-${recognizedSentinel}`);
+  fs.mkdirSync(privateRoot);
+  fs.writeFileSync(path.join(privateRoot, "page-001.png"), tinyPng);
+
+  const missingName = `${recognizedSentinel}-missing.png`;
+  const missingPath = path.join(privateRoot, missingName);
+  const missingManifest = fixture();
+  missingManifest.pages[0].blocks[2].asset = missingName;
+  assertPrivateDetailsRedacted(
+    () => validateStructureManifest(missingManifest, privateRoot),
+    [privateRoot, missingPath, missingName, recognizedSentinel]
+  );
+});
+
+test("asset realpath failures redact private paths and recognized-like filenames recursively", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const recognizedSentinel = "RECOGNIZED_PRIVATE_ASSET_REALPATH_TEXT_8C53";
+  const privateRoot = path.join(scratch, `asset-realpath-root-${recognizedSentinel}`);
+  fs.mkdirSync(privateRoot);
+  fs.writeFileSync(path.join(privateRoot, "page-001.png"), tinyPng);
+  const realpathName = `${recognizedSentinel}-realpath.png`;
+  const realpathAsset = path.join(privateRoot, realpathName);
+  fs.writeFileSync(realpathAsset, tinyPng);
+  const realpathManifest = fixture();
+  realpathManifest.pages[0].blocks[2].asset = realpathName;
+  withNativeRealpathFailure(realpathAsset, recognizedSentinel, () => {
+    assertPrivateDetailsRedacted(
+      () => validateStructureManifest(realpathManifest, privateRoot),
+      [privateRoot, realpathAsset, realpathName, recognizedSentinel]
+    );
+  });
 });
 
 test("rejects a symlink or junction that resolves outside the asset root when supported", (t) => {

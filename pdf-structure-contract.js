@@ -76,7 +76,7 @@ function resolveAssetRoot(assetRoot) {
     };
   } catch (error) {
     if (error?.code === "PDF_STRUCTURE_SCHEMA_INVALID") throw error;
-    throw invalid(error);
+    throw invalid();
   }
 }
 
@@ -103,7 +103,7 @@ function resolveStructureAssetFromRoot(root, asset) {
     return realCandidate;
   } catch (error) {
     if (error?.code === "PDF_STRUCTURE_SCHEMA_INVALID") throw error;
-    throw invalid(error);
+    throw invalid();
   }
 }
 
