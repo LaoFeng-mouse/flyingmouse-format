@@ -37,6 +37,9 @@ async function createScannedTablePdf(outputPath) {
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
 
   const document = await PDFDocument.create();
+  const fixtureDate = new Date("2000-01-01T00:00:00.000Z");
+  document.setCreationDate(fixtureDate);
+  document.setModificationDate(fixtureDate);
   const page = document.addPage([595.28, 841.89]);
   const image = await document.embedPng(png);
   page.drawImage(image, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
