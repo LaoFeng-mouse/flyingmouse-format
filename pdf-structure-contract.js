@@ -5,6 +5,7 @@ const { STRUCTURE_LIMITS } = require("./resource-policy");
 const {
   MAX_CANDIDATES,
   chooseTableCandidate,
+  lowQualityError,
   normalizeTableCandidate
 } = require("./pdf-structure-score");
 
@@ -136,9 +137,9 @@ function preflightStructureTotals(manifest) {
         if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw invalid();
       }
       if (Array.isArray(page.tableCandidates)) {
-        if (page.tableCandidates.length > MAX_CANDIDATES) throw invalid();
+        if (page.tableCandidates.length > MAX_CANDIDATES) throw lowQualityError();
         totalTables += page.tableCandidates.length;
-        if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw invalid();
+        if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw lowQualityError();
       }
     }
 
@@ -149,14 +150,20 @@ function preflightStructureTotals(manifest) {
         if (!Array.isArray(collection)) continue;
         for (const table of collection) {
           if (!isPlainObject(table) || !Array.isArray(table.cells)) continue;
-          if (table.cells.length > MAX_CELLS_PER_TABLE) throw invalid();
+          if (table.cells.length > MAX_CELLS_PER_TABLE) {
+            if (collection === page.tableCandidates) throw lowQualityError();
+            throw invalid();
+          }
           totalCells += table.cells.length;
-          if (totalCells > STRUCTURE_LIMITS.maxTotalCells) throw invalid();
+          if (totalCells > STRUCTURE_LIMITS.maxTotalCells) {
+            if (collection === page.tableCandidates) throw lowQualityError();
+            throw invalid();
+          }
         }
       }
     }
   } catch (error) {
-    if (error?.code === "PDF_STRUCTURE_SCHEMA_INVALID") throw error;
+    if (["PDF_STRUCTURE_SCHEMA_INVALID", "PDF_TABLE_OCR_LOW_QUALITY"].includes(error?.code)) throw error;
     throw invalid();
   }
 }
@@ -349,18 +356,25 @@ function validatePage(page, root) {
   if (typeof page.tableLike !== "boolean") throw invalid();
   if (!page.tableLike && page.tables.length > 0) throw invalid();
   if (Object.hasOwn(page, "tableCandidates")) {
+    // Candidate transport/quality failures belong to the OCR quality boundary.
+    // Tables already resolved into page.tables remain ordinary manifest schema data.
     if (!page.tableLike || page.tables.length !== 0
       || !Array.isArray(page.tableCandidates)
       || page.tableCandidates.length === 0
       || page.tableCandidates.length > MAX_CANDIDATES) {
-      throw invalid();
+      throw lowQualityError();
     }
-    for (const candidate of page.tableCandidates) {
-      validateTable(normalizeTableCandidate(candidate).table, page);
+    try {
+      for (const candidate of page.tableCandidates) {
+        validateTable(normalizeTableCandidate(candidate).table, page);
+      }
+    } catch {
+      throw lowQualityError();
     }
     page.tables.push(chooseTableCandidate(page.tableCandidates).table);
     delete page.tableCandidates;
   }
+  if (page.tableLike && page.tables.length === 0) throw lowQualityError();
   for (const block of page.blocks) validateBlock(block, page, root);
   for (const table of page.tables) validateTable(table, page);
 
@@ -376,6 +390,7 @@ function validateStructureManifest(manifest, assetRoot) {
   const root = resolveAssetRoot(assetRoot);
   preflightStructureTotals(manifest);
   const normalized = boundedCloneJsonValue(manifest);
+  preflightStructureTotals(normalized);
   if (!isPlainObject(normalized) || normalized.schemaVersion !== STRUCTURE_SCHEMA_VERSION) throw invalid();
   if (!isPlainObject(normalized.engine)
     || typeof normalized.engine.name !== "string"

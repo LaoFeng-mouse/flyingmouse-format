@@ -24,6 +24,20 @@ function failLowQuality() {
   throw lowQualityError();
 }
 
+function deepFreeze(value) {
+  if (value === null || typeof value !== "object") return value;
+  const seen = new WeakSet();
+  const stack = [value];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === null || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    for (const nested of Object.values(current)) stack.push(nested);
+    Object.freeze(current);
+  }
+  return value;
+}
+
 function isPlainObject(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -285,16 +299,16 @@ function rounded(value) {
 function scoreNormalized(normalized) {
   const { table } = normalized;
   if (table.cells.length === 0) {
-    return Object.freeze({ source: normalized.source, table, meanCellConfidence: 0,
+    return deepFreeze({ source: normalized.source, table, meanCellConfidence: 0,
       populatedCellRatio: 0, gridConsistency: 0, spanValidity: 1, score: 0,
-      accepted: false, reasons: Object.freeze(["TABLE_EMPTY"]) });
+      accepted: false, reasons: ["TABLE_EMPTY"] });
   }
 
   const geometry = inspectGeometry(table);
   if (!geometry.valid) {
-    return Object.freeze({ source: normalized.source, table, meanCellConfidence: 0,
+    return deepFreeze({ source: normalized.source, table, meanCellConfidence: 0,
       populatedCellRatio: 0, gridConsistency: 0, spanValidity: 0, score: 0,
-      accepted: false, reasons: Object.freeze(["TABLE_SPAN_INVALID"]) });
+      accepted: false, reasons: ["TABLE_SPAN_INVALID"] });
   }
 
   const gridSlots = table.rowCount * table.columnCount;
@@ -311,9 +325,9 @@ function scoreNormalized(normalized) {
   }
   if (geometry.populatedAnchors > 0 && score < TABLE_SCORE_THRESHOLD) reasons.push("TABLE_SCORE_LOW");
 
-  return Object.freeze({ source: normalized.source, table, meanCellConfidence,
+  return deepFreeze({ source: normalized.source, table, meanCellConfidence,
     populatedCellRatio, gridConsistency, spanValidity, score,
-    accepted: reasons.length === 0, reasons: Object.freeze(reasons) });
+    accepted: reasons.length === 0, reasons });
 }
 
 function scoreTableCandidate(value) {

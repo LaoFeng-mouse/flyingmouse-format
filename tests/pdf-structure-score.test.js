@@ -53,6 +53,12 @@ function lowQuality(action, forbidden = []) {
   });
 }
 
+function assertDeepFrozen(value) {
+  if (value === null || typeof value !== "object") return;
+  assert.ok(Object.isFrozen(value));
+  for (const nested of Object.values(value)) assertDeepFrozen(nested);
+}
+
 before(() => {
   scratch = fs.mkdtempSync(path.join(os.tmpdir(), "fm-structure-score-"));
   fs.writeFileSync(path.join(scratch, "page-001.png"), tinyPng);
@@ -113,6 +119,18 @@ test("rejects impossible and overlapping spans without allocating the declared g
     assert.equal(result.accepted, false);
     assert.deepEqual(result.reasons, ["TABLE_SPAN_INVALID"]);
   }
+});
+
+test("accepts touching intervals and rejects partial overlap", () => {
+  const { scoreTableCandidate } = require("../pdf-structure-score");
+  const touching = candidate({ rows: 1, columns: 2,
+    cells: [cell(0, 0, "A", 1), cell(0, 1, "B", 1)] });
+  assert.equal(scoreTableCandidate(touching).spanValidity, 1);
+  const overlap = candidate({ rows: 2, columns: 2, cells: [
+    cell(0, 0, "A", 1, 2, 1),
+    cell(1, 0, "B", 1, 1, 2)
+  ] });
+  assert.deepEqual(scoreTableCandidate(overlap).reasons, ["TABLE_SPAN_INVALID"]);
 });
 
 test("normalizes only approved sources and enforces product and cell budgets without extra dimension caps", () => {
@@ -264,6 +282,75 @@ test("uses deterministic source then id tie-breaking independent of input order"
   assert.equal(chooseTableCandidate([paddle, image]).source, "pp-structure-v3");
 });
 
+test("keeps exact score, conflict override, and disagreement thresholds inclusive", () => {
+  const { chooseTableCandidate, scoreTableCandidate, structuralDisagreement } = require("../pdf-structure-score");
+  const atScore = candidate({ cells: [
+    cell(0, 0, "A", 0.125), cell(0, 1, "B", 0.125),
+    cell(1, 0, "C", 0.125), cell(1, 1, "D", 0.125)
+  ] });
+  assert.equal(scoreTableCandidate(atScore).score, 0.65);
+  assert.equal(scoreTableCandidate(atScore).accepted, true);
+
+  const atOverride = candidate({ cells: [
+    cell(0, 0, "A", 0.5), cell(0, 1, "B", 0.5),
+    cell(1, 0, "C", 0.5), cell(1, 1, "D", 0.5)
+  ] });
+  const conflicting = candidate({ source: "img2table", rows: 3, columns: 2, cells: [
+    cell(0, 0, "A", 0.5), cell(0, 1, "B", 0.5),
+    cell(1, 0, "C", 0.5), cell(1, 1, "D", 0.5),
+    cell(2, 0, "E", 0.5), cell(2, 1, "F", 0.5)
+  ] });
+  assert.equal(scoreTableCandidate(atOverride).score, 0.8);
+  assert.equal(chooseTableCandidate([atOverride, conflicting]).score, 0.8);
+
+  const threeRows = candidate({ rows: 3, columns: 1, cells: [
+    cell(0, 0, "A", 0.125), cell(1, 0, "B", 0.125), cell(2, 0, "C", 0.125)
+  ] });
+  const fourRows = candidate({ source: "img2table", rows: 4, columns: 1, cells: [
+    cell(0, 0, "A", 0.125), cell(1, 0, "B", 0.125),
+    cell(2, 0, "C", 0.125), cell(3, 0, "D", 0.125)
+  ] });
+  assert.equal(structuralDisagreement(threeRows, fourRows).maximum, 0.25);
+  assert.equal(chooseTableCandidate([threeRows, fourRows]).score, 0.65);
+});
+
+test("rejects malformed candidate fields and candidate collection limits as low quality", () => {
+  const { chooseTableCandidate, scoreTableCandidate } = require("../pdf-structure-score");
+  for (const mutate of [
+    (value) => { value.id = ""; },
+    (value) => { value.confidence = 2; },
+    (value) => { value.cells[0].confidence = -1; },
+    (value) => { value.cells[0].rowSpan = 0; },
+    (value) => { value.cells[0].text = {}; },
+    (value) => { value.cells[0].bbox = [0, 0, 1]; }
+  ]) {
+    const value = candidate();
+    mutate(value);
+    lowQuality(() => scoreTableCandidate(value));
+  }
+  lowQuality(() => chooseTableCandidate([candidate(), candidate({ source: "img2table" }), candidate()]));
+  lowQuality(() => chooseTableCandidate([candidate(), candidate()]));
+});
+
+test("returns detached deeply immutable scored and selected candidates", () => {
+  const { chooseTableCandidate, scoreTableCandidate } = require("../pdf-structure-score");
+  const input = candidate();
+  const scored = scoreTableCandidate(input);
+  const selected = chooseTableCandidate([input]);
+  assertDeepFrozen(scored);
+  assertDeepFrozen(selected);
+
+  const snapshot = JSON.stringify(scored);
+  input.id = "changed";
+  input.cells[0].text = "changed";
+  input.cells[0].bbox[0] = 999;
+  scored.table.id = "attempt";
+  scored.table.cells[0].text = "attempt";
+  scored.table.cells[0].bbox[0] = 888;
+  assert.equal(JSON.stringify(scored), snapshot);
+  assert.equal(JSON.stringify(selected), snapshot);
+});
+
 test("returns one stable bilingual low-quality error without OCR text or private paths", () => {
   const { chooseTableCandidate } = require("../pdf-structure-score");
   const secret = "PRIVATE_CELL_TEXT_CANNOT_LEAK";
@@ -306,6 +393,75 @@ test("validates page tableLike and integrates the selected candidate without mut
   assert.ok(Object.isFrozen(normalized.pages[0].tables[0]));
 });
 
+test("requires tableLike pages to resolve a table and preserves non-table pages", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const make = (tableLike, extra = {}) => ({
+    schemaVersion: 1, engine: { name: "fixture", version: "1" }, pages: [{
+      pageNumber: 1, width: 100, height: 100, rotation: 0,
+      referenceImage: "page-001.png", blocks: [], tables: [], tableLike,
+      warnings: [], ...extra
+    }]
+  });
+  assert.equal(validateStructureManifest(make(false), scratch).pages[0].tables.length, 0);
+  lowQuality(() => validateStructureManifest(make(true), scratch));
+  lowQuality(() => validateStructureManifest(make(true, { tableCandidates: [] }), scratch));
+});
+
+test("uses low-quality errors for malformed candidates but schema errors for resolved tables", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const make = () => ({
+    schemaVersion: 1, engine: { name: "fixture", version: "1" }, pages: [{
+      pageNumber: 1, width: 100, height: 100, rotation: 0,
+      referenceImage: "page-001.png", blocks: [], tables: [], tableLike: true,
+      tableCandidates: [candidate()], warnings: []
+    }]
+  });
+  const malformedCandidate = make();
+  malformedCandidate.pages[0].tableCandidates[0].bbox = [0, 0, 101, 10];
+  lowQuality(() => validateStructureManifest(malformedCandidate, scratch));
+
+  const malformedResolved = make();
+  const resolved = malformedResolved.pages[0].tableCandidates[0];
+  delete resolved.source;
+  resolved.bbox = [0, 0, 101, 10];
+  malformedResolved.pages[0].tables = [resolved];
+  delete malformedResolved.pages[0].tableCandidates;
+  assert.throws(() => validateStructureManifest(malformedResolved, scratch), (error) => {
+    assert.equal(error.code, "PDF_STRUCTURE_SCHEMA_INVALID");
+    return true;
+  });
+});
+
+test("rechecks aggregate totals on the bounded clone when accessors change values", () => {
+  const { STRUCTURE_LIMITS } = require("../resource-policy");
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  const perPage = STRUCTURE_LIMITS.maxBlocksPerPage;
+  const pageCount = Math.floor(STRUCTURE_LIMITS.maxTotalBlocks / perPage) + 1;
+  const pages = Array.from({ length: pageCount }, (_, index) => {
+    const page = {
+      pageNumber: index + 1, width: 100, height: 100, rotation: 0,
+      referenceImage: "page-001.png", tables: [], tableLike: false, warnings: []
+    };
+    let reads = 0;
+    Object.defineProperty(page, "blocks", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return reads <= 3 ? [] : new Array(perPage).fill({
+          type: "paragraph", bbox: [0, 0, 1, 1], confidence: 1
+        });
+      }
+    });
+    return page;
+  });
+  assert.throws(() => validateStructureManifest({
+    schemaVersion: 1, engine: { name: "fixture", version: "1" }, pages
+  }, scratch), (error) => {
+    assert.equal(error.code, "PDF_STRUCTURE_SCHEMA_INVALID");
+    return true;
+  });
+});
+
 test("normalizes missing tableLike while rejecting invalid candidate containers and duplicate sources", () => {
   const { validateStructureManifest } = require("../pdf-structure-contract");
   const base = {
@@ -343,10 +499,7 @@ test("counts unresolved candidates against the manifest-wide table budget before
       tableCandidates: [candidate(), candidate({ source: "img2table" })], warnings: []
     }))
   };
-  assert.throws(() => validateStructureManifest(manifest, scratch), (error) => {
-    assert.equal(error.code, "PDF_STRUCTURE_SCHEMA_INVALID");
-    return true;
-  });
+  lowQuality(() => validateStructureManifest(manifest, scratch));
 });
 
 test("package and Win7 registrations include the score module and test exactly once", () => {
