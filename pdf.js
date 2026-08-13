@@ -337,9 +337,74 @@ async function inspectNativeDocxPackage(zipPath) {
   });
 }
 
-function opcAttribute(fragment, name) {
-  const match = fragment.match(new RegExp(`\\b${name}=["']([^"']+)["']`, "i"));
-  return match ? match[1] : "";
+const OPC_CONTENT_TYPES_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/content-types";
+const OPC_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
+const WORDPROCESSING_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const DRAWINGML_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const OFFICE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function qualifiedName(name) {
+  const separator = name.indexOf(":");
+  return separator < 0
+    ? { prefix: "", localName: name }
+    : { prefix: name.slice(0, separator), localName: name.slice(separator + 1) };
+}
+
+function namespaceElements(parsed) {
+  const elements = [];
+
+  function visit(name, value, inheritedNamespaces) {
+    const namespaces = new Map(inheritedNamespaces);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, declaration] of Object.entries(value)) {
+        if (key === "@xmlns") namespaces.set("", declaration);
+        else if (key.startsWith("@xmlns:")) namespaces.set(key.slice(7), declaration);
+      }
+    }
+    const qname = qualifiedName(name);
+    const attributes = [];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, attributeValue] of Object.entries(value)) {
+        if (!key.startsWith("@") || key === "@xmlns" || key.startsWith("@xmlns:")) continue;
+        const attributeName = qualifiedName(key.slice(1));
+        attributes.push({
+          namespaceURI: attributeName.prefix ? namespaces.get(attributeName.prefix) || "" : "",
+          localName: attributeName.localName,
+          value: attributeValue
+        });
+      }
+    }
+    elements.push({
+      namespaceURI: namespaces.get(qname.prefix) || "",
+      localName: qname.localName,
+      text: typeof value === "string" ? value : value?.["#text"] || "",
+      attributes
+    });
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    for (const [childName, childValue] of Object.entries(value)) {
+      if (childName.startsWith("@") || childName === "#text") continue;
+      for (const child of Array.isArray(childValue) ? childValue : [childValue]) {
+        visit(childName, child, namespaces);
+      }
+    }
+  }
+
+  for (const [rootName, rootValue] of Object.entries(parsed)) visit(rootName, rootValue, new Map());
+  return elements;
+}
+
+function parseNamespaceElements(xml) {
+  return namespaceElements(parseXmlToJson(xml));
+}
+
+function elementsNamed(elements, namespaceURI, localName) {
+  return elements.filter((element) =>
+    element.namespaceURI === namespaceURI && element.localName === localName);
+}
+
+function elementAttribute(element, namespaceURI, localName) {
+  return element.attributes.find((attribute) =>
+    attribute.namespaceURI === namespaceURI && attribute.localName === localName)?.value || "";
 }
 
 function nativeDocxInvalid() {
@@ -355,37 +420,42 @@ async function validateNativePdfDocx(outputPath) {
     const rootRelationships = inspected.buffers.get("_rels/.rels")?.toString("utf8");
     const documentXml = inspected.buffers.get("word/document.xml")?.toString("utf8");
     if (!contentTypes || !rootRelationships || !documentXml) throw nativeDocxInvalid();
-    const parsedContentTypes = parseXmlToJson(contentTypes);
-    const parsedRootRelationships = parseXmlToJson(rootRelationships);
-    const parsedDocument = parseXmlToJson(documentXml);
-    if (!Object.hasOwn(parsedContentTypes, "Types")
-      || !Object.hasOwn(parsedRootRelationships, "Relationships")
-      || !Object.keys(parsedDocument).some((name) => name === "document" || name.endsWith(":document"))) {
+    const contentTypeElements = parseNamespaceElements(contentTypes);
+    const rootRelationshipElements = parseNamespaceElements(rootRelationships);
+    const documentElements = parseNamespaceElements(documentXml);
+    if (elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Types").length !== 1
+      || elementsNamed(rootRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationships").length !== 1
+      || elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "document").length !== 1) {
       throw nativeDocxInvalid();
     }
-    const mainOverride = [...contentTypes.matchAll(/<Override\b([^>]*)\/?\s*>/gi)].some((match) =>
-      opcAttribute(match[1], "PartName") === "/word/document.xml"
-      && opcAttribute(match[1], "ContentType") === "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
-    const mainRelationship = [...rootRelationships.matchAll(/<Relationship\b([^>]*)\/?\s*>/gi)].some((match) =>
-      opcAttribute(match[1], "Type").endsWith("/officeDocument")
-      && opcAttribute(match[1], "Target") === "word/document.xml"
-      && !opcAttribute(match[1], "TargetMode"));
+    const mainOverride = elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Override")
+      .some((element) => elementAttribute(element, "", "PartName") === "/word/document.xml"
+        && elementAttribute(element, "", "ContentType")
+          === "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+    const mainRelationship = elementsNamed(rootRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")
+      .some((element) => elementAttribute(element, "", "Type").endsWith("/officeDocument")
+        && elementAttribute(element, "", "Target") === "word/document.xml"
+        && !elementAttribute(element, "", "TargetMode"));
     if (!mainOverride || !mainRelationship) throw nativeDocxInvalid();
 
-    const blipIds = [...documentXml.matchAll(/<a:blip\b[^>]*\br:embed=["']([^"']+)["'][^>]*>/gi)]
-      .map((match) => match[1]);
+    const blips = elementsNamed(documentElements, DRAWINGML_NAMESPACE, "blip");
+    const blipIds = blips
+      .map((element) => elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, "embed"));
+    if (blipIds.some((id) => !id)) throw nativeDocxInvalid();
     if (blipIds.length) {
       const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
       if (!documentRelationships) throw nativeDocxInvalid();
-      const parsedDocumentRelationships = parseXmlToJson(documentRelationships);
-      if (!Object.hasOwn(parsedDocumentRelationships, "Relationships")) throw nativeDocxInvalid();
+      const documentRelationshipElements = parseNamespaceElements(documentRelationships);
+      if (elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationships").length !== 1) {
+        throw nativeDocxInvalid();
+      }
       const relationships = new Map();
-      for (const match of documentRelationships.matchAll(/<Relationship\b([^>]*)\/?\s*>/gi)) {
-        const id = opcAttribute(match[1], "Id");
+      for (const element of elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")) {
+        const id = elementAttribute(element, "", "Id");
         if (!id || relationships.has(id)) throw nativeDocxInvalid();
         relationships.set(id, {
-          type: opcAttribute(match[1], "Type"), target: opcAttribute(match[1], "Target"),
-          mode: opcAttribute(match[1], "TargetMode")
+          type: elementAttribute(element, "", "Type"), target: elementAttribute(element, "", "Target"),
+          mode: elementAttribute(element, "", "TargetMode")
         });
       }
       for (const id of blipIds) {
@@ -396,8 +466,8 @@ async function validateNativePdfDocx(outputPath) {
       }
     }
 
-    const editableText = [...documentXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
-      .some((match) => match[1].replace(/<[^>]+>/g, "").trim().length > 0);
+    const editableText = elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "t")
+      .some((element) => String(element.text).trim().length > 0);
     if (!editableText) {
       const error = new Error("Native PDF conversion produced no editable content.");
       error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
