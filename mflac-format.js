@@ -335,11 +335,20 @@ async function downloadMusicexFile(purl, sip) {
   throw qmcError(`下载加密音频失败：${lastError ? lastError.message : "未知错误"}。`, "MFLAC_EKEY_NETWORK");
 }
 
-// 解析 musicex 密钥：先原档，无权限自动降档下载；返回 { type, ekey, fileBuf?, audioEnd? }
-async function resolveMusicex(creds, footer, originalFilename) {
+// 收集 musicex 解密候选：原档（ekey 非空时）+ 降档下载（F0M/O4M/M500）。
+// 臻品母带（AIM 等）原档 GetEVkey 可能返回「非空但错误」的 ekey（账号权限边界），
+// 直接解密会乱码；因此候选逐个尝试，第一个可识别格式者胜出，避免误报解密失败。
+async function collectMusicexCandidates(creds, footer, originalFilename, originalBuf) {
+  const candidates = [];
   const first = await fetchEkeyFromApi(creds, originalFilename, footer.mediaMid);
-  if (first.ekey) return { type: "direct", ekey: first.ekey };
-
+  if (first.ekey) {
+    candidates.push({
+      ekey: first.ekey,
+      fileBuf: originalBuf,
+      audioEnd: originalBuf.length - footer.footerSize,
+      note: "原档"
+    });
+  }
   for (const fb of musicexFallbackFilenames(footer.mediaMid)) {
     const info = await fetchEkeyFromApi(creds, fb.filename, footer.mediaMid);
     if (!info.ekey || !info.purl) continue;
@@ -347,19 +356,28 @@ async function resolveMusicex(creds, footer, originalFilename) {
     // 下载档位的文件可能带 musicex footer，也可能是无 footer 的裸 QMC2 加密体
     const fbFooter = parseMflacFooter(fileBuf);
     const audioEnd = fbFooter.type === "musicex" ? fileBuf.length - fbFooter.footerSize : fileBuf.length;
-    return {
-      type: "downloaded",
-      ekey: info.ekey,
-      fileBuf,
-      audioEnd,
-      note: fb.label
-    };
+    candidates.push({ ekey: info.ekey, fileBuf, audioEnd, note: fb.label });
   }
+  return candidates;
+}
 
-  throw qmcError(
-    "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
-    "MFLAC_EKEY_NETWORK"
-  );
+// 逐个尝试解密候选，返回第一个可识别音频格式的 { audio, format }；全部失败返回 null。
+function tryDecryptCandidates(candidates) {
+  for (const c of candidates) {
+    try {
+      const key = ekeyDecrypt(c.ekey);
+      if (!key || key.length < 8) continue;
+      const qmc2 = createQMC2(c.ekey);
+      if (!qmc2) continue;
+      const audio = Buffer.from(c.fileBuf.subarray(0, c.audioEnd));
+      qmc2.decrypt(audio, 0);
+      const format = detectAudioFormat(audio);
+      if (format !== "unknown") return { audio, format };
+    } catch {
+      // 该候选解密失败，尝试下一个
+    }
+  }
+  return null;
 }
 
 function detectAudioFormat(buf) {
@@ -397,7 +415,6 @@ async function convertMflac(inputPath, options = {}) {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
   } else if (footer.type === "musicex") {
-    audioEnd = buf.length - footer.footerSize;
     const apiFilename = /\.(mgg|mflac|mgg0|mgg1|mggl|mflac0|mflach)$/i.test(footer.filename)
       ? footer.filename
       : `${footer.filename}${path.extname(inputPath) || ".mflac"}`;
@@ -408,13 +425,20 @@ async function convertMflac(inputPath, options = {}) {
         "MFLAC_EKEY_REQUIRED"
       );
     }
-    // 先原档换密钥；原档无权限时自动尝试同一首歌的其他音质档位（F0M 无损/O4M/M500）
-    const resolved = await resolveMusicex(creds, footer, apiFilename);
-    if (resolved.type === "downloaded") {
-      audioSource = resolved.fileBuf;
-      audioEnd = resolved.audioEnd;
+    // 原档 + 降档候选逐个尝试解密；原档 ekey 可能是「非空但错误」的（臻品母带档权限边界），
+    // 解密乱码时自动落到降档下载的普通音质，避免「解密结果不可识别」误报。
+    const candidates = await collectMusicexCandidates(creds, footer, apiFilename, buf);
+    const decrypted = tryDecryptCandidates(candidates);
+    if (!decrypted) {
+      throw qmcError(
+        "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
+        "MFLAC_EKEY_NETWORK"
+      );
     }
-    ekey = resolved.ekey;
+    const musicexTempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-mflac-"));
+    const musicexNativePath = path.join(musicexTempDir, `native.${decrypted.format}`);
+    await fsp.writeFile(musicexNativePath, decrypted.audio);
+    return { nativePath: musicexNativePath, format: decrypted.format, tempDir: musicexTempDir };
   } else {
     throw qmcError("无法识别这个 MFLAC 的加密版本（footer 缺失或格式未知）。");
   }
@@ -439,4 +463,4 @@ async function convertMflac(inputPath, options = {}) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames };
+module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames, tryDecryptCandidates };
