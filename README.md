@@ -9,7 +9,7 @@
 
 [下载最新版 / Download](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [问题反馈 / Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues)
 
-![FlyingMouse Format mouse UI](public/assets/screenshots/home.png)
+![FlyingMouse Format mouse UI](docs/assets/home.png)
 
 ## 中文
 

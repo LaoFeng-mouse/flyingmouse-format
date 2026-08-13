@@ -4,7 +4,6 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
 const zlib = require("zlib");
-const yauzl = require("yauzl");
 const yazl = require("yazl");
 
 const { htmlToMarkdown } = require("./text-conversion");
@@ -179,40 +178,6 @@ ${navPoints}
 }
 
 // ---- EPUB 解析 ----
-
-function readZipEntries(zipPath) {
-  return new Promise((resolve, reject) => {
-    const entries = new Map();
-    yauzl.open(zipPath, { lazyEntries: true }, (error, zipfile) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      zipfile.on("entry", (entry) => {
-        if (!/\/$/.test(entry.fileName)) {
-          zipfile.openReadStream(entry, (streamError, stream) => {
-            if (streamError) {
-              reject(streamError);
-              return;
-            }
-            const chunks = [];
-            stream.on("data", (chunk) => chunks.push(chunk));
-            stream.on("end", () => entries.set(entry.fileName, Buffer.concat(chunks)));
-            stream.on("error", reject);
-          });
-        } else {
-          zipfile.readEntry();
-        }
-      });
-      zipfile.on("end", () => {
-        zipfile.close();
-        resolve(entries);
-      });
-      zipfile.on("error", reject);
-      zipfile.readEntry();
-    });
-  });
-}
 
 function readZipEntriesSync(zipPath) {
   const buffer = fs.readFileSync(zipPath);
