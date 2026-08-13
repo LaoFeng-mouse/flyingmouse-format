@@ -14,6 +14,11 @@ const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 256 * 1024 * 1024;
 const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
 const MAX_WORKSHEET_XML_BYTES = 16 * 1024 * 1024;
+const MAX_CORE_XML_BYTES = 8 * 1024 * 1024;
+const MAX_ZIP_ENTRY_BYTES = 64 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 2048;
+const MAX_ZIP_COMPRESSION_RATIO = 200;
+const MAX_ENGINE_METADATA_CHARS = 256;
 const REVIEW_FILL_ARGB = "FFFFE2A8";
 const MAX_DISPLAY_WARNING_COUNT = 8;
 const MAX_WARNING_DETAIL_CHARS = 256;
@@ -22,7 +27,8 @@ const SAFE_VALIDATION_REASONS = new Set([
   "sheet mismatch", "metadata mismatch", "table dimensions", "merge mismatch", "cell mismatch",
   "summary mismatch", "review highlight mismatch", "review note mismatch", "no editable table content",
   "review row count", "review row mismatch", "reference image count", "reference label mismatch",
-  "reference image mismatch", "missing reference media", "invalid package"
+  "reference image mismatch", "missing reference media", "invalid package", "xml dimension mismatch",
+  "xml merge mismatch", "xml row mismatch", "xml column mismatch", "xml formula mismatch", "xml hyperlink mismatch"
 ]);
 
 const ERROR_MESSAGES = Object.freeze({
@@ -54,6 +60,24 @@ function isStable(error) {
 
 function confidence(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : Number(value);
+}
+
+function engineMetadata(manifest) {
+  const source = manifest?.engine;
+  if (source !== undefined && (source === null || typeof source !== "object" || Array.isArray(source))) {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  const defaults = { name: "unknown", version: "unknown", language: "ch" };
+  const output = {};
+  for (const key of Object.keys(defaults)) {
+    const value = source?.[key] === undefined ? defaults[key] : source[key];
+    if (typeof value !== "string" || value.length < 1 || value.length > MAX_ENGINE_METADATA_CHARS ||
+        /[\u0000-\u001f\u007f]/.test(value)) {
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    }
+    output[key] = value;
+  }
+  return output;
 }
 
 function safeSheetName(pageNumber, tableNumber) {
@@ -313,6 +337,7 @@ function styleTableSheet(sheet, expected) {
 
 function addInfoSheet(workbook, manifest, expectedTables) {
   const sheet = workbook.addWorksheet("识别说明");
+  const engine = engineMetadata(manifest);
   configureSheet(sheet, 2);
   sheet.mergeCells("A1:G1");
   sheet.getCell("A1").value = "扫描 PDF 表格识别说明 / Recognition summary";
@@ -322,9 +347,9 @@ function addInfoSheet(workbook, manifest, expectedTables) {
   sheet.getRow(1).height = 34;
   const metadata = [
     ["字段", "值"],
-    ["识别引擎", String(manifest.engine?.name || "unknown")],
-    ["引擎版本", String(manifest.engine?.version || "unknown")],
-    ["识别语言", String(manifest.engine?.language || "ch")],
+    ["识别引擎", engine.name],
+    ["引擎版本", engine.version],
+    ["识别语言", engine.language],
     ["表格失败阈值", HARD_TABLE_CONFIDENCE],
     ["人工复核阈值", REVIEW_CELL_CONFIDENCE],
     ["使用提示", "黄色单元格需结合“原件对照”复核；表格单元格均可编辑。"]
@@ -479,41 +504,63 @@ function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-async function readBoundedZipEntry(packagePath, entryName) {
-  const zipfile = await openZipEntries(packagePath);
+function safeZipEntryName(name) {
+  if (typeof name !== "string" || !name || name.includes("\\") || name.startsWith("/") || name.includes("\0")) return false;
+  const candidate = name.endsWith("/") ? name.slice(0, -1) : name;
+  return Boolean(candidate) && candidate.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+function xmlEntryLimit(name) {
+  if (/^xl\/worksheets\/sheet\d+\.xml$/.test(name)) return MAX_WORKSHEET_XML_BYTES;
+  if (name === "xl/workbook.xml" || name === "xl/sharedStrings.xml" || name === "xl/styles.xml" || name.endsWith(".rels")) {
+    return MAX_CORE_XML_BYTES;
+  }
+  return name.endsWith(".xml") ? MAX_CORE_XML_BYTES : MAX_ZIP_ENTRY_BYTES;
+}
+
+async function inspectXlsxPackage(packagePath) {
+  let zipfile;
+  try { zipfile = await openZipEntries(packagePath); }
+  catch { throw new Error("invalid package"); }
   return new Promise((resolve, reject) => {
-    let found = null;
+    const names = new Set();
+    const buffers = new Map();
+    let entryCount = 0;
+    let aggregate = 0;
     let settled = false;
-    const fail = (error) => {
+    const fail = () => {
       if (settled) return;
       settled = true;
       try { zipfile.close(); } catch {}
-      reject(error);
+      reject(new Error("invalid package"));
     };
     zipfile.on("entry", (entry) => {
-      if (entry.fileName !== entryName) {
-        zipfile.readEntry();
-        return;
-      }
-      if (found || entry.uncompressedSize > MAX_WORKSHEET_XML_BYTES) {
-        fail(new Error("invalid package"));
-        return;
-      }
+      entryCount += 1;
+      const declared = Number(entry.uncompressedSize);
+      const compressed = Number(entry.compressedSize);
+      const limit = xmlEntryLimit(entry.fileName);
+      if (entryCount > MAX_ZIP_ENTRIES || !safeZipEntryName(entry.fileName) || names.has(entry.fileName) ||
+          !Number.isSafeInteger(declared) || declared < 0 || declared > limit ||
+          !Number.isSafeInteger(compressed) || compressed < 0 ||
+          (declared > 64 * 1024 && (compressed === 0 || declared / compressed > MAX_ZIP_COMPRESSION_RATIO))) return fail();
+      names.add(entry.fileName);
+      aggregate += declared;
+      if (!Number.isSafeInteger(aggregate) || aggregate > MAX_PACKAGE_BYTES || /^xl\/externalLinks\//.test(entry.fileName)) return fail();
+      const wanted = !entry.fileName.endsWith("/") && (entry.fileName.endsWith(".xml") || entry.fileName.endsWith(".rels"));
+      if (!wanted) { zipfile.readEntry(); return; }
       zipfile.openReadStream(entry, (error, stream) => {
-        if (error) return fail(error);
+        if (error) return fail();
         const chunks = [];
-        let total = 0;
+        let length = 0;
         stream.on("data", (chunk) => {
-          total += chunk.length;
-          if (total > MAX_WORKSHEET_XML_BYTES) {
-            stream.destroy(new Error("invalid package"));
-            return;
-          }
+          length += chunk.length;
+          if (length > declared || length > limit) { stream.destroy(); fail(); return; }
           chunks.push(chunk);
         });
         stream.on("error", fail);
         stream.on("end", () => {
-          found = Buffer.concat(chunks);
+          if (settled || length !== declared) return fail();
+          buffers.set(entry.fileName, Buffer.concat(chunks));
           zipfile.readEntry();
         });
       });
@@ -522,14 +569,284 @@ async function readBoundedZipEntry(packagePath, entryName) {
     zipfile.on("end", () => {
       if (settled) return;
       settled = true;
-      if (!found) reject(new Error("invalid package"));
-      else resolve(found);
+      try { zipfile.close(); } catch {}
+      resolve({ names, buffers });
     });
     zipfile.readEntry();
   });
 }
 
-async function validateZeroReviewSheet(packagePath, reviewSheet) {
+function decodeXmlAttribute(value) {
+  return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+function tokenizeXml(buffer, handlers = {}) {
+  const xml = buffer.toString("utf8");
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("invalid package");
+  const stack = [];
+  let cursor = 0;
+  while (cursor < xml.length) {
+    const start = xml.indexOf("<", cursor);
+    if (start < 0) break;
+    if (start > cursor) handlers.text?.(xml.slice(cursor, start));
+    if (xml.startsWith("<!--", start)) {
+      const end = xml.indexOf("-->", start + 4);
+      if (end < 0) throw new Error("invalid package");
+      cursor = end + 3;
+      continue;
+    }
+    let quote = "";
+    let end = start + 1;
+    for (; end < xml.length; end += 1) {
+      const char = xml[end];
+      if (quote) { if (char === quote) quote = ""; }
+      else if (char === '"' || char === "'") quote = char;
+      else if (char === ">") break;
+    }
+    if (end >= xml.length) throw new Error("invalid package");
+    const raw = xml.slice(start + 1, end).trim();
+    cursor = end + 1;
+    if (!raw || raw.startsWith("?")) continue;
+    if (raw.startsWith("!")) throw new Error("invalid package");
+    const closing = raw.startsWith("/");
+    const selfClosing = !closing && raw.endsWith("/");
+    const body = (closing ? raw.slice(1) : selfClosing ? raw.slice(0, -1) : raw).trim();
+    const nameMatch = /^[A-Za-z_][A-Za-z0-9_.:-]*/.exec(body);
+    if (!nameMatch) throw new Error("invalid package");
+    const name = nameMatch[0];
+    const attrs = {};
+    let rest = body.slice(name.length);
+    while (rest.trim()) {
+      rest = rest.trimStart();
+      const attr = /^([A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*(["'])(.*?)\2/s.exec(rest);
+      if (!attr || Object.hasOwn(attrs, attr[1])) throw new Error("invalid package");
+      attrs[attr[1]] = decodeXmlAttribute(attr[3]);
+      rest = rest.slice(attr[0].length);
+    }
+    if (closing) {
+      if (stack.pop() !== name) throw new Error("invalid package");
+      handlers.close?.(name);
+    } else {
+      handlers.open?.(name, attrs, selfClosing);
+      if (selfClosing) handlers.close?.(name);
+      else stack.push(name);
+    }
+  }
+  if (stack.length) throw new Error("invalid package");
+}
+
+function localName(name) { return name.includes(":") ? name.slice(name.lastIndexOf(":") + 1) : name; }
+
+function parseRelationships(buffer) {
+  const relationships = [];
+  const ids = new Set();
+  tokenizeXml(buffer, { open(name, attrs) {
+    if (localName(name) !== "Relationship") return;
+    if (!attrs.Id || !attrs.Type || !attrs.Target || String(attrs.TargetMode || "").toLowerCase() === "external") {
+      throw new Error("invalid package");
+    }
+    if (ids.has(attrs.Id)) throw new Error("invalid package");
+    ids.add(attrs.Id);
+    relationships.push(attrs);
+  } });
+  return relationships;
+}
+
+function relationshipTarget(sourcePart, target) {
+  if (typeof target !== "string" || !target || target.includes("\\") || target.includes("\0") || target.includes("%") ||
+      target.includes("?") || target.includes("#") || path.posix.isAbsolute(target) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) {
+    throw new Error("invalid package");
+  }
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(sourcePart), target));
+  if (!resolved || resolved === ".." || resolved.startsWith("../")) throw new Error("invalid package");
+  return resolved;
+}
+
+function mergeCoverage(merges) {
+  const covered = new Set();
+  for (const merge of merges) {
+    const match = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(merge);
+    if (!match) throw new Error("merge mismatch");
+    const startColumn = columnNumber(match[1]);
+    const endColumn = columnNumber(match[3]);
+    const startRow = Number(match[2]);
+    const endRow = Number(match[4]);
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let column = startColumn; column <= endColumn; column += 1) {
+        if (row !== startRow || column !== startColumn) covered.add(cellAddress(row - 1, column - 1));
+      }
+    }
+  }
+  return covered;
+}
+
+function columnNumber(letters) {
+  let value = 0;
+  for (const letter of letters) value = value * 26 + letter.charCodeAt(0) - 64;
+  return value;
+}
+
+function rectangleAddresses(lastRow, lastColumn) {
+  const output = new Set();
+  for (let row = 1; row <= lastRow; row += 1) {
+    for (let column = 1; column <= lastColumn; column += 1) output.add(cellAddress(row - 1, column - 1));
+  }
+  return output;
+}
+
+function referenceXmlLayout(manifest) {
+  const allowed = new Set(["A1", "B1", "C1", "D1", "E1", "F1", "G1", "H1"]);
+  const rows = new Set([1]);
+  const merges = ["A1:H1"];
+  let anchorRow = 2;
+  let lastContentRow = 1;
+  manifest.pages.forEach((page, index) => {
+    const labelRow = anchorRow;
+    if (index > 0) rows.add(labelRow - 1);
+    merges.push(`A${labelRow}:H${labelRow}`);
+    for (let column = 1; column <= 8; column += 1) allowed.add(cellAddress(labelRow - 1, column - 1));
+    const width = 500;
+    const height = Math.max(300, Math.min(680, Math.round(width * (Number(page.height) || 2339) / (Number(page.width) || 1653))));
+    const imageRows = Math.ceil(height / 20);
+    for (let row = labelRow; row <= labelRow + imageRows; row += 1) rows.add(row);
+    lastContentRow = labelRow + imageRows;
+    anchorRow = labelRow + imageRows + 3;
+  });
+  return { allowed, rows, merges: merges.sort(), dimension: `A1:H${lastContentRow}`, maxColumn: 8 };
+}
+
+function worksheetXmlSpec(name, expectedTables, expectedReview, manifest) {
+  if (name === "识别说明") {
+    const lastRow = 10 + manifest.pages.length;
+    const allowed = new Set(["A1", "B1", "C1", "D1", "E1", "F1", "G1"]);
+    for (let row = 2; row <= 8; row += 1) { allowed.add(`A${row}`); allowed.add(`B${row}`); }
+    for (let row = 10; row <= lastRow; row += 1) for (let column = 1; column <= 7; column += 1) allowed.add(cellAddress(row - 1, column - 1));
+    return { allowed, rows: new Set([1, 2, 3, 4, 5, 6, 7, 8, ...Array.from({ length: lastRow - 9 }, (_, i) => i + 10)]), merges: ["A1:G1"], dimension: `A1:G${lastRow}`, maxColumn: 7, comments: new Set() };
+  }
+  const table = expectedTables.find((item) => item.sheetName === name);
+  if (table) return {
+    allowed: rectangleAddresses(table.table.rowCount, table.table.columnCount),
+    rows: new Set(Array.from({ length: table.table.rowCount }, (_, i) => i + 1)),
+    merges: table.merges,
+    dimension: `A1:${cellAddress(table.table.rowCount - 1, table.table.columnCount - 1)}`,
+    maxColumn: table.table.columnCount,
+    comments: new Set(table.review.map((item) => item.address))
+  };
+  if (name === "待核对") {
+    const rows = Math.max(2, expectedReview.length + 1);
+    return { allowed: rectangleAddresses(rows, 6), rows: new Set(Array.from({ length: rows }, (_, i) => i + 1)),
+      merges: expectedReview.length ? [] : ["A2:F2"], dimension: `A1:F${rows}`, maxColumn: 6, comments: new Set() };
+  }
+  if (name === "原件对照") return { ...referenceXmlLayout(manifest), comments: new Set() };
+  throw new Error("sheet mismatch");
+}
+
+function parseWorksheetXml(buffer) {
+  const result = { cells: new Map(), rows: new Set(), merges: [], columns: [], dimension: "", hyperlinks: false, formula: false };
+  let activeCell = null;
+  tokenizeXml(buffer, {
+    open(name, attrs) {
+      const local = localName(name);
+      if (local === "dimension") result.dimension = attrs.ref || "";
+      else if (local === "row") result.rows.add(Number(attrs.r));
+      else if (local === "col") result.columns.push([Number(attrs.min), Number(attrs.max)]);
+      else if (local === "mergeCell") result.merges.push(attrs.ref || "");
+      else if (local === "hyperlink") result.hyperlinks = true;
+      else if (local === "c") {
+        if (!/^[A-Z]+[1-9]\d*$/.test(attrs.r || "") || result.cells.has(attrs.r)) throw new Error("cell mismatch");
+        activeCell = { hasData: false };
+        result.cells.set(attrs.r, activeCell);
+      } else if (local === "f") { result.formula = true; if (activeCell) activeCell.hasData = true; }
+      else if (activeCell) activeCell.hasData = true;
+    },
+    close(name) { if (localName(name) === "c") activeCell = null; },
+    text(value) { if (activeCell && value.trim()) activeCell.hasData = true; }
+  });
+  result.merges.sort();
+  return result;
+}
+
+function parseWorkbookSheets(buffer) {
+  const sheets = [];
+  tokenizeXml(buffer, { open(name, attrs) {
+    if (localName(name) === "sheet") sheets.push({ name: attrs.name, relationshipId: attrs["r:id"] });
+  } });
+  return sheets;
+}
+
+function parseCommentRefs(buffer) {
+  const refs = new Set();
+  tokenizeXml(buffer, { open(name, attrs) {
+    if (localName(name) === "comment") {
+      if (!/^[A-Z]+[1-9]\d*$/.test(attrs.ref || "") || refs.has(attrs.ref)) throw new Error("review note mismatch");
+      refs.add(attrs.ref);
+    }
+  } });
+  return refs;
+}
+
+function worksheetRelationshipsPath(sheetPath) {
+  return `${path.posix.dirname(sheetPath)}/_rels/${path.posix.basename(sheetPath)}.rels`;
+}
+
+function validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest) {
+  const workbookXml = packageInfo.buffers.get("xl/workbook.xml");
+  const workbookRelsXml = packageInfo.buffers.get("xl/_rels/workbook.xml.rels");
+  if (!workbookXml || !workbookRelsXml) throw new Error("invalid package");
+  for (const [name, buffer] of packageInfo.buffers) if (name.endsWith(".rels")) parseRelationships(buffer);
+  const sheets = parseWorkbookSheets(workbookXml);
+  if (sheets.length !== expectedNames.length || sheets.some((sheet, index) => sheet.name !== expectedNames[index] || !sheet.relationshipId)) {
+    throw new Error("sheet mismatch");
+  }
+  const workbookRels = new Map(parseRelationships(workbookRelsXml).map((relationship) => [relationship.Id, relationship]));
+  const referencedComments = new Set();
+  const referencedSheets = new Set();
+  sheets.forEach((sheet) => {
+    const relationship = workbookRels.get(sheet.relationshipId);
+    if (!relationship || !relationship.Type.endsWith("/worksheet")) throw new Error("sheet mismatch");
+    const sheetPath = relationshipTarget("xl/workbook.xml", relationship.Target);
+    if (referencedSheets.has(sheetPath)) throw new Error("sheet mismatch");
+    referencedSheets.add(sheetPath);
+    const xml = packageInfo.buffers.get(sheetPath);
+    if (!xml || !/^xl\/worksheets\/[^/]+\.xml$/.test(sheetPath)) throw new Error("sheet mismatch");
+    const spec = worksheetXmlSpec(sheet.name, expectedTables, expectedReview, manifest);
+    const actual = parseWorksheetXml(xml);
+    if (actual.formula) throw new Error("xml formula mismatch");
+    if (actual.hyperlinks) throw new Error("xml hyperlink mismatch");
+    if (actual.dimension !== spec.dimension) throw new Error("xml dimension mismatch");
+    if (JSON.stringify(actual.merges) !== JSON.stringify([...spec.merges].sort())) throw new Error("xml merge mismatch");
+    if (actual.columns.some(([min, max]) => !Number.isSafeInteger(min) || !Number.isSafeInteger(max) || min < 1 || max < min || max > spec.maxColumn)) {
+      throw new Error("xml column mismatch");
+    }
+    if ([...actual.rows].some((row) => !spec.rows.has(row))) throw new Error("xml row mismatch");
+    const covered = mergeCoverage(spec.merges);
+    for (const [address, cell] of actual.cells) {
+      if (!spec.allowed.has(address) || (covered.has(address) && cell.hasData)) throw new Error("cell mismatch");
+    }
+    const relsPath = worksheetRelationshipsPath(sheetPath);
+    const rels = packageInfo.buffers.has(relsPath) ? parseRelationships(packageInfo.buffers.get(relsPath)) : [];
+    const commentRelationships = rels.filter((item) => item.Type.endsWith("/comments"));
+    if (commentRelationships.length > 1) throw new Error("review note mismatch");
+    let comments = new Set();
+    if (commentRelationships.length) {
+      const commentsPath = relationshipTarget(sheetPath, commentRelationships[0].Target);
+      const commentsXml = packageInfo.buffers.get(commentsPath);
+      if (!commentsXml || referencedComments.has(commentsPath)) throw new Error("review note mismatch");
+      referencedComments.add(commentsPath);
+      comments = parseCommentRefs(commentsXml);
+    }
+    if (comments.size !== spec.comments.size || [...comments].some((address) => !spec.comments.has(address) || covered.has(address))) {
+      throw new Error("review note mismatch");
+    }
+  });
+  for (const name of packageInfo.names) {
+    if (/^xl\/worksheets\/[^/]+\.xml$/.test(name) && !referencedSheets.has(name)) throw new Error("sheet mismatch");
+    if (/^xl\/comments\d+\.xml$/.test(name) && !referencedComments.has(name)) throw new Error("review note mismatch");
+  }
+}
+
+function validateZeroReviewSheet(reviewSheet) {
   const merges = [...(reviewSheet.model.merges || [])];
   if (reviewSheet.rowCount !== 2 || merges.length !== 1 || merges[0] !== "A2:F2" ||
       reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE || notePresent(reviewSheet.getCell("A2").note)) {
@@ -541,42 +858,27 @@ async function validateZeroReviewSheet(packagePath, reviewSheet) {
       throw new Error("review row mismatch");
     }
   }
-  const xml = (await readBoundedZipEntry(packagePath, `xl/worksheets/sheet${reviewSheet.id}.xml`)).toString("utf8");
-  const rowRefs = [...xml.matchAll(/<row\b[^>]*\br="([^"]+)"[^>]*>/g)].map((match) => match[1]);
-  if (JSON.stringify(rowRefs) !== JSON.stringify(["1", "2"])) throw new Error("review row count");
-  const mergedCells = new Map();
-  for (const match of xml.matchAll(/<c\b(?=[^>]*\br="([A-F]2)")[^>]*(?:\/>|>[\s\S]*?<\/c>)/g)) {
-    if (mergedCells.has(match[1])) throw new Error("review row mismatch");
-    mergedCells.set(match[1], match[0]);
-  }
-  const masterTag = mergedCells.get("A2") || "";
-  const masterStyle = /\bs="([^"]+)"/.exec(masterTag)?.[1] || "";
-  for (const address of ["B2", "C2", "D2", "E2", "F2"]) {
-    const tag = mergedCells.get(address);
-    if (!tag) continue;
-    const style = /\bs="([^"]+)"/.exec(tag)?.[1] || "";
-    if (style !== masterStyle || /<(?:v|is|f)\b/.test(tag) || /\bt="(?!n\b)[^"]+"/.test(tag)) {
-      throw new Error("review row mismatch");
-    }
-  }
 }
 
 async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSystem = fs } = {}) {
   try {
     const info = await fileSystem.lstat(packagePath);
     if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > MAX_PACKAGE_BYTES) throw new Error("invalid package");
+    const engine = engineMetadata(manifest);
     const expectedTables = tableDescriptors(manifest).map(expectedTable);
     const expectedAssets = await preflightReferenceAssets(manifest, assetRoot, fileSystem);
     const expectedNames = expectedSheetNames(expectedTables);
+    const expectedReview = expectedTables.flatMap((expected) => expected.review);
+    const packageInfo = await inspectXlsxPackage(packagePath);
+    validateWorksheetXmlPackage(packageInfo, expectedNames, expectedTables, expectedReview, manifest);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(packagePath);
     if (workbook.worksheets.length !== expectedNames.length ||
         workbook.worksheets.some((sheet, index) => sheet.name !== expectedNames[index])) throw new Error("sheet mismatch");
-    const engine = manifest.engine || {};
     const infoSheet = workbook.getWorksheet("识别说明");
-    if (infoSheet.getCell("B3").value !== String(engine.name || "unknown") ||
-        infoSheet.getCell("B4").value !== String(engine.version || "unknown") ||
-        infoSheet.getCell("B5").value !== String(engine.language || "ch") ||
+    if (infoSheet.getCell("B3").value !== engine.name ||
+        infoSheet.getCell("B4").value !== engine.version ||
+        infoSheet.getCell("B5").value !== engine.language ||
         Number(infoSheet.getCell("B6").value) !== HARD_TABLE_CONFIDENCE ||
         Number(infoSheet.getCell("B7").value) !== REVIEW_CELL_CONFIDENCE) throw new Error("metadata mismatch");
     const expectedSummaries = summaryRows(manifest, expectedTables);
@@ -589,7 +891,7 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
     if (infoSheet.rowCount !== 10 + expectedSummaries.length) throw new Error("summary mismatch");
 
     let meaningful = 0;
-    const expectedReview = [];
+    const validatedReview = [];
     for (const expected of expectedTables) {
       const sheet = workbook.getWorksheet(expected.sheetName);
       if (!sheet || sheet.rowCount !== expected.table.rowCount || sheet.columnCount !== expected.table.columnCount) throw new Error("table dimensions");
@@ -621,13 +923,13 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
           }
         }
       }
-      expectedReview.push(...expected.review);
+      validatedReview.push(...expected.review);
     }
     if (!meaningful) throw new Error("no editable table content");
     const reviewSheet = workbook.getWorksheet("待核对");
-    if (expectedReview.length) {
-      if (reviewSheet.rowCount !== expectedReview.length + 1) throw new Error("review row count");
-      expectedReview.forEach((item, index) => {
+    if (validatedReview.length) {
+      if (reviewSheet.rowCount !== validatedReview.length + 1) throw new Error("review row count");
+      validatedReview.forEach((item, index) => {
         const actual = reviewSheet.getRow(index + 2).values.slice(1, 7);
         const expected = [item.pageNumber, item.sheetName, item.address, item.value, item.confidence, item.reference];
         if (actual.length !== expected.length || actual.some((value, cellIndex) => comparable(value) !== comparable(expected[cellIndex]))) {
@@ -635,7 +937,7 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
         }
       });
     } else {
-      await validateZeroReviewSheet(packagePath, reviewSheet);
+      validateZeroReviewSheet(reviewSheet);
     }
     const referenceSheet = workbook.getWorksheet("原件对照");
     const images = referenceSheet.getImages();
@@ -662,7 +964,7 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
     return {
       sheetNames: expectedNames,
       tableSheets: expectedTables.map((item) => item.sheetName),
-      reviewCellCount: expectedReview.length,
+      reviewCellCount: validatedReview.length,
       referenceImageCount: images.length
     };
   } catch (error) {
@@ -718,6 +1020,7 @@ async function writePdfOfficeXlsx({
   if (typeof outputPath !== "string" || !outputPath) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   const temporaryPath = `${outputPath}.tmp-${crypto.randomUUID()}`;
   try {
+    engineMetadata(manifest);
     const expectedTables = tableDescriptors(manifest).map(expectedTable);
     const assets = await preflightReferenceAssets(manifest, assetRoot, fileSystem);
     const workbook = new ExcelJS.Workbook();

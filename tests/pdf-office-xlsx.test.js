@@ -94,7 +94,7 @@ async function loadWorkbook(filePath) {
   return workbook;
 }
 
-async function rewriteZipEntry(inputPath, outputPath, entryName, mutate) {
+async function rewriteZipEntry(inputPath, outputPath, entryName, mutate, additions = []) {
   const zipfile = await openZipEntries(inputPath);
   const entries = await new Promise((resolve, reject) => {
     const collected = [];
@@ -129,8 +129,38 @@ async function rewriteZipEntry(inputPath, outputPath, entryName, mutate) {
   for (const entry of entries) {
     archive.addBuffer(entry.name === entryName ? mutate(entry.buffer) : entry.buffer, entry.name);
   }
+  for (const entry of additions) archive.addBuffer(entry.buffer, entry.name);
   archive.end();
   await completed;
+}
+
+async function createZip(outputPath, entries) {
+  const archive = new yazl.ZipFile();
+  const output = fsSync.createWriteStream(outputPath);
+  const completed = new Promise((resolve, reject) => {
+    output.on("close", resolve);
+    output.on("error", reject);
+    archive.outputStream.on("error", reject);
+  });
+  archive.outputStream.pipe(output);
+  for (const entry of entries) archive.addBuffer(entry.buffer, entry.name);
+  archive.end();
+  await completed;
+}
+
+async function patchZipHeaders(filePath, patch) {
+  const bytes = await fs.readFile(filePath);
+  for (let offset = 0; offset <= bytes.length - 30; offset += 1) {
+    const signature = bytes.readUInt32LE(offset);
+    if (signature === 0x04034b50) patch(bytes, offset, "local");
+    if (signature === 0x02014b50) patch(bytes, offset, "central");
+  }
+  await fs.writeFile(filePath, bytes);
+}
+
+async function validateInvalidZip(root, fileName, input = manifest()) {
+  const packagePath = path.join(root, fileName);
+  await assert.rejects(validatePdfOfficeXlsx(packagePath, { manifest: input, assetRoot: root }), outputInvalid);
 }
 
 test("uses the documented hard and review confidence thresholds", () => {
@@ -415,6 +445,158 @@ test("zero-review validation rejects an isolated annotation on merged master A2"
   const damagedPath = path.join(root, "zero-review-master-note.xlsx");
   await workbook.xlsx.writeFile(damagedPath);
   await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: input, assetRoot: root }), outputInvalid);
+});
+
+test("ZIP preflight rejects duplicate, unsafe, oversized and compression-bomb entries before ExcelJS", async (t) => {
+  const root = await workspace(t);
+  const duplicatePath = path.join(root, "duplicate.xlsx");
+  await createZip(duplicatePath, [
+    { name: "a.xml", buffer: Buffer.from("<a/>") },
+    { name: "b.xml", buffer: Buffer.from("<b/>") }
+  ]);
+  await patchZipHeaders(duplicatePath, (bytes, offset, kind) => {
+    const nameLengthOffset = kind === "local" ? 26 : 28;
+    const nameOffset = offset + (kind === "local" ? 30 : 46);
+    const nameLength = bytes.readUInt16LE(offset + nameLengthOffset);
+    if (bytes.subarray(nameOffset, nameOffset + nameLength).toString() === "b.xml") Buffer.from("a.xml").copy(bytes, nameOffset);
+  });
+  await validateInvalidZip(root, "duplicate.xlsx");
+
+  const unsafePath = path.join(root, "unsafe.xlsx");
+  await createZip(unsafePath, [{ name: "xl/a.xml", buffer: Buffer.from("<a/>") }]);
+  await patchZipHeaders(unsafePath, (bytes, offset, kind) => {
+    const nameOffset = offset + (kind === "local" ? 30 : 46);
+    Buffer.from("../a.xml").copy(bytes, nameOffset);
+  });
+  await validateInvalidZip(root, "unsafe.xlsx");
+
+  const oversizedPath = path.join(root, "oversized.xlsx");
+  await createZip(oversizedPath, [{ name: "xl/workbook.xml", buffer: Buffer.from("<workbook/>") }]);
+  await patchZipHeaders(oversizedPath, (bytes, offset, kind) => {
+    bytes.writeUInt32LE(32 * 1024 * 1024, offset + (kind === "local" ? 22 : 24));
+  });
+  await validateInvalidZip(root, "oversized.xlsx");
+
+  const bombPath = path.join(root, "ratio-bomb.xlsx");
+  await createZip(bombPath, [{ name: "xl/workbook.xml", buffer: Buffer.alloc(512 * 1024) }]);
+  await validateInvalidZip(root, "ratio-bomb.xlsx");
+
+  const validPath = path.join(root, "valid-with-extra-entry.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  const validBombPath = path.join(root, "valid-ratio-bomb.xlsx");
+  await rewriteZipEntry(validPath, validBombPath, "[Content_Types].xml", (buffer) => buffer, [
+    { name: "xl/unused-bomb.bin", buffer: Buffer.alloc(512 * 1024) }
+  ]);
+  let excelJsLoaded = false;
+  const OriginalWorkbook = ExcelJS.Workbook;
+  ExcelJS.Workbook = class extends OriginalWorkbook {
+    constructor(...args) { excelJsLoaded = true; super(...args); }
+  };
+  try { await validateInvalidZip(root, "valid-ratio-bomb.xlsx"); }
+  finally { ExcelJS.Workbook = OriginalWorkbook; }
+  assert.equal(excelJsLoaded, false);
+
+  const excessiveEntriesPath = path.join(root, "too-many-entries.xlsx");
+  await createZip(excessiveEntriesPath, Array.from({ length: 2049 }, (_, index) => ({
+    name: `entries/e${String(index).padStart(4, "0")}.bin`, buffer: Buffer.alloc(0)
+  })));
+  await validateInvalidZip(root, "too-many-entries.xlsx");
+});
+
+test("worksheet XML allowlist rejects formulas, covered merged text and hidden cells", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "xml-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  const attacks = [
+    ["formula", "xl/worksheets/sheet2.xml", (xml) => xml.replace(/(<c\b(?=[^>]*\br="B3")[^>]*>)/, "$1<f>1+1</f>")],
+    ["covered-merge-text", "xl/worksheets/sheet2.xml", (xml) => xml.replace(/<c\b(?=[^>]*\br="B1")[^>]*\/>/, '<c r="B1" t="inlineStr"><is><t>hidden</t></is></c>')],
+    ["hidden-G1", "xl/worksheets/sheet1.xml", (xml) => xml.replace(/<c\b(?=[^>]*\br="G1")[^>]*\/>/, '<c r="G1" t="inlineStr"><is><t>hidden</t></is></c>')],
+    ["hidden-H1-reordered", "xl/worksheets/sheet1.xml", (xml) => xml.replace(/(<\/row>)/, '<c s="1" r="H1"/>$1')],
+    ["hidden-H11", "xl/worksheets/sheet1.xml", (xml) => xml.replace(/(<row\b[^>]*\br="11"[^>]*>[\s\S]*?)(<\/row>)/, '$1<c r="H11" t="inlineStr"><is><t>hidden</t></is></c>$2')],
+    ["extra-column", "xl/worksheets/sheet1.xml", (xml) => xml.replace("</cols>", '<col min="8" max="8" width="1" hidden="1"/></cols>')],
+    ["hyperlink", "xl/worksheets/sheet2.xml", (xml) => xml.replace("</worksheet>", '<hyperlinks><hyperlink ref="A1" location="P001-T01!A1"/></hyperlinks></worksheet>')]
+  ];
+  for (const [name, entryName, mutate] of attacks) {
+    const damagedPath = path.join(root, `${name}.xlsx`);
+    await rewriteZipEntry(validPath, damagedPath, entryName, (buffer) => {
+      const xml = buffer.toString("utf8");
+      const changed = mutate(xml);
+      assert.notEqual(changed, xml, name);
+      return Buffer.from(changed);
+    });
+    await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: manifest(), assetRoot: root }), outputInvalid, name);
+  }
+});
+
+test("worksheet XML allowlist rejects comments on covered merged cells and external relationships", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "xml-rel-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  const workbook = await loadWorkbook(validPath);
+  workbook.getWorksheet("P001-T01").getCell("B1").note = "hidden";
+  const commentPath = path.join(root, "covered-comment.xlsx");
+  await workbook.xlsx.writeFile(commentPath);
+  await assert.rejects(validatePdfOfficeXlsx(commentPath, { manifest: manifest(), assetRoot: root }), outputInvalid);
+
+  const externalPath = path.join(root, "external-relationship.xlsx");
+  await rewriteZipEntry(validPath, externalPath, "xl/_rels/workbook.xml.rels", (buffer) => {
+    const xml = buffer.toString("utf8");
+    return Buffer.from(xml.replace("</Relationships>", '<Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="https://example.invalid/book.xlsx" TargetMode="External"/></Relationships>'));
+  });
+  await assert.rejects(validatePdfOfficeXlsx(externalPath, { manifest: manifest(), assetRoot: root }), outputInvalid);
+});
+
+test("worksheet XML allowlist requires exact merge sets on info, table, review and reference sheets", async (t) => {
+  const root = await workspace(t);
+  const validPath = path.join(root, "merge-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: validPath });
+  for (const [name, sheetName, merge] of [
+    ["info", "识别说明", "C2:D2"],
+    ["table", "P002-T01", "A1:B1"],
+    ["review", "待核对", "A1:B1"],
+    ["reference", "原件对照", "A3:B3"]
+  ]) {
+    const workbook = await loadWorkbook(validPath);
+    workbook.getWorksheet(sheetName).mergeCells(merge);
+    const damagedPath = path.join(root, `extra-merge-${name}.xlsx`);
+    await workbook.xlsx.writeFile(damagedPath);
+    await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: manifest(), assetRoot: root }), outputInvalid, name);
+  }
+});
+
+test("rejects oversized or non-scalar engine metadata before writing", async (t) => {
+  const root = await workspace(t);
+  for (const [name, value] of [["oversized", "x".repeat(100_000)], ["object", { private: "value" }]]) {
+    const input = manifest();
+    input.engine.name = value;
+    const outputPath = path.join(root, `metadata-${name}.xlsx`);
+    await assert.rejects(writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath }), outputInvalid);
+    await assert.rejects(fs.lstat(outputPath), { code: "ENOENT" });
+  }
+});
+
+test("accepts engine metadata at 256 characters and rejects 257", async (t) => {
+  const root = await workspace(t);
+  const accepted = manifest();
+  accepted.engine.name = "x".repeat(256);
+  const acceptedPath = path.join(root, "metadata-256.xlsx");
+  await writePdfOfficeXlsx({ manifest: accepted, assetRoot: root, outputPath: acceptedPath });
+  assert.equal((await loadWorkbook(acceptedPath)).getWorksheet("识别说明").getCell("B3").value.length, 256);
+
+  const rejected = manifest();
+  rejected.engine.name = "x".repeat(257);
+  const rejectedPath = path.join(root, "metadata-257.xlsx");
+  await assert.rejects(writePdfOfficeXlsx({ manifest: rejected, assetRoot: root, outputPath: rejectedPath }), outputInvalid);
+  await assert.rejects(fs.lstat(rejectedPath), { code: "ENOENT" });
+});
+
+test("writes byte-deterministic XLSX packages for identical structured input", async (t) => {
+  const root = await workspace(t);
+  const first = path.join(root, "deterministic-a.xlsx");
+  const second = path.join(root, "deterministic-b.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: first });
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: second });
+  assert.deepEqual(await fs.readFile(first), await fs.readFile(second));
 });
 
 test("validator rejects raw text or images without meaningful editable table data", async (t) => {
