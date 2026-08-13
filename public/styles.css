@@ -545,6 +545,25 @@ input:focus-visible {
   background: var(--error);
 }
 
+/* 不确定进度（单文件长任务：视频/PDF/Office 转码无实时进度，用滑动动画消除「卡死」错觉） */
+.progress-panel.indeterminate .progress-fill {
+  width: 40%;
+  transition: none;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-panel.indeterminate .progress-fill {
+    width: 100%;
+    animation: none;
+  }
+}
+
 .status-box {
   min-height: 116px;
   border-radius: 12px;
@@ -791,7 +810,7 @@ input:focus-visible {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
+  line-height: 1.5;
 }
 
 .feedback-email {

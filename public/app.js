@@ -133,9 +133,10 @@ const messages = {
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。",
     "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
-    "sponsor.description": "如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费",
+    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
     "sponsor.qrAlt": "微信收款码",
     "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
+    "feedback.guide": "问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。",
     "tutorial.qq.title": "QQ 音乐登录教程",
     "tutorial.close": "关闭",
     "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。注意：无论你的歌是从 QQ 音乐下载的、还是从微信聊天里收到的，获取 cookie 的步骤完全一样——都是去网页版 y.qq.com 登录同一个 QQ 账号。",
@@ -211,9 +212,10 @@ const messages = {
     "formats.aria": "Supported formats", "formats.title": "Supported now",
     "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT.",
     "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
-    "sponsor.description": "If FlyingMouse Format helped you, you can buy Mouse a snack. Completely optional; the app stays free.",
+    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack — completely optional. If anyone charges you for this app, it's a scam.",
     "sponsor.qrAlt": "WeChat payment QR code",
     "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
+    "feedback.guide": "Feedback: if a conversion fails, send the problem file, the exported diagnostics, and a screenshot to 3465177342@qq.com and I'll look into it.",
     "tutorial.qq.title": "QQ Music Login Guide",
     "tutorial.close": "Close",
     "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again. Note: whether your song came from QQ Music or was received in WeChat, the steps are identical — just sign in to y.qq.com with the same QQ account.",
@@ -383,6 +385,44 @@ function setProgress(value, label, type = "") {
   progressPercent.textContent = `${safeValue}%`;
   progressFill.style.width = `${safeValue}%`;
   progressTrack.setAttribute("aria-valuenow", String(safeValue));
+}
+
+// 不确定进度（单文件长任务：视频/PDF/Office 转码无实时进度，进度条滑动动画代替死板的 0%）
+function setIndeterminateProgress(label) {
+  state.progressValue = 0;
+  progressPanel.hidden = false;
+  progressPanel.className = "progress-panel indeterminate";
+  progressLabel.textContent = label;
+  progressPercent.textContent = "";
+  progressFill.style.width = "";
+  progressTrack.setAttribute("aria-valuenow", "0");
+}
+
+// 长任务目标：转码/转换耗时较长（视频编码、PDF/Office 经 LibreOffice/docengine），无实时进度。
+const LONG_TASK_TARGETS = new Set([
+  "mp4", "mov", "mkv", "webm", "gif",
+  "pdf", "docx", "odt", "rtf", "xlsx", "xls", "ods", "pptx", "odp"
+]);
+
+function isLongTaskTarget(target) {
+  return LONG_TASK_TARGETS.has(String(target || "").toLowerCase());
+}
+
+function longTaskProgressLabel(target) {
+  const fmt = String(target || "").toLowerCase();
+  if (["mp4", "mov", "mkv", "webm", "gif"].includes(fmt)) {
+    return i18n.language === "en-US"
+      ? "Transcoding video — this can take a few minutes, please wait…"
+      : "正在转码视频，可能需要几分钟，请耐心等待…";
+  }
+  if (fmt === "pdf") {
+    return i18n.language === "en-US"
+      ? "Converting to PDF — this can take a while, please wait…"
+      : "正在转换为 PDF，可能需要一点时间，请耐心等待…";
+  }
+  return i18n.language === "en-US"
+    ? "Converting document — this can take a while, please wait…"
+    : "正在转换文档，可能需要一点时间，请耐心等待…";
 }
 
 function resetProgress() {
@@ -966,11 +1006,17 @@ async function convertCurrentFiles() {
 
   let successCount = 0;
   let failCount = 0;
+  // 单文件长任务（视频/PDF/Office 转码）无实时进度，用不确定滑动动画代替死板的 0%
+  const useIndeterminate = state.files.length === 1 && isLongTaskTarget(targetFormat);
 
   for (let index = 0; index < state.files.length; index += 1) {
     const file = state.files[index];
     setBatchResult(index, { status: "converting", detail: i18n.language === "en-US" ? `Converting to ${targetFormat.toUpperCase()}` : `正在转换为 ${targetFormat.toUpperCase()}` });
-    setProgress((index / state.files.length) * 100, i18n.language === "en-US" ? `Converting ${index + 1}/${state.files.length}` : `正在转换 ${index + 1}/${state.files.length}`);
+    if (useIndeterminate) {
+      setIndeterminateProgress(longTaskProgressLabel(targetFormat));
+    } else {
+      setProgress((index / state.files.length) * 100, i18n.language === "en-US" ? `Converting ${index + 1}/${state.files.length}` : `正在转换 ${index + 1}/${state.files.length}`);
+    }
 
     try {
       const result = await convertOneFile(file, targetFormat);
