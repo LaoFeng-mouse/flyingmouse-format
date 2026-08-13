@@ -19,27 +19,31 @@
 - **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码）；**用户已确认上传到 Partner Center（2026-08-13）**。注意：商店展示图标来自 Partner Center 的 Store listing 素材与包内 assets 是两套，若商店页面仍显示橙色闪电，需检查 Store listing 的 logo 素材是否同步为鼠鼠；认证/发布状态需现场回读。
 - **待办（下一窗口）**：① Partner Center 现场回读 0.4.1 认证/发布状态 + 确认 Store listing 图标素材为鼠鼠；② 清理临时产物：output/.trash-ci-artifacts-040、output/.trash-ci-engines-check、output/.trash-release-upload*（均已确认无用，已移入 .trash-）、output/ci-artifacts-041（0.4.1 四平台发布证据，可留可删）、scripts/.trash-tmp/（75 个会话临时脚本）；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
 
-## 进行中（2026-08-13，未提交/未发布）
+## 进行中（2026-08-13，已提交本地，未推送/未发布）
 
-### KGMA（酷狗会员加密音频）离线解密 —— 已完成，待提交
+### KGMA（酷狗会员加密音频）离线解密 —— 已提交 83a3cd5
 - 新增 `kgma-format.js`：crypto_version=3 / crypto_slot=1，16B 密钥内嵌文件头 offset 0x2c，**完全离线可解**（无需酷狗客户端/密钥库）；算法移植 arcana6264/unlock-music `kgm_v3.rs`
 - 接线：config.js audioInput 加 `kgma` → server.js 音频解密分发五分支（ncm/kgg/kgma/mflac/mgg）→ 白名单四处（package.json build.files / win7-build-profile.js REQUIRED_RUNTIME_FILES / tests/win7-build-profile.test.js 两处清单）
 - 测试 `tests/kgma-format.test.js` 7 项（6 单测 + 1 真实样本 fixture 保护，本机 7/7）；fixture `tests/fixtures/sample.kgma` 被 gitignore 不入库（CI 自动 skip）
 - 真实样本 E2E：薛之谦《演员》/林俊杰《背对背拥抱》.kgma → FLAC → MP3 全链路通过
 - 与 KGG 区别：KGMA 密钥内嵌文件头（离线可解）；KGG v5 密钥在酷狗本地库 KGMusicV3.db（需装酷狗）。用户问「KGM 转不了 mp3」实际是 .kgma，现已支持
 
-### 视频输出编码选择（h264/h265/av1）—— 已完成，待提交
+### 视频输出编码选择（h264/h265/av1）—— 已提交 6c66f7b
 - 后端 media.js `videoEncoderArgs`（h264=libx264/h265=libx265/av1=libsvtav1）+ server.js 读 `req.body.videoCodec`（白名单校验，非法回退 h264）
 - 前端 public/index.html + app.js「视频编码」下拉（目标 mp4/mov/mkv 时显示，仿 zip 压缩级别字段）
 - 测试 `tests/media-codec.test.js` 4 项 + `tests/ui-static.test.js` 新增 1 项静态断言
 - E2E 实测：mkv 源 → mp4 目标，h265→hevc / av1→av1 / 默认→h264 全链路通过（引擎 ffmpeg 实跑）
 
+### 检测更新入口默认隐藏 —— 已提交 eafd3a5
+- updateButton 默认 hidden（不再常驻显示「检查更新」）；renderUpdateStatus 仅 available/downloaded 亮出按钮 + 状态提示，checking 给手动检查反馈，upToDate/error/unavailable 静默
+- electron-main.js 不需改：本就推 available/downloaded/upToDate/error 状态，前端按状态决定显隐
+
 ### 待办（下一窗口）
-- ① 检测更新隐藏（自动检测、有更新才显示入口，现为固定显示）
-- ② 报错反馈入口（伸缩小窗 + 诊断包 + 邮件到 3465177342@qq.com）—— 需定「诊断包 + mailto 打开默认邮件客户端」还是「跳转邮箱页面」
-- ③ PDF→Word 版式还原 —— 需选方案（现方案只抽文字，不还原版式）
-- ④ 工程图纸大图上限 —— 需拍板：图片合并 PDF 是否同 PDF 页数一样完全放开，还是给明确上限（如 A0 400dpi ≈ 3 亿像素）
-- ⑤ KGMA 解密 FLAC 尾部 ~4B 残留清理（可在 convertKgma 里重封）—— 需拍板是否顺手做
+- ① 报错反馈入口（伸缩小窗 + 诊断包 + 邮件到 3465177342@qq.com）—— 需定「诊断包 + mailto 打开默认邮件客户端」还是「跳转邮箱页面」
+- ② PDF→Word 版式还原 —— 需选方案（现方案只抽文字，不还原版式）
+- ③ 工程图纸大图上限 —— 需拍板：图片合并 PDF 是否同 PDF 页数一样完全放开，还是给明确上限（如 A0 400dpi ≈ 3 亿像素）
+- ④ KGMA 解密 FLAC 尾部 ~4B 残留清理（可在 convertKgma 里重封）—— 需拍板是否顺手做
+- ⑤ 推送 main + 发布：KGMA/视频编码/检测更新隐藏三个 feat 已提交本地，待用户过目 diff 后 push（走代理）+ 决定是否 bump 版本号发版
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
