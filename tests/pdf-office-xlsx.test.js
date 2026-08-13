@@ -404,6 +404,19 @@ test("zero-review validation rejects isolated independent B2 content under the e
   await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: input, assetRoot: root }), outputInvalid);
 });
 
+test("zero-review validation rejects an isolated annotation on merged master A2", async (t) => {
+  const root = await workspace(t);
+  const input = manifest();
+  input.pages[0].tables[0].cells.at(-1).confidence = 0.9;
+  const validPath = path.join(root, "zero-review-valid-master-note.xlsx");
+  await writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath: validPath });
+  const workbook = await loadWorkbook(validPath);
+  workbook.getWorksheet("待核对").getCell("A2").note = "bogus";
+  const damagedPath = path.join(root, "zero-review-master-note.xlsx");
+  await workbook.xlsx.writeFile(damagedPath);
+  await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: input, assetRoot: root }), outputInvalid);
+});
+
 test("validator rejects raw text or images without meaningful editable table data", async (t) => {
   const root = await workspace(t);
   const outputPath = path.join(root, "raw-only.xlsx");

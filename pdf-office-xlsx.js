@@ -532,7 +532,7 @@ async function readBoundedZipEntry(packagePath, entryName) {
 async function validateZeroReviewSheet(packagePath, reviewSheet) {
   const merges = [...(reviewSheet.model.merges || [])];
   if (reviewSheet.rowCount !== 2 || merges.length !== 1 || merges[0] !== "A2:F2" ||
-      reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE) {
+      reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE || notePresent(reviewSheet.getCell("A2").note)) {
     throw new Error("review row count");
   }
   for (const column of ["B", "C", "D", "E", "F"]) {
