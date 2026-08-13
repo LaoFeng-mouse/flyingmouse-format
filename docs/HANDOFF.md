@@ -19,38 +19,45 @@
 - **商店 APPX**：dist/FlyingMouse Format-Setup-0.4.1-x64.appx 已构建并验证（0.4.1.0 / 鼠鼠 logo / dcraw / musicex 降档代码）；**用户已确认上传到 Partner Center（2026-08-13）**。注意：商店展示图标来自 Partner Center 的 Store listing 素材与包内 assets 是两套，若商店页面仍显示橙色闪电，需检查 Store listing 的 logo 素材是否同步为鼠鼠；认证/发布状态需现场回读。
 - **待办（下一窗口）**：① Partner Center 现场回读 0.4.1 认证/发布状态 + 确认 Store listing 图标素材为鼠鼠；② 清理临时产物：output/.trash-ci-artifacts-040、output/.trash-ci-engines-check、output/.trash-release-upload*（均已确认无用，已移入 .trash-）、output/ci-artifacts-041（0.4.1 四平台发布证据，可留可删）、scripts/.trash-tmp/（75 个会话临时脚本）；③ 真实 RAW 样本验收（无真实相机样张）；④ 真实 Win7/Mac 物理设备验收
 
-## 待发版（2026-08-13，已提交本地 9 个提交，未推送/未发布，将 bump 0.5.0）
+## v0.5.0 已发布（2026-08-13）
 
-### 本次会话新增功能（全部已提交）
+### 本次新增功能（已提交并发布）
 
 - **KGMA 离线解密**（83a3cd5）：酷狗会员格式，16B 密钥内嵌文件头 offset 0x2c，纯离线可解（无需酷狗客户端/密钥库）
 - **视频输出编码选择**（6c66f7b）：h264/h265/av1 可选，前端下拉（目标 mp4/mov/mkv 时显示）
 - **检测更新入口默认隐藏**（eafd3a5）：updateButton 默认 hidden，有更新才亮出
-- **PDF→Word 版式还原**（6c72c2d）：集成 pdf2docx（docengine convert），段落/表格/图片/字体还原，实测 3×3 表格/合并单元格/无框表格全保留
-- **PDF→Excel 表格提取改用 camelot**（28587bb + 88c6fba）：标准表格 100% 还原（旧自研有标题误判/列错位/OCR 认错），加质量门槛（裁剪/特殊布局回退自研）
+- **PDF→Word 版式还原**（6c72c2d）：集成 pdf2docx（docengine convert），段落/表格/图片/字体还原
+- **PDF→Excel 表格提取改用 camelot**（28587bb + 88c6fba）：标准表格 100% 还原，加质量门槛回退自研
 - **.mmp4 支持**（89d6db7）：QQ 音乐 musicex 变体（D0M1 档位），尾部 musicex footer，走现有 musicex 解密链路
+- **mac/win7 禁用自动更新**（16f6881）：mac 无 latest-mac.yml 检查必 404；win7 的 latest.yml 指向标准版（Electron 43）会坑 Win7 用户
+- **商店版隐藏加密音频解锁入口**（5921971）：process.windowsStore 过滤 unlockAudioInputs（ncm/kgg/mflac/mgg/kgma/mmp4）+ 解密分发拒绝 AUDIO_UNLOCK_UNAVAILABLE_ON_STORE，降低 DRM 规避法律风险
+- **Release 云端发布**（29d4936）：CI 构建完自动创建 Release + 上传（publish job），免本地下载（GitHub 对象存储直连/代理都只有 35-56KB/s）
 
 ### 统一文档引擎 docengine
-- pdf2docx + camelot 合并打包成一个 `docengine.exe`（bin/docengine/，270MB），共享 numpy/opencv/pandas（分开打包要 374MB，省 104MB）
+- pdf2docx + camelot 合并打包成一个 `docengine.exe`（bin/docengine/，270MB），共享 numpy/opencv/pandas（分开打包要 374MB）
 - 子命令：`convert`（PDF→Word）+ `table`（PDF→Excel 表格，输出 JSON）
-- win7 版过滤掉（Python 3.12 不支持 Win7，PDF→docx/表格回退纯 JS 实现）
-- 依赖：PyMuPDF（AGPL-3.0）+ camelot（MIT，numpy/pandas/opencv/pypdfium2 全宽松）
+- win7/mac 排除（Python 3.12 不支持 Win7，回退纯 JS）
+- **APPX 打包坑（已解决）**：python-docx 1.2.0 解包模板 `docx/templates/default-docx-template/` 含 `[Content_Types].xml`（方括号）/ `_rels`（下划线开头目录）/ `.rels`（点开头文件），makeappx 报 0x8007007b（文件名非法）。该目录运行时用不上（python-docx 用 default.docx zip），已删除。
+
+### 发布状态
+- GitHub Release v0.5.0 已发布（设 Latest，六件套：win x64 exe + blockmap + latest.yml + win7 exe + mac x64/arm64 dmg，自动更新可用）
+- 商店 APPX `FlyingMouse Format-Setup-0.5.0-x64.appx`（911,251,499 字节）已构建并验证：0.5.0.0 / Identity 488B6338.354574AC174AD / x64 / docengine 含、default-docx-template 排除 / 商店版隐藏音频解锁。校验记录 docs/v0.5.0-商店上传校验.md。上传归用户本人（Partner Center）。
+- 发布流程改为 CI 云端发布（publish job），以后发版本地不用再下载 artifacts。
 
 ### 待办（下一窗口）
 - ① 报错反馈入口：直接展示邮箱 3465177342@qq.com（用户已定，不做 mailto/跳转）
-- ② 酷我 KWM：算法调研到（kwm mask / 暴力找 key），待真实样本验证（本次跳过）
+- ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证（本次跳过）
 - ③ 工程图纸大图无上限：用户已定完全放开，待实现（resource-policy 三道闸 + Sharp limitInputPixels）
 - ④ KGMA 解密 FLAC 尾部 ~4B 残留清理：用户已定清理，待实现（convertKgma 重封）
 - ⑤ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，需在许可页附文本 + 源码链接）
-- ⑥ PDF 加密：用户决定不做（已取消）
-- ⑦ 行车记录仪 BAT：实为 .mmp4（musicex），已解决（89d6db7）
+- ⑥ 123 云盘上传（用户要传 win+mac 包，传法待定：cookie 帮传 or 用户手动）
 
 ## v0.4.0 发布状态（2026-08-13，已停止）
 
 ## 项目边界
 
 - GitHub：<https://github.com/LaoFeng-mouse/flyingmouse-format>
-- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.4.1>
+- 当前 GitHub Release：<https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.5.0>
 - 产品是原版鼠鼠 UI 的 FlyingMouse Format（飞鼠格式）；“鼠鼠打印”是另一个项目，本版没有修改。
 - v0.3.5 使用同一源码生成 Windows 10/11、Windows 7 Legacy、macOS Apple Silicon 和 macOS Intel 四个安装包，不覆盖旧标签。
 
