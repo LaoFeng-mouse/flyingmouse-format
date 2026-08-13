@@ -229,9 +229,7 @@ jobs:
             [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
           done
           cd ..
-          NOTES="docs/release-notes-${TAG#v}.md"
-          NOTES="${NOTES//./}"
-          [ -f "$NOTES" ] || NOTES="docs/RELEASE.md"
+          NOTES="$(node scripts/resolve-release-notes.js "$TAG")"
           gh release create "$TAG" --repo "${{ github.repository }}" \
             --title "FlyingMouse Format $TAG" \
             --notes-file "$NOTES" --draft

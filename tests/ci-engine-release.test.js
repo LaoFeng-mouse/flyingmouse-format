@@ -94,4 +94,6 @@ test("release workflow restores engines, runs full conversion tests and builds b
   assert.match(workflow, /gh release upload/);
   assert.match(workflow, /--draft=false --latest/);
   assert.match(workflow, /contents: write/);
+  assert.match(workflow, /node scripts\/resolve-release-notes\.js "\$TAG"/);
+  assert.ok(!workflow.includes('NOTES="${NOTES//./}"'));
 });
