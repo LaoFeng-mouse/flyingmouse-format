@@ -211,10 +211,14 @@ function sampledOccupancy(table) {
   const samples = 32;
   const occupied = new Set();
   for (const cell of table.cells) {
-    const rowFrom = Math.ceil(cell.row * samples / table.rowCount);
-    const rowTo = Math.ceil((cell.row + cell.rowSpan) * samples / table.rowCount);
-    const columnFrom = Math.ceil(cell.column * samples / table.columnCount);
-    const columnTo = Math.ceil((cell.column + cell.columnSpan) * samples / table.columnCount);
+    const rowFrom = Math.max(0, Math.min(samples - 1,
+      Math.floor(cell.row * samples / table.rowCount)));
+    const rowTo = Math.max(rowFrom + 1, Math.min(samples,
+      Math.ceil((cell.row + cell.rowSpan) * samples / table.rowCount)));
+    const columnFrom = Math.max(0, Math.min(samples - 1,
+      Math.floor(cell.column * samples / table.columnCount)));
+    const columnTo = Math.max(columnFrom + 1, Math.min(samples,
+      Math.ceil((cell.column + cell.columnSpan) * samples / table.columnCount)));
     for (let row = rowFrom; row < rowTo; row += 1) {
       for (let column = columnFrom; column < columnTo; column += 1) {
         occupied.add(row * samples + column);

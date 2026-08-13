@@ -171,6 +171,27 @@ test("compares cell occupancy positions without inspecting OCR text", () => {
   assert.equal(disagreement.occupancyRatio, 1);
 });
 
+test("preserves sparse cross-dimension occupancy and boundary cells at the last row and column", () => {
+  const { chooseTableCandidate, structuralDisagreement } = require("../pdf-structure-score");
+  const left = candidate({
+    rows: 100,
+    columns: 100,
+    cells: [cell(1, 1, "same", 0.7), cell(99, 99, "boundary", 0.7)]
+  });
+  const right = candidate({
+    source: "img2table",
+    rows: 125,
+    columns: 125,
+    cells: [cell(5, 5, "same", 0.7), cell(124, 124, "boundary", 0.7)]
+  });
+  const disagreement = structuralDisagreement(left, right);
+  assert.equal(disagreement.rowRatio, 0.2);
+  assert.equal(disagreement.columnRatio, 0.2);
+  assert.equal(disagreement.occupancyRatio, 0.666666666667);
+  assert.ok(disagreement.occupancyRatio > 0.25);
+  lowQuality(() => chooseTableCandidate([left, right]), ["same", "boundary"]);
+});
+
 test("compares aligned anchor values in memory using NFKC and collapsed whitespace", () => {
   const { structuralDisagreement } = require("../pdf-structure-score");
   const left = candidate({ cells: [
