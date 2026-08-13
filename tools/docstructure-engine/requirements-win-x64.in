@@ -1,0 +1,5 @@
+paddlepaddle==3.2.2
+paddleocr[doc-parser]==3.7.0
+img2table[paddle]==2.0.0
+Pillow==11.3.0
+PyMuPDF==1.26.3
