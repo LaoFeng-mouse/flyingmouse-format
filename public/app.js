@@ -523,7 +523,7 @@ function syncPdfExcelHint() {
 async function acceptFiles(fileList) {
   const files = [...fileList].filter((file) => file && file.size >= 0);
   if (!files.length) return;
-  const maxBatchBytes = state.capabilities?.limits?.maxBatchBytes || (2 * 1024 * 1024 * 1024);
+  const maxBatchBytes = state.capabilities?.limits?.maxBatchBytes || Number.MAX_SAFE_INTEGER;
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes > maxBatchBytes) {
     setStatus(i18n.language === "en-US"

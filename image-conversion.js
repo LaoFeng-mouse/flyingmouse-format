@@ -22,7 +22,7 @@ function animationError(code, message) {
 }
 
 async function convertRasterImage(inputPath, outputPath, target, options = {}) {
-  const maxPixels = options.maxPixels || 50_000_000;
+  const maxPixels = options.maxPixels || Number.MAX_SAFE_INTEGER;
   const metadata = await sharp(inputPath, { animated: true, limitInputPixels: maxPixels }).metadata();
   const pages = Number(metadata.pages || 1);
   const animated = pages > 1;
