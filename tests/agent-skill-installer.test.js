@@ -34,16 +34,17 @@ test("installs the bundled skill atomically with a platform launcher config", as
   await fs.writeFile(path.join(source, "SKILL.md"), "---\nname: flyingmouse-format\ndescription: test\n---\n");
   await fs.writeFile(path.join(source, "scripts", "flyingmouse-format.js"), "// test\n");
 
+  const launcherExecutable = process.execPath;
   const result = await installAgentSkill({
     sourceDir: source,
     roots: [{ id: "codex", name: "Codex", path: root }],
-    launcher: { executable: "/Applications/FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format", args: [] }
+    launcher: { executable: launcherExecutable, args: [] }
   });
 
   assert.equal(result.installed.length, 1);
   const installed = path.join(root, "flyingmouse-format");
   const config = JSON.parse(await fs.readFile(path.join(installed, "launcher.json"), "utf8"));
-  assert.equal(config.executable, "/Applications/FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format");
+  assert.equal(config.executable, path.resolve(launcherExecutable));
   assert.equal(await fs.readFile(path.join(installed, "scripts", "flyingmouse-format.js"), "utf8"), "// test\n");
 });
 
