@@ -38,6 +38,7 @@ const REQUIRED_RUNTIME_FILES = [
   "image.js",
   "ocr.js",
   "pdfjs.js",
+  "pdf-classifier.js",
   "pdf-table.js",
   "pdf.js",
   "text-docx.js",

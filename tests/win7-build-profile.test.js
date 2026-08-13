@@ -87,6 +87,7 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "image.js",
     "ocr.js",
     "pdfjs.js",
+    "pdf-classifier.js",
     "pdf-table.js",
     "pdf.js",
     "text-docx.js",
@@ -149,6 +150,20 @@ test("derived package and staging entries restore a missing required runtime mod
 
   assert.ok(packageJson.build.files.includes("logger.js"));
   assert.ok(stagingEntries.includes("logger.js"));
+});
+
+test("derived package and staging entries restore the PDF classifier runtime module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-classifier.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-classifier.js"));
+  assert.ok(stagingEntries.includes("pdf-classifier.js"));
 });
 
 test("test script filtering rejects shell syntax and unknown command forms", () => {
