@@ -4,7 +4,7 @@
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、普通 NCM 与 Audio Vivid（AV3A）NCM。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
+当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、NCM/AV3A/KGMA/mflac/mgg/mmp4 加密音频解锁、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
@@ -49,7 +49,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
 - NCM 只保证兼容 `music.163.com` 对应网易云音乐客户端生成的文件；其他网站的同扩展名变体不在范围内。
 - AV3A NCM 通过 `av3a-format.js` 提取音轨、随包 AVS3 helper 解码为 WAV，再由 FFmpeg 转换。
-- 商店材料不要宣传 DRM 绕过；README 可以中性说明官方客户端 NCM/Audio Vivid 兼容范围。
+- 商店版（Microsoft Store / APPX）构建时隐藏加密音频解锁入口：`process.windowsStore` 时 capabilities 过滤 `unlockAudioInputs`（ncm/kgg/mflac/mgg/kgma/mmp4）+ 解密分发拒绝（AUDIO_UNLOCK_UNAVAILABLE_ON_STORE）；商店材料也不要宣传 DRM 绕过。README 可以中性说明官方客户端 NCM/Audio Vivid 兼容范围。
 
 ## Security boundaries
 
@@ -91,7 +91,7 @@ npm audit --omit=dev --prefix output\win7-stage
 
 沙箱限制 Node 子进程时可能出现 `spawn EPERM`；这不是转换代码失败。真实转换测试和打包应在普通 Windows PowerShell、cmd 或 CI 中运行。
 
-完整本地测试依赖 `bin/` 引擎。Release workflow 会按 `ci-engines-v1.json` 校验 SHA-256、缓存并恢复固定引擎资产，执行 `npm test`、审计和标准/Win7 双构建；普通 CI 仍运行 `npm run test:ci`。
+完整本地测试依赖 `bin/` 引擎。Release workflow 会按 `ci-engines-v1.json` 校验 SHA-256、缓存并恢复固定引擎资产，执行 `npm test`、审计和标准/Win7 双构建，最后由 publish job 在云端自动创建 GitHub Release 并上传资产（本地不用下载 artifacts）；普通 CI 仍运行 `npm run test:ci`。
 
 ## Packaging and release
 
