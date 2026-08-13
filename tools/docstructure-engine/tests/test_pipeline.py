@@ -4,7 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest import mock
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +12,8 @@ sys.path.insert(0, str(ENGINE_ROOT))
 
 from PIL import Image
 
-from flyingmouse_docstructure.pipeline import (MissingModelError, attach_second_opinion,
+from flyingmouse_docstructure.pipeline import (MODEL_ARGUMENTS, InvalidOutputError,
+                                                MissingModelError, attach_second_opinion,
                                                 build_pipeline, materialize_assets,
                                                 validate_manifest_limits)
 
@@ -127,21 +128,93 @@ class PipelineTests(unittest.TestCase):
             attach_second_opinion(raw, Path("page.png"), 1)
         detect.assert_not_called()
 
+    def test_second_opinion_detects_pp_layout_and_block_table_labels(self):
+        evidence = [
+            {"layout_det_res": {"boxes": [{"label": "table"}]}},
+            {"layout_det_res": {"boxes": [{"block_label": "table"}]}},
+            {"layout_det_res": {"boxes": [{"type": "table"}]}},
+            {"parsing_res_list": [{"block_label": "table"}]},
+            {"blocks": [{"type": "table"}]},
+        ]
+        for raw in evidence:
+            with self.subTest(raw=raw), \
+                 mock.patch("flyingmouse_docstructure.img2table_adapter.detect_table_candidates",
+                            return_value=[{"source": "img2table"}]) as detect:
+                raw["table_res_list"] = []
+                attach_second_opinion(raw, Path("page.png"), 1)
+            detect.assert_called_once()
+            self.assertTrue(raw["tableLike"])
+
+    def test_none_layout_detection_is_invalid_engine_output(self):
+        raw = {"layout_det_res": None, "table_res_list": [], "parsing_res_list": []}
+        with self.assertRaises(InvalidOutputError):
+            attach_second_opinion(raw, Path("page.png"), 1)
+
     def test_constructed_pipeline_invocation_never_calls_download_or_network(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp); models = root / "models"; self._models(models)
+            root = Path(tmp); models = root / "models"; model_names = self._models(models)
             output = root / "output"; output.mkdir(); source = root / "input.pdf"; source.write_bytes(b"%PDF")
+            expected_arguments = set(MODEL_ARGUMENTS.values()) | {
+                "table_orientation_classify_model_dir", "seal_text_recognition_model_dir"}
             downloads = mock.Mock()
-            for entrypoint in (downloads.paddleocr_download, downloads.paddle_download,
-                               downloads.paddlex_download, downloads.requests_get,
-                               downloads.requests_post, downloads.urlopen, downloads.urlretrieve):
-                entrypoint.side_effect = AssertionError("network/download entry point called")
-            backend = mock.Mock()
-            backend.predict.return_value = [SimpleNamespace(json={
-                "parsing_res_list": [{"block_label": "text", "block_bbox": [1, 1, 10, 10],
-                                      "block_content": "anonymous", "block_score": .9}],
-                "table_res_list": []})]
-            ppstructure = mock.Mock(return_value=backend)
+            fake_paddlex = ModuleType("paddlex")
+            fake_paddlex_utils = ModuleType("paddlex.utils")
+            fake_paddlex_download = ModuleType("paddlex.utils.download")
+            fake_paddlex_download.download = downloads.paddlex_download
+            fake_paddlex.utils = fake_paddlex_utils
+            fake_paddlex_utils.download = fake_paddlex_download
+            fake_paddle = ModuleType("paddle")
+            fake_paddle_utils = ModuleType("paddle.utils")
+            fake_paddle_download = ModuleType("paddle.utils.download")
+            fake_paddle_download.download = downloads.paddle_download
+            fake_paddle.utils = fake_paddle_utils
+            fake_paddle_utils.download = fake_paddle_download
+            fake_requests = ModuleType("requests")
+            fake_requests.get = downloads.requests_get
+
+            def configured_model_dirs(config):
+                found = []
+                if isinstance(config, dict):
+                    for key, value in config.items():
+                        if key == "model_dir": found.append(value)
+                        found.extend(configured_model_dirs(value))
+                elif isinstance(config, list):
+                    for value in config: found.extend(configured_model_dirs(value))
+                return found
+
+            class DownloadSensitivePPStructureV3:
+                def __init__(self, **kwargs):
+                    self.kwargs = kwargs
+                    self._check_local_configuration()
+
+                def _check_local_configuration(self):
+                    supplied = {key for key in self.kwargs if key.endswith("_model_dir")}
+                    config = json.loads(Path(self.kwargs["paddlex_config"]).read_text("utf-8"))
+                    configured = configured_model_dirs(config)
+                    missing = supplied != expected_arguments or len(configured) != 13 or any(
+                        not Path(path).is_dir() for path in [
+                            *(self.kwargs[key] for key in supplied), *configured])
+                    if missing:
+                        from paddlex.utils.download import download
+                        from paddle.utils.download import download as paddle_download
+                        import requests
+                        from urllib.request import urlopen
+                        import socket
+                        download("missing-model")
+                        paddle_download("missing-model")
+                        requests.get("https://invalid.local/model")
+                        urlopen("https://invalid.local/model")
+                        socket.create_connection(("invalid.local", 443))
+
+                def predict(self, **_kwargs):
+                    self._check_local_configuration()
+                    return [SimpleNamespace(json={
+                        "parsing_res_list": [{"block_label": "text", "block_bbox": [1, 1, 10, 10],
+                                              "block_content": "anonymous", "block_score": .9}],
+                        "table_res_list": []})]
+
+            fake_paddleocr = ModuleType("paddleocr")
+            fake_paddleocr.PPStructureV3 = DownloadSensitivePPStructureV3
             fake_page = mock.Mock(rect=SimpleNamespace(width=20, height=30), rotation=0)
             fake_pixmap = SimpleNamespace(width=40, height=60,
                 save=lambda target: Image.new("RGB", (40, 60), "white").save(target))
@@ -149,26 +222,46 @@ class PipelineTests(unittest.TestCase):
             fake_document = mock.Mock(page_count=1, load_page=mock.Mock(return_value=fake_page))
             fake_fitz = SimpleNamespace(open=mock.Mock(return_value=fake_document),
                                         Matrix=lambda x, y: (x, y))
-            fake_paddleocr = SimpleNamespace(PPStructureV3=ppstructure,
-                                              download=downloads.paddleocr_download)
-            fake_paddle = SimpleNamespace(utils=SimpleNamespace(download=downloads.paddle_download))
-            fake_paddlex = SimpleNamespace(utils=SimpleNamespace(download=downloads.paddlex_download))
-            fake_requests = SimpleNamespace(get=downloads.requests_get,
-                                            post=downloads.requests_post)
-            fake_urlrequest = SimpleNamespace(urlopen=downloads.urlopen,
-                                              urlretrieve=downloads.urlretrieve)
-            with mock.patch.dict(sys.modules, {"paddleocr": fake_paddleocr, "paddle": fake_paddle,
-                "paddlex": fake_paddlex, "requests": fake_requests, "urllib.request": fake_urlrequest,
+            with mock.patch.dict(sys.modules, {"paddleocr": fake_paddleocr,
+                "paddlex": fake_paddlex, "paddlex.utils": fake_paddlex_utils,
+                "paddlex.utils.download": fake_paddlex_download, "requests": fake_requests,
+                "paddle": fake_paddle, "paddle.utils": fake_paddle_utils,
+                "paddle.utils.download": fake_paddle_download,
                 "fitz": fake_fitz}), \
+                mock.patch("urllib.request.urlopen", downloads.urlopen), \
+                mock.patch("socket.create_connection", downloads.socket_create_connection), \
                 mock.patch("flyingmouse_docstructure.pipeline.attach_second_opinion"):
+                negative_kwargs = {key: str(models / name)
+                                   for name, key in MODEL_ARGUMENTS.items()}
+                negative_config = {"models": [
+                    {"model_dir": str(models / name)} for name in model_names
+                ] + [
+                    {"model_dir": str(models / "doc_orientation_classification")},
+                    {"model_dir": str(models / "text_recognition")},
+                ]}
+                negative_config_path = root / "complete-config.json"
+                negative_config_path.write_text(json.dumps(negative_config), "utf-8")
+                negative_kwargs.update(
+                    paddlex_config=str(negative_config_path),
+                    table_orientation_classify_model_dir=str(models / "doc_orientation_classification"),
+                    seal_text_recognition_model_dir=str(models / "text_recognition"))
+                negative_kwargs.pop("layout_detection_model_dir")
+                DownloadSensitivePPStructureV3(**negative_kwargs)
+                downloads.paddlex_download.assert_called_once()
+                downloads.paddle_download.assert_called_once()
+                downloads.requests_get.assert_called_once()
+                downloads.urlopen.assert_called_once()
+                downloads.socket_create_connection.assert_called_once()
+                downloads.reset_mock()
                 pipeline = build_pipeline(models, "ch")
                 pages = pipeline.parse(source, output)
+                kwargs = pipeline.backend.kwargs
                 pipeline.close()
             self.assertEqual(len(pages), 1)
             self.assertEqual(downloads.mock_calls, [])
-            kwargs = ppstructure.call_args.kwargs
-            supplied = {Path(value).resolve() for key, value in kwargs.items()
-                        if key.endswith("_model_dir")}
+            supplied_arguments = {key for key in kwargs if key.endswith("_model_dir")}
+            self.assertEqual(supplied_arguments, expected_arguments)
+            supplied = {Path(kwargs[key]).resolve() for key in supplied_arguments}
             self.assertEqual(supplied, {path.resolve() for path in models.iterdir()})
 
     @unittest.skipIf(os.name == "nt", "symlink creation is not reliably permitted on Windows")

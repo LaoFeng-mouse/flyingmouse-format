@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from PIL import Image
@@ -17,7 +18,8 @@ sys.path.insert(0, str(ENGINE_ROOT))
 from flyingmouse_docstructure import __version__
 from flyingmouse_docstructure.__main__ import main
 from flyingmouse_docstructure.normalize import ResourceLimitError
-from flyingmouse_docstructure.pipeline import InvalidOutputError, MissingModelError, ParseError
+from flyingmouse_docstructure.pipeline import (InvalidOutputError, LocalPipeline,
+                                                MissingModelError, ParseError)
 
 
 class FakePipeline:
@@ -124,6 +126,31 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 21)
         self.assertNotIn("SECRET", stderr)
         self.assertNotIn("Traceback", stderr)
+
+    def test_none_layout_detection_is_invalid_output_exit_22(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / "private.pdf"; source.write_bytes(b"%PDF")
+            output = root / "out"; models = root / "models"; models.mkdir()
+            config_dir = root / "config"; config_dir.mkdir()
+            config_path = config_dir / "local.json"; config_path.write_text("{}", "utf-8")
+            backend = mock.Mock()
+            backend.predict.return_value = [SimpleNamespace(json={
+                "layout_det_res": None, "parsing_res_list": [], "table_res_list": []})]
+            pipeline = LocalPipeline(backend, config_path)
+            fake_page = mock.Mock(rect=SimpleNamespace(width=20, height=30), rotation=0)
+            fake_pixmap = SimpleNamespace(width=40, height=60,
+                save=lambda target: Image.new("RGB", (40, 60), "white").save(target))
+            fake_page.get_pixmap.return_value = fake_pixmap
+            document = mock.Mock(page_count=1, load_page=mock.Mock(return_value=fake_page))
+            fitz = SimpleNamespace(open=mock.Mock(return_value=document), Matrix=lambda x, y: (x, y))
+            with mock.patch.dict(sys.modules, {"fitz": fitz}):
+                code, stdout, stderr = self.invoke(["parse", "--input", str(source),
+                    "--output", str(output), "--models", str(models), "--language", "ch"], pipeline)
+            self.assertEqual(list(output.iterdir()), [])
+        self.assertEqual((code, stdout), (22, ""))
+        self.assertEqual(len(stderr.splitlines()), 1)
+        self.assertEqual(json.loads(stderr)["code"], "INVALID_OUTPUT")
+        self.assertNotIn("private", stderr)
 
     def test_manifest_temp_collision_is_invalid_output_and_private(self):
         with tempfile.TemporaryDirectory() as tmp:

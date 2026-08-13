@@ -262,11 +262,21 @@ def materialize_assets(raw: dict, reference: Path, output_dir: Path, page_number
 
 def attach_second_opinion(raw: dict, reference: Path, page_number: int) -> None:
     tables = raw.get("table_res_list", raw.get("tables", []))
+    if not isinstance(tables, list): raise InvalidOutputError()
     if tables: return
     blocks = raw.get("parsing_res_list", raw.get("blocks", []))
-    layout_boxes = raw.get("layout_det_res", {}).get("boxes", [])
+    if not isinstance(blocks, list): raise InvalidOutputError()
+    layout = raw.get("layout_det_res", {})
+    if not isinstance(layout, dict): raise InvalidOutputError()
+    layout_boxes = layout.get("boxes", [])
+    if not isinstance(layout_boxes, list): raise InvalidOutputError()
+
+    def label(item: object) -> object:
+        if not isinstance(item, dict): return None
+        return item.get("label", item.get("block_label", item.get("type")))
+
     table_like = raw.get("tableLike") is True or any(
-        isinstance(block, dict) and block.get("block_label", block.get("type")) == "table"
+        label(block) == "table"
         for block in [*blocks, *layout_boxes]
     )
     if not table_like: return
