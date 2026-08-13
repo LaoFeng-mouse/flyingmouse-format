@@ -152,3 +152,35 @@ test("renderer surfaces a feedback email in the header and on failures", () => {
   assert.match(app, /t\("feedback\.hint"\)/);
   assert.match(css, /\.feedback-line/);
 });
+
+test("QQ Music credential tutorial opens automatically on musicex cookie errors", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /id="qqTutorialModal"/);
+  assert.match(html, /QQ音乐_登录cookie\.txt/);
+  assert.match(app, /"tutorial\.qq\.title": "QQ 音乐登录教程"/);
+  assert.match(app, /"tutorial\.qq\.title": "QQ Music Login Guide"/);
+  assert.match(app, /QQ_COOKIE_ERROR_CODES/);
+  assert.match(app, /MFLAC_EKEY_REQUIRED/);
+  assert.match(app, /maybeShowQqTutorial\(error\)/);
+  assert.match(app, /openQqTutorial\(\)/);
+  assert.match(app, /closeQqTutorial\(\)/);
+  assert.match(css, /\.tutorial-dialog/);
+  assert.match(css, /\.tutorial-backdrop/);
+});
+
+test("QQ cookie tutorial offers a copyable credential template", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /id="qqCookieTemplate"/);
+  assert.match(html, /uin=你的QQ号; qm_keyst=你复制的qm_keyst值/);
+  assert.match(html, /id="qqCookieTemplateCopy"/);
+  assert.match(app, /"tutorial\.copyTemplate": "复制模板"/);
+  assert.match(app, /"tutorial\.copyTemplate": "Copy template"/);
+  assert.match(app, /navigator\.clipboard\.writeText/);
+  assert.match(app, /qqCookieTemplateCopy\.addEventListener\("click", copyQqCookieTemplate\)/);
+  assert.match(css, /\.template-card/);
+  assert.match(css, /\.template-code/);
+});

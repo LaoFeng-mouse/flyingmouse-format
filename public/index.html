@@ -145,6 +145,94 @@
       </div>
     </aside>
 
+    <div class="tutorial-modal" id="qqTutorialModal" hidden>
+      <div class="tutorial-backdrop" id="qqTutorialBackdrop"></div>
+      <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-labelledby="qqTutorialTitle">
+        <div class="tutorial-header">
+          <h2 id="qqTutorialTitle" data-i18n="tutorial.qq.title">QQ 音乐登录教程</h2>
+          <button class="tutorial-close" id="qqTutorialClose" type="button" data-i18n-aria="tutorial.close" aria-label="关闭">×</button>
+        </div>
+        <div class="tutorial-body">
+          <p class="tutorial-lead" data-i18n="tutorial.qq.lead">新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。</p>
+          <ol class="tutorial-steps">
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s1.title">① 打开网页版 QQ 音乐并登录</h3>
+                <p data-i18n="tutorial.qq.s1.desc">用电脑浏览器打开 y.qq.com，点右上角「登录」，用你下载歌曲的 QQ 账号登录。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step1.png" data-i18n-alt="tutorial.qq.s1.alt" alt="QQ 音乐网页版登录后的页面" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s1.cap">图 1：登录后的网页版 QQ 音乐</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s2.title">② 打开开发者工具</h3>
+                <p data-i18n="tutorial.qq.s2.desc">在网页上按键盘 F12（笔记本可能需同时按 Fn），或右键 →「检查」。浏览器下方/右侧会出现开发者工具面板。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step2.png" data-i18n-alt="tutorial.qq.s2.alt" alt="按 F12 后开发者工具打开" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s2.cap">图 2：开发者工具面板</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s3.title">③ 切到「应用程序 / Application」标签</h3>
+                <p data-i18n="tutorial.qq.s3.desc">在开发者工具顶部标签栏找到「Application」（中文浏览器显示为「应用程序」），点它。如果顶部没有，点 » 展开更多标签。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step3.png" data-i18n-alt="tutorial.qq.s3.alt" alt="开发者工具顶部的 Application 标签" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s3.cap">图 3：顶部标签栏的 Application</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s4.title">④ 找到 Cookie 列表</h3>
+                <p data-i18n="tutorial.qq.s4.desc">在左侧菜单展开「Storage → Cookies」，点下面的 <b>https://y.qq.com</b>，右侧会出现这个网站的 Cookie 列表。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step4.png" data-i18n-alt="tutorial.qq.s4.alt" alt="Storage → Cookies → y.qq.com 的列表" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s4.cap">图 4：Cookie 列表</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s5.title">⑤ 复制 qm_keyst 和 uin</h3>
+                <p data-i18n="tutorial.qq.s5.desc">在列表里找到 <b>qm_keyst</b> 这一行，双击它的「值 / Value」列，Ctrl+C 复制整串内容。再找到 <b>uin</b> 行，复制你的 QQ 号。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step5.png" data-i18n-alt="tutorial.qq.s5.alt" alt="qm_keyst 和 uin 两行 Cookie" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s5.cap">图 5：qm_keyst 与 uin</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s6.title">⑥ 在桌面新建 cookie 文件</h3>
+                <p data-i18n="tutorial.qq.s6.desc">在桌面空白处点鼠标右键 →「新建」→「文本文档」，把文件名改成 QQ音乐_登录cookie.txt（保留 .txt 后缀）。双击打开，点下面的「复制模板」，到记事本里粘贴，把「你的QQ号」和「你复制的qm_keyst值」替换成你自己的，然后 Ctrl+S 保存。</p>
+                <div class="template-card">
+                  <code class="template-code" id="qqCookieTemplate">uin=你的QQ号; qm_keyst=你复制的qm_keyst值</code>
+                  <button class="ghost-button" id="qqCookieTemplateCopy" type="button" data-i18n="tutorial.copyTemplate">复制模板</button>
+                </div>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step6.png" data-i18n-alt="tutorial.qq.s6.alt" alt="记事本里 cookie 文件的格式" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s6.cap">图 6：cookie 文件内容格式</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s7.title">⑦ 回到鼠鼠重新转换</h3>
+                <p data-i18n="tutorial.qq.s7.desc">文件放好后，回到本软件重新拖入那个加密音频转换即可。cookie 偶尔会过期，提示需要凭据时重复上面的步骤更新一次就好。</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <div class="tutorial-footer">
+          <button class="primary-button" id="qqTutorialGotIt" type="button" data-i18n="tutorial.gotIt">我知道了</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/i18n.js"></script>
     <script src="/conversion-preferences.js"></script>
     <script src="/app.js"></script>
