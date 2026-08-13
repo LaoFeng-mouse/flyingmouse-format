@@ -41,4 +41,10 @@ test("release workflow restores engines, runs full conversion tests and builds b
   const jobHeader = workflow.slice(workflow.indexOf("jobs:"), workflow.indexOf("    steps:"));
   assert.doesNotMatch(jobHeader, /GH_TOKEN/);
   assert.match(workflow, /Restore fixed conversion engines[\s\S]*?GH_TOKEN:[\s\S]*?restore-ci-engines\.ps1/);
+  // 云端发布：下载产物 → 创建 Release → 上传资产 → 设 Latest（contents: write）
+  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /--draft=false --latest/);
+  assert.match(workflow, /contents: write/);
 });
