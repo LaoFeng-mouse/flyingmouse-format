@@ -17,6 +17,184 @@
   --error: #d93025;
   --shadow: 6px 6px 0 #111111;
   --radius: 16px;
+  --text: var(--ink);
+  --paper-soft: #f4f1ea;
+  --red-soft: #fdeaea;
+}
+
+/* ===== 深色模式：点击顶栏“深色”按钮切换，偏好保存在 localStorage ===== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14161a;
+  --panel: #1b1e24;
+  --card: #23272f;
+  --ink: #f3f5f8;
+  --muted: #aab1bd;
+  --line: #2e343c;
+  --accent: #ff7a89;
+  --accent-strong: #ff6472;
+  --accent-soft: #3a2330;
+  --blue-soft: #1f2c3d;
+  --green-soft: #1c2f2a;
+  --yellow-soft: #332f1d;
+  --success: #4caf7d;
+  --warning: #e0bb52;
+  --error: #ff6b5e;
+  --danger: #ff6b5e;
+  --shadow: 6px 6px 0 #000000;
+  --paper-soft: #1d2128;
+  --red-soft: #3a2326;
+  --text: #f3f5f8;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(900px 520px at 10% -10%, rgba(233, 95, 109, 0.20) 0%, transparent 60%),
+    radial-gradient(900px 500px at 105% 5%, rgba(86, 142, 224, 0.18) 0%, transparent 58%),
+    var(--bg);
+}
+
+:root[data-theme="dark"] .workflow-step {
+  background: #23272f;
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .drop-zone {
+  background: linear-gradient(170deg, #2a2620, #23272f);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .drop-zone.dragging {
+  background: #3a2330;
+}
+
+:root[data-theme="dark"] .file-strip {
+  background: #1d2128;
+  border-top-color: var(--line);
+}
+
+:root[data-theme="dark"] .batch-item.error {
+  background: var(--red-soft);
+}
+
+:root[data-theme="dark"] .format-hint {
+  color: var(--muted);
+  background: rgba(255, 240, 190, 0.08);
+  border-color: rgba(224, 187, 82, 0.28);
+}
+
+:root[data-theme="dark"] select {
+  background: #1d2128;
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .primary-button:disabled {
+  background: #3a3f47;
+  color: #c4c9d2;
+}
+
+:root[data-theme="dark"] .progress-track {
+  background: #2a2f37;
+}
+
+:root[data-theme="dark"] .status-box {
+  background: #22262d;
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .status-box.error {
+  background: var(--red-soft);
+}
+
+:root[data-theme="dark"] .status-box.success {
+  background: var(--green-soft);
+}
+
+:root[data-theme="dark"] .step-copy code {
+  background: #1d2128;
+  border-color: #333a44;
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .template-card {
+  background: #1d2128;
+}
+
+:root[data-theme="dark"] .sponsor-panel {
+  background: #23272f;
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .sponsor-close {
+  color: #c6a265;
+}
+
+:root[data-theme="dark"] .sponsor-title {
+  color: #e9c98f;
+}
+
+:root[data-theme="dark"] .sponsor-sub {
+  color: #b9a079;
+}
+
+:root[data-theme="dark"] .sponsor-qr {
+  border-color: #333a44;
+}
+
+:root[data-theme="dark"] .tutorial-backdrop {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+:root[data-theme="dark"] .mouse-mascot {
+  filter: drop-shadow(5px 5px 0 rgba(0, 0, 0, 0.45));
+}
+
+:root[data-theme="dark"] .update-status {
+  background: var(--paper-soft);
+  color: var(--text);
+}
+
+/* 主按钮在深色下强调色更亮，文字改深色以保证对比度 */
+:root[data-theme="dark"] .primary-button,
+:root[data-theme="dark"] .download-button {
+  color: #181b21;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* 赞助面板/按钮在深色下保留品牌色，仅软化投影 */
+:root[data-theme="dark"] .sponsor-toggle {
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="dark"] .sponsor-panel {
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* 主题切换平滑过渡（尊重系统“减少动效”设置） */
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .workspace,
+  .drop-panel,
+  .controls,
+  .drop-zone,
+  .file-strip,
+  .batch-list,
+  .batch-item,
+  .format-item,
+  .status-box,
+  .progress-panel,
+  .sponsor-panel,
+  .tutorial-dialog,
+  .health,
+  .update-status,
+  .workflow-step,
+  .ghost-button,
+  .mini-button,
+  select,
+  .language-field select {
+    transition: background-color 0.2s ease, color 0.2s ease,
+      border-color 0.2s ease, box-shadow 0.2s ease;
+  }
 }
 
 * {

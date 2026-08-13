@@ -141,7 +141,10 @@ const messages = {
     "tutorial.copied": "模板已复制，粘贴到记事本后替换成你的信息",
     "tutorial.qq.s7.title": "⑦ 回到鼠鼠重新转换",
     "tutorial.qq.s7.desc": "文件放好后，回到本软件重新拖入那个加密音频转换即可。cookie 偶尔会过期，提示需要凭据时重复上面的步骤更新一次就好。",
-    "tutorial.gotIt": "我知道了"
+    "tutorial.gotIt": "我知道了",
+    "theme.toDark": "🌙 深色",
+    "theme.toLight": "☀️ 浅色",
+    "theme.toggleTitle": "切换深色 / 浅色模式"
   },
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
@@ -206,7 +209,10 @@ const messages = {
     "tutorial.copied": "Template copied. Paste it into Notepad and replace the placeholders with your info.",
     "tutorial.qq.s7.title": "⑦ Convert again in Mouse",
     "tutorial.qq.s7.desc": "Once the file is in place, drag the encrypted audio into this app and convert again. The cookie expires occasionally; when credentials are requested again, repeat the steps above to refresh it.",
-    "tutorial.gotIt": "Got it"
+    "tutorial.gotIt": "Got it",
+    "theme.toDark": "🌙 Dark",
+    "theme.toLight": "☀️ Light",
+    "theme.toggleTitle": "Toggle dark / light mode"
   }
 };
 
@@ -240,6 +246,40 @@ function refreshLanguage() {
   renderBatchList();
   syncPdfExcelHint();
 }
+
+  // ===== 深色 / 浅色主题切换 =====
+  const themeToggle = document.getElementById("themeToggle");
+  const THEME_KEY = "flyingmouse.theme.v1";
+
+  function isDarkTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark";
+  }
+
+  function applyTheme(theme) {
+    const dark = theme === "dark";
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    themeToggle.setAttribute("aria-pressed", String(dark));
+    // 同步 data-i18n，使切换语言时 applyStaticTranslations 也能正确刷新按钮文案
+    themeToggle.dataset.i18n = dark ? "theme.toLight" : "theme.toDark";
+    themeToggle.dataset.i18nTitle = "theme.toggleTitle";
+    themeToggle.textContent = t(themeToggle.dataset.i18n);
+    themeToggle.title = t("theme.toggleTitle");
+  }
+
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+    if (saved !== "dark" && saved !== "light") saved = isDarkTheme() ? "dark" : "light";
+    applyTheme(saved);
+  }
+
+  themeToggle.addEventListener("click", () => {
+    const next = isDarkTheme() ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  });
+
+  initTheme();
 
 const mouseAssets = {
   idle: "/assets/mouse-format/mouse-idle.png",
