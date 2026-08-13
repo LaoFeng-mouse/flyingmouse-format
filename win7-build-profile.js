@@ -128,9 +128,10 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
-  // 文档引擎（docengine，Python 3.12 打包）不支持 Windows 7：win7 版排除它，PDF→docx/表格提取回退到纯 JS 实现。
+  // Python-backed docengine and docstructure runtimes are excluded from Win7;
+  // their JavaScript boundary modules remain available for static imports.
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => !item.from.includes("docengine"))
+    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure/i.test(String(value))))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")

@@ -114,6 +114,18 @@ test("Win7 profile includes every current runtime module and absolute binary res
     !profile.build.extraResources.some((item) => item.to === "docengine"),
     "win7 must exclude the docengine engine"
   );
+  assert.ok(
+    !profile.build.extraResources.some((item) => item.to === "docstructure" || item.from.includes("docstructure")),
+    "win7 must exclude the structured PDF engine and models"
+  );
+});
+
+test("Win7 excludes a future docstructure extraResource", () => {
+  const { createWin7Package } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.win.extraResources.push({ from: "bin/docstructure", to: "docstructure" });
+  const profile = createWin7Package(input, path.resolve(__dirname, ".."));
+  assert.ok(!profile.build.extraResources.some((item) => item.to === "docstructure"));
 });
 
 test("stage source entries contain runtime source and assets but exclude node_modules", () => {
