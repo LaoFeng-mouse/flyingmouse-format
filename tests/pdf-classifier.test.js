@@ -20,6 +20,14 @@ test("classifies reliable text without a page image as native", () => {
   }), "native");
 });
 
+test("classifies non-empty printable short text without an image as native", () => {
+  assert.equal(classifyPageMetrics({
+    characterCount: 5,
+    printableRatio: 1,
+    imageCoverage: 0
+  }), "native");
+});
+
 test("classifies an empty full-page image as scanned", () => {
   assert.equal(classifyPageMetrics({
     characterCount: 0,
@@ -98,6 +106,26 @@ test("classifies a generated text PDF using real text extraction", async (t) => 
   assert.equal(classification.kind, "native");
   assert.equal(classification.pages[0].kind, "native");
   assert.ok(classification.pages[0].characterCount >= 24);
+  assert.equal(classification.pages[0].printableRatio, 1);
+  assert.equal(classification.pages[0].imageCoverage, 0);
+});
+
+test("classifies a generated short text-only PDF as native", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-pdf-classifier-short-native-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const inputPath = path.join(scratch, "short-native.pdf");
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const page = document.addPage([595.28, 841.89]);
+  page.drawText("Item Qty", { x: 72, y: 760, size: 16, font });
+  await fsp.writeFile(inputPath, await document.save());
+
+  const classification = await classifyPdf(inputPath);
+
+  assert.equal(classification.kind, "native");
+  assert.equal(classification.pages[0].kind, "native");
+  assert.ok(classification.pages[0].characterCount > 0);
+  assert.ok(classification.pages[0].characterCount < 24);
   assert.equal(classification.pages[0].printableRatio, 1);
   assert.equal(classification.pages[0].imageCoverage, 0);
 });

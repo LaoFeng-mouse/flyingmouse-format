@@ -17,7 +17,13 @@ function classifyPageMetrics(metrics = {}) {
   const imageCoverage = boundedNumber(metrics.imageCoverage, 0, 1);
   const reliableText = characterCount >= MIN_NATIVE_CHARACTERS
     && printableRatio >= MIN_PRINTABLE_RATIO;
-  return reliableText && imageCoverage < FULL_PAGE_IMAGE_COVERAGE ? "native" : "scanned";
+  const printableShortTextWithoutImage = characterCount > 0
+    && characterCount < MIN_NATIVE_CHARACTERS
+    && printableRatio >= MIN_PRINTABLE_RATIO
+    && imageCoverage === 0;
+  return (reliableText && imageCoverage < FULL_PAGE_IMAGE_COVERAGE) || printableShortTextWithoutImage
+    ? "native"
+    : "scanned";
 }
 
 function classifyDocument(pages = []) {

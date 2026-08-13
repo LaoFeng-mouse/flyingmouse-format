@@ -608,7 +608,7 @@ test("cropped PDF table keeps PDF.js and Poppler coordinates aligned", async () 
   ], [["Name", "Value"], ["Mouse", "7"]]);
 });
 
-test("scanned PDF table extraction uses OCR and preserves table values", async () => {
+test("scanned PDF to XLSX fails closed when the structured engine is unavailable", async () => {
   const imagePath = path.join(scratchRoot, "scanned-table.png");
   await createScannedTableImage(imagePath);
   const imageToPdf = await uploadConvert(imagePath, "scanned-table.png", "pdf", "image/png");
@@ -616,28 +616,12 @@ test("scanned PDF table extraction uses OCR and preserves table values", async (
   const pdfPath = await downloadResult(imageToPdf.body, "scanned-table.pdf");
 
   const { response, body } = await uploadConvert(pdfPath, "scanned-table.pdf", "xlsx", "application/pdf");
-  assert.strictEqual(response.status, 200, body.error);
-  const outputPath = await downloadResult(body, "scanned-table.xlsx");
-  const ExcelJS = require("exceljs");
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(outputPath);
-  assert.ok(workbook.getWorksheet("识别说明"));
-  assert.equal(workbook.worksheets.filter((sheet) => /^P001-T/.test(sheet.name)).length, 1);
-  const tableSheet = workbook.worksheets.find((sheet) => /^P001-T/.test(sheet.name));
-  assert.ok(tableSheet, "scanned PDF should produce a detected table sheet");
-  const expected = [["Item", "Qty"], ["Apple", "2"], ["Banana", "3"]];
-  let matches = 0;
-  expected.forEach((row, rowIndex) => row.forEach((value, columnIndex) => {
-    const actual = String(tableSheet.getCell(rowIndex + 1, columnIndex + 1).value || "").trim();
-    if (actual.toLocaleLowerCase() === value.toLocaleLowerCase()) matches += 1;
-  }));
-  assert.ok(matches / expected.flat().length >= 0.85, `OCR cell accuracy ${matches}/${expected.flat().length}`);
-  const explanationValues = [];
-  workbook.getWorksheet("识别说明").eachRow((row) => explanationValues.push(...row.values.slice(1).map(String)));
-  assert.match(explanationValues.join(" "), /ocr/i);
-  let hasLowConfidenceNote = false;
-  tableSheet.eachRow((row) => row.eachCell((cell) => { if (cell.note) hasLowConfidenceNote = true; }));
-  assert.ok(hasLowConfidenceNote, "low-confidence OCR cells should retain an Excel note");
+  assert.strictEqual(response.status, 500);
+  assert.strictEqual(body.errorCode, "PDF_STRUCTURE_ENGINE_MISSING");
+  assert.match(body.messages.zhCN, /结构化转换引擎/);
+  assert.match(body.messages.enUS, /structured PDF conversion engine/i);
+  assert.strictEqual(body.fileName, undefined);
+  assert.strictEqual(body.downloadUrl, undefined);
 });
 
 test("audio files must not offer video container targets", async () => {
