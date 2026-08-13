@@ -106,6 +106,18 @@ test("video targets expose a codec selector (h264/h265/av1) for mp4/mov/mkv", ()
   assert.match(app, /form\.append\("videoCodec"/);
 });
 
+test("video targets expose a transparent background color selector", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="alphaBackgroundField"[^>]*hidden/);
+  assert.match(html, /id="alphaBackground"/);
+  assert.match(app, /"alphaBackground\.label"/);
+  assert.match(app, /"alphaBackground\.white"/);
+  assert.match(app, /"alphaBackground\.black"/);
+  assert.match(app, /alphaBackgroundField\.hidden/);
+  assert.match(app, /form\.append\("alphaBackground"/);
+});
+
 test("update entry is hidden by default and revealed only on update-available", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
@@ -183,4 +195,17 @@ test("QQ cookie tutorial offers a copyable credential template", () => {
   assert.match(app, /qqCookieTemplateCopy\.addEventListener\("click", copyQqCookieTemplate\)/);
   assert.match(css, /\.template-card/);
   assert.match(css, /\.template-code/);
+});
+
+test("folder compression is exposed through the trusted bridge bilingually", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="compressFolderButton"/);
+  assert.match(app, /"action\.compressFolder": "压缩文件夹"/);
+  assert.match(app, /"action\.compressFolder": "Compress folder"/);
+  assert.match(app, /"compressFolder\.saved": "已压缩 \{count\} 个文件到：\{path\}"/);
+  assert.match(app, /"compressFolder\.saved": "Compressed \{count\} files to: \{path\}"/);
+  assert.match(app, /logBridge\.compressFolder/);
+  assert.match(app, /compressFolderButton\.addEventListener\("click"/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });

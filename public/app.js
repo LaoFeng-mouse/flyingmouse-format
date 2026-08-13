@@ -47,6 +47,8 @@ const zipCompressionField = document.querySelector("#zipCompressionField");
 const zipCompression = document.querySelector("#zipCompression");
 const videoCodecField = document.querySelector("#videoCodecField");
 const videoCodec = document.querySelector("#videoCodec");
+const alphaBackgroundField = document.querySelector("#alphaBackgroundField");
+const alphaBackground = document.querySelector("#alphaBackground");
 const pdfPasswordField = document.querySelector("#pdfPasswordField");
 const pdfPassword = document.querySelector("#pdfPassword");
 const pdfActionField = document.querySelector("#pdfActionField");
@@ -68,6 +70,7 @@ const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
+const compressFolderButton = document.querySelector("#compressFolderButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
 const {
   STORAGE_KEY: LEGACY_TARGET_STORAGE_KEY,
@@ -92,7 +95,10 @@ const messages = {
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
-    "action.save": "保存", "action.saveAll": "保存全部", "target.label": "目标格式",
+    "action.save": "保存", "action.saveAll": "保存全部", "action.compressFolder": "压缩文件夹",
+    "compressFolder.saved": "已压缩 {count} 个文件到：{path}",
+    "compressFolder.canceled": "已取消压缩文件夹。", "compressFolder.failed": "压缩文件夹失败：{message}",
+    "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
     "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
@@ -101,6 +107,9 @@ const messages = {
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
     "videoCodec.h265": "H.265（体积更小）", "videoCodec.av1": "AV1（压缩率最高）",
+    "alphaBackground.label": "透明背景色（带透明通道的视频转码时合成）",
+    "alphaBackground.white": "白色（默认）", "alphaBackground.black": "黑色",
+    "alphaBackground.green": "绿色（绿幕）", "alphaBackground.magenta": "洋红（绿幕抠像常用）",
     "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
@@ -112,7 +121,7 @@ const messages = {
     "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
     "tutorial.qq.title": "QQ 音乐登录教程",
     "tutorial.close": "关闭",
-    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。",
+    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。注意：无论你的歌是从 QQ 音乐下载的、还是从微信聊天里收到的，获取 cookie 的步骤完全一样——都是去网页版 y.qq.com 登录同一个 QQ 账号。",
     "tutorial.qq.s1.title": "① 打开网页版 QQ 音乐并登录",
     "tutorial.qq.s1.desc": "用电脑浏览器打开 y.qq.com，点右上角「登录」，用你下载歌曲的 QQ 账号登录。",
     "tutorial.qq.s1.alt": "QQ 音乐网页版登录后的页面",
@@ -157,7 +166,10 @@ const messages = {
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
-    "action.save": "Save", "action.saveAll": "Save all", "target.label": "Target format",
+    "action.save": "Save", "action.saveAll": "Save all", "action.compressFolder": "Compress folder",
+    "compressFolder.saved": "Compressed {count} files to: {path}",
+    "compressFolder.canceled": "Folder compression canceled.", "compressFolder.failed": "Folder compression failed: {message}",
+    "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
     "formats.experimental": "Experimental/unverified inputs: {formats}",
@@ -166,6 +178,9 @@ const messages = {
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
     "videoCodec.h265": "H.265 (smaller size)", "videoCodec.av1": "AV1 (highest compression)",
+    "alphaBackground.label": "Transparent background (composited when transcoding videos with alpha)",
+    "alphaBackground.white": "White (default)", "alphaBackground.black": "Black",
+    "alphaBackground.green": "Green (green screen)", "alphaBackground.magenta": "Magenta (common for chroma key)",
     "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
@@ -177,7 +192,7 @@ const messages = {
     "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
     "tutorial.qq.title": "QQ Music Login Guide",
     "tutorial.close": "Close",
-    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again.",
+    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again. Note: whether your song came from QQ Music or was received in WeChat, the steps are identical — just sign in to y.qq.com with the same QQ account.",
     "tutorial.qq.s1.title": "① Open QQ Music web and sign in",
     "tutorial.qq.s1.desc": "Open y.qq.com in your computer browser, click \"Sign in\" at the top right, and log in with the QQ account you used to download the song.",
     "tutorial.qq.s1.alt": "QQ Music web page after signing in",
@@ -566,6 +581,13 @@ function syncZipCompressionField() {
 function syncVideoCodecField() {
   if (!videoCodecField || !videoCodec) return;
   videoCodecField.hidden = !["mp4", "mov", "mkv"].includes(targetSelect.value);
+  syncAlphaBackgroundField();
+}
+
+function syncAlphaBackgroundField() {
+  if (!alphaBackgroundField || !alphaBackground) return;
+  // 透明背景色只对视频目标有意义（webm 也走 alpha 合成，一并显示）。
+  alphaBackgroundField.hidden = !["mp4", "mov", "mkv", "webm"].includes(targetSelect.value);
 }
 
 function syncPdfActionFields() {
@@ -721,6 +743,9 @@ async function convertOneFile(file, targetFormat) {
   }
   if (["mp4", "mov", "mkv"].includes(targetFormat)) {
     form.append("videoCodec", videoCodec?.value || "h264");
+  }
+  if (["mp4", "mov", "mkv", "webm"].includes(targetFormat)) {
+    form.append("alphaBackground", alphaBackground?.value || "white");
   }
   if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
     form.append("pdfAction", pdfAction?.value || "");
@@ -1109,6 +1134,27 @@ diagnosticsButton.addEventListener("click", async () => {
     rendererLog("error", "导出诊断失败", error);
   } finally {
     diagnosticsButton.disabled = false;
+  }
+});
+
+compressFolderButton.addEventListener("click", async () => {
+  if (typeof logBridge.compressFolder !== "function") {
+    setStatus(t("compressFolder.failed", { message: "compression is only available in the desktop app" }), "error");
+    return;
+  }
+  compressFolderButton.disabled = true;
+  try {
+    const result = await logBridge.compressFolder({ compressionLevel: 6 });
+    if (result?.canceled) {
+      setStatus(t("compressFolder.canceled"));
+    } else {
+      setStatus(t("compressFolder.saved", { count: result.fileCount, path: result.filePath }), "success");
+    }
+  } catch (error) {
+    setStatus(t("compressFolder.failed", { message: error.message || "unknown" }), "error");
+    rendererLog("error", "压缩文件夹失败", error);
+  } finally {
+    compressFolderButton.disabled = false;
   }
 });
 

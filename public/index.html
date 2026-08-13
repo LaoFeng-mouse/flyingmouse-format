@@ -92,6 +92,16 @@
               </select>
             </label>
 
+            <label class="field" id="alphaBackgroundField" hidden>
+              <span data-i18n="alphaBackground.label">透明背景色（带透明通道的视频转码时合成）</span>
+              <select id="alphaBackground">
+                <option value="white" selected data-i18n="alphaBackground.white">白色（默认）</option>
+                <option value="black" data-i18n="alphaBackground.black">黑色</option>
+                <option value="0x00ff00" data-i18n="alphaBackground.green">绿色（绿幕）</option>
+                <option value="0xff00ff" data-i18n="alphaBackground.magenta">洋红（绿幕抠像常用）</option>
+              </select>
+            </label>
+
             <label class="field" id="pdfPasswordField" hidden>
               <span data-i18n="pdfPassword.label">PDF 密码（加密/解密）</span>
               <input id="pdfPassword" type="password" autocomplete="off">
@@ -106,6 +116,8 @@
             </label>
 
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
+
+            <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
 
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">

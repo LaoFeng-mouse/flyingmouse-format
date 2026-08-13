@@ -481,6 +481,10 @@ select {
   color: var(--muted);
 }
 
+.compress-folder-button {
+  width: 100%;
+}
+
 .progress-panel {
   display: grid;
   gap: 8px;
