@@ -92,12 +92,36 @@ function bundledDocenginePath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
+function bundledDocstructureEnginePath() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH,
+    resourcesPath && path.join(resourcesPath, "docstructure", "docstructure-engine.exe"),
+    path.join(ROOT, "bin", "docstructure", "docstructure-engine.exe"),
+    path.join(process.cwd(), "bin", "docstructure", "docstructure-engine.exe")
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
+function bundledDocstructureModelDir() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR,
+    resourcesPath && path.join(resourcesPath, "docstructure", "models"),
+    path.join(ROOT, "bin", "docstructure", "models"),
+    path.join(process.cwd(), "bin", "docstructure", "models")
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || "";
+}
+
 const FFMPEG_PATH = bundledFfmpegPath();
 const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
 const DOCENGINE_PATH = bundledDocenginePath();
+const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
+const DOCSTRUCTURE_MODEL_DIR = bundledDocstructureModelDir();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
@@ -161,6 +185,8 @@ module.exports = {
   TESSDATA_PATH,
   DCRAW_PATH,
   DOCENGINE_PATH,
+  DOCSTRUCTURE_ENGINE_PATH,
+  DOCSTRUCTURE_MODEL_DIR,
   imageInput,
   rawInput,
   imageFormatTargets,

@@ -181,6 +181,20 @@ test("derived package and staging entries restore the PDF structure contract run
   assert.ok(stagingEntries.includes("pdf-structure-contract.js"));
 });
 
+test("derived package and staging entries restore the PDF structure engine boundary module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-structure-engine.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-structure-engine.js"));
+  assert.ok(stagingEntries.includes("pdf-structure-engine.js"));
+});
+
 test("test script filtering rejects shell syntax and unknown command forms", () => {
   const { createWin7Package } = require("../win7-build-profile");
   const unsafeCommands = [
