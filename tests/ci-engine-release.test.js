@@ -46,11 +46,13 @@ test("release notes resolver falls back to the release guide", () => {
 
 test("release notes resolver rejects malformed tags", () => {
   withReleaseNotesFixture({}, (fixtureRoot) => {
-    const result = spawnSync(process.execPath, [releaseNotesResolver, "release/0.5.0", fixtureRoot], {
-      encoding: "utf8",
-    });
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Invalid release tag/);
+    for (const tag of ["release/0.5.0", "v01.2.3"]) {
+      const result = spawnSync(process.execPath, [releaseNotesResolver, tag, fixtureRoot], {
+        encoding: "utf8",
+      });
+      assert.notEqual(result.status, 0, tag);
+      assert.match(result.stderr, /Invalid release tag/, tag);
+    }
   });
 });
 
@@ -96,4 +98,6 @@ test("release workflow restores engines, runs full conversion tests and builds b
   assert.match(workflow, /contents: write/);
   assert.match(workflow, /node scripts\/resolve-release-notes\.js "\$TAG"/);
   assert.ok(!workflow.includes('NOTES="${NOTES//./}"'));
+  assert.match(workflow, /GH_TOKEN: \$\{\{ github\.token \}\}\s+TAG: \$\{\{ github\.ref_name \}\}/);
+  assert.ok(!workflow.includes('TAG="${{ github.ref_name }}"'));
 });

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function resolveReleaseNotes(tag, repositoryRoot) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tag)) {
+  if (!/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tag)) {
     throw new Error(`Invalid release tag: ${tag}`);
   }
 
