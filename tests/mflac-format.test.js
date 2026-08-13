@@ -180,6 +180,17 @@ test("static: config exposes mgg input and server dispatches mgg to convertMflac
   assert.ok(mflacSource.includes("QQMusic EncV2,Key:"), "mflac-format.js 应实现 EncV2 前缀处理");
 });
 
+test("static: config exposes mmp4 (musicex) input and server dispatches it to convertMflac", () => {
+  const fs = require("node:fs");
+  const configSource = fs.readFileSync(path.join(__dirname, "..", "config.js"), "utf8");
+  assert.ok(configSource.includes('"kgma", "mmp4"'), "audioInput 应包含 mmp4");
+  const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  assert.ok(
+    serverSource.includes('inputExt === "kgma" || inputExt === "mmp4"'),
+    "server.js 应把 mmp4 分发给解密链路（musicex）"
+  );
+});
+
 test("musicexFallbackFilenames 按音质从高到低生成降档候选", () => {
   const list = musicexFallbackFilenames("00225ydR0y8KTj");
   assert.deepEqual(
