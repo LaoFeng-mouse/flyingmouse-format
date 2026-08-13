@@ -27,6 +27,8 @@
 - 路径记忆：记住上次保存目录，下次保存时自动从该目录开始。
 - 中文/English 界面：首次启动跟随系统语言，手动选择后会记住设置。
 - 批量转换：显示逐文件进度、结果和失败原因，并可单独保存或保存全部。
+- 结果预览：转换完成后可在侧边抽屉预览图片、PDF、文本、音频和视频；窄窗口自动切换为底部面板。
+- CLI 与 Agent 接入：命令行覆盖能力查询、目标查询、单个/批量转换、图片合并 PDF 和 PDF 合并；应用内可把配套 skill 一键接入现有 Codex、Claude 或通用 Agent 目录。
 - 转换质量：HTML / Office 转 Markdown 保留标题、列表和代码块；CSV 支持 BOM、转义引号和字段内换行。
 - PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
 - PDF → Word（版式还原）：内置 pdf2docx 引擎还原段落、表格、图片、字体与布局；扫描版自动 OCR 回退。Windows 10/11 版支持版式还原，Windows 7 版回退到文字提取。
@@ -53,6 +55,19 @@
 npm install
 npm run desktop
 ```
+
+命令行示例：
+
+```powershell
+node cli.js capabilities --json
+node cli.js targets example.pdf --json
+node cli.js convert input.docx --to pdf --output output.pdf --json
+node cli.js convert a.png b.png --to webp --output-dir converted --json
+node cli.js images-to-pdf 1.jpg 2.jpg --output album.pdf --json
+node cli.js merge-pdfs a.pdf b.pdf --output merged.pdf --json
+```
+
+安装版也可直接调用应用入口：macOS 使用 `FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format --cli ...`，Windows 使用 `FlyingMouse Format.exe --cli ...`。在软件顶部点击“接入 Agent”，会检索已存在的 `~/.codex/skills`、`~/.claude/skills`、`~/.agents/skills`（Windows 对应用户目录）并在确认后安装或更新 skill；不会自动创建未安装产品的目录。
 
 运行测试与打包：
 
@@ -101,6 +116,8 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Remembers the last save directory for the next save dialog.
 - Chinese and English UI. The first launch follows the system language; a manual choice is remembered.
 - Batch conversion with per-file progress, results, error details, individual save, and Save All.
+- Result previews for images, PDFs, text, audio, and video in a responsive side drawer / bottom sheet.
+- A complete CLI plus one-click Agent skill installation for existing Codex, Claude, and generic Agent skill directories.
 - Higher-quality text conversion: structural HTML/Office Markdown plus standards-compliant quoted and multiline CSV parsing.
 - PDF → Excel smart table extraction for digital text and scanned pages, including multiple tables, continued pages, merged cells, confidence notes, and Raw fallback.
 - PDF → Word (layout-preserving): the bundled pdf2docx engine restores paragraphs, tables, images, fonts, and layout; scanned PDFs fall back to OCR. Layout restoration is available on Windows 10/11; Windows 7 falls back to text extraction.
@@ -120,6 +137,19 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 4. Choose a save location. The app remembers both the target preference and save folder.
 
 > The source repository excludes the large FFmpeg, LibreOffice, Poppler, and Tesseract bundles. Regular users should install the Release build. Developers need to provide the corresponding resources under `bin/` for the complete conversion feature set.
+
+CLI examples:
+
+```powershell
+node cli.js capabilities --json
+node cli.js targets example.pdf --json
+node cli.js convert input.docx --to pdf --output output.pdf --json
+node cli.js convert a.png b.png --to webp --output-dir converted --json
+node cli.js images-to-pdf 1.jpg 2.jpg --output album.pdf --json
+node cli.js merge-pdfs a.pdf b.pdf --output merged.pdf --json
+```
+
+Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format --cli ...` on macOS or `FlyingMouse Format.exe --cli ...` on Windows. “Connect to Agent” discovers existing Codex, Claude, and generic Agent skill directories and installs the bundled lightweight wrapper after confirmation.
 
 ### Choose a Windows build
 

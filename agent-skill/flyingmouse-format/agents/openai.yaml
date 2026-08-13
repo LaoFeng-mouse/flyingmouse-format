@@ -1,0 +1,4 @@
+interface:
+  display_name: "FlyingMouse Format"
+  short_description: "Convert files with FlyingMouse Format's offline CLI"
+  default_prompt: "Use $flyingmouse-format to inspect supported targets and convert the user's local files."
