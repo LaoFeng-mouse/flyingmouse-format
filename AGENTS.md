@@ -96,7 +96,7 @@ npm audit --omit=dev --prefix output\win7-stage
 ## Packaging and release
 
 - `build.files` 是显式白名单；新增被服务端引用的根目录 JS 模块时必须同步加入。
-- `extraResources` 必须包含 FFmpeg、AVS3、LibreOffice、Poppler、tessdata 和 Tesseract core。
+- `extraResources` 必须包含 FFmpeg、AVS3、LibreOffice、Poppler、tessdata、Tesseract core 和 docengine（PDF→Word/Excel 文档引擎，Windows 标准版专用；win7 版与 macOS 排除，回退纯 JS）。
 - 保持 `signExecutable: false`，不要使用 `signAndEditExecutable: false`，后者会跳过图标嵌入。
 - `npm run dist` 当前生成 NSIS 安装包和 `dist/win-unpacked`；不要假设 APPX 已同步生成。
 - Microsoft Store 使用同一鼠鼠 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、鼠鼠图标和 SHA-256。
