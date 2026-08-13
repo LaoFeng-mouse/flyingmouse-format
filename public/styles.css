@@ -628,17 +628,10 @@ select {
   overflow-wrap: anywhere;
 }
 
-.app-footer {
-  margin-top: 20px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-  text-align: center;
-}
-
-.app-footer p {
-  margin: 0;
+.feedback-line {
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
