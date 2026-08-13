@@ -29,20 +29,35 @@ const A4_HEIGHT_DXA = 16838;
 const MARGIN_DXA = 1440;
 const CONTENT_WIDTH_DXA = A4_WIDTH_DXA - (2 * MARGIN_DXA);
 const TABLE_INDENT_DXA = 120;
+const TABLE_WIDTH_DXA = CONTENT_WIDTH_DXA - TABLE_INDENT_DXA;
 const REVIEW_CONFIDENCE = 0.85;
 const REVIEW_FILL = "FFF2CC";
 const REFERENCE_HEADING = "原件对照 / Original reference";
+const RECONSTRUCTED_IMAGE_TYPES = new Set(["seal", "signature", "figure"]);
 const MAX_XML_BYTES = 20 * 1024 * 1024;
 const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
 
-function stableError(code, message) {
-  const error = new Error(message);
+const ERROR_MESSAGES = Object.freeze({
+  PDF_DOCX_NO_EDITABLE_CONTENT: Object.freeze({
+    zhCN: "未检测到可编辑的文字或表格，无法生成有效的 Word 文档。",
+    enUS: "No editable text or table was detected, so a valid Word document cannot be created."
+  }),
+  PDF_OFFICE_OUTPUT_INVALID: Object.freeze({
+    zhCN: "生成的 Office 文件无效或不完整，请重试。",
+    enUS: "The generated Office file is invalid or incomplete. Please try again."
+  })
+});
+
+function stableError(code) {
+  const messages = ERROR_MESSAGES[code] || ERROR_MESSAGES.PDF_OFFICE_OUTPUT_INVALID;
+  const error = new Error(`${messages.zhCN} ${messages.enUS}`);
   error.code = code;
+  error.messages = { ...messages };
   return error;
 }
 
 function isStable(error) {
-  return Boolean(error && typeof error.code === "string" && error.code.startsWith("PDF_DOCX_"));
+  return Boolean(error && (error.code === "PDF_DOCX_NO_EDITABLE_CONTENT" || error.code === "PDF_OFFICE_OUTPUT_INVALID"));
 }
 
 function safeText(value) {
@@ -61,17 +76,17 @@ function imageType(relativePath) {
   if (extension === ".jpg" || extension === ".jpeg") return "jpg";
   if (extension === ".gif") return "gif";
   if (extension === ".bmp") return "bmp";
-  throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+  throw stableError("PDF_OFFICE_OUTPUT_INVALID");
 }
 
 async function readAsset(assetRoot, relativePath) {
   if (typeof assetRoot !== "string" || typeof relativePath !== "string" ||
       !relativePath || relativePath.includes("\\") || path.isAbsolute(relativePath)) {
-    throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   const pieces = relativePath.split("/");
   if (pieces.some((piece) => !piece || piece === "." || piece === "..")) {
-    throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   try {
     const root = await fs.realpath(assetRoot);
@@ -83,7 +98,7 @@ async function readAsset(assetRoot, relativePath) {
     if (!real.startsWith(prefix)) throw new Error("asset escaped root");
     return { data: await fs.readFile(real), type: imageType(relativePath) };
   } catch {
-    throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
 }
 
@@ -100,9 +115,9 @@ function imageSize(width, height, maxWidth, maxHeight) {
 function tableRows(table) {
   const columns = Math.max(1, Number(table.columnCount) || 1);
   const rows = Math.max(1, Number(table.rowCount) || 1);
-  const base = Math.floor(CONTENT_WIDTH_DXA / columns);
+  const base = Math.floor(TABLE_WIDTH_DXA / columns);
   const widths = Array.from({ length: columns }, (_, index) =>
-    index === columns - 1 ? CONTENT_WIDTH_DXA - (base * (columns - 1)) : base
+    index === columns - 1 ? TABLE_WIDTH_DXA - (base * (columns - 1)) : base
   );
   const anchors = new Map();
   const covering = new Map();
@@ -169,7 +184,7 @@ function makeTable(table) {
   const border = { style: BorderStyle.SINGLE, size: 4, color: "B7C3D0" };
   return new Table({
     rows: built.rows,
-    width: { size: CONTENT_WIDTH_DXA, type: WidthType.DXA },
+    width: { size: TABLE_WIDTH_DXA, type: WidthType.DXA },
     columnWidths: built.widths,
     indent: { size: TABLE_INDENT_DXA, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
@@ -196,16 +211,24 @@ async function reconstructedChildren(manifest, assetRoot) {
         }
         continue;
       }
-      if (block.type === "seal") {
+      if (RECONSTRUCTED_IMAGE_TYPES.has(block.type)) {
         const asset = await readAsset(assetRoot, block.asset);
         const bbox = Array.isArray(block.bbox) ? block.bbox : [0, 0, 1, 1];
-        const size = imageSize(bbox[2] - bbox[0], bbox[3] - bbox[1], 150, 150);
+        const imageLimits = block.type === "figure" ? [560, 500]
+          : block.type === "signature" ? [280, 120]
+            : [150, 150];
+        const size = imageSize(bbox[2] - bbox[0], bbox[3] - bbox[1], ...imageLimits);
+        const label = block.type[0].toUpperCase() + block.type.slice(1);
         children.push(new Paragraph({
-          alignment: AlignmentType.RIGHT,
+          alignment: block.type === "figure" ? AlignmentType.CENTER : AlignmentType.RIGHT,
           children: [new ImageRun({
             ...asset,
             transformation: size,
-            altText: { name: "Recognized seal", description: "Seal from source page", title: "Recognized seal" }
+            altText: {
+              name: `Recognized ${block.type}`,
+              description: `${label} from source page`,
+              title: `Recognized ${block.type}`
+            }
           })]
         }));
         continue;
@@ -221,7 +244,7 @@ async function reconstructedChildren(manifest, assetRoot) {
     }
   }
   if (!editableText && !editableTable) {
-    throw stableError("PDF_DOCX_NO_EDITABLE_CONTENT", "No editable content was detected in this PDF.");
+    throw stableError("PDF_DOCX_NO_EDITABLE_CONTENT");
   }
   return children;
 }
@@ -295,7 +318,7 @@ async function inspectPackage(docxPath) {
   try {
     zipfile = await openZipEntries(docxPath);
   } catch {
-    throw stableError("PDF_DOCX_INVALID_PACKAGE", "Generated DOCX package is invalid.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   return new Promise((resolve, reject) => {
     const names = new Set();
@@ -306,7 +329,7 @@ async function inspectPackage(docxPath) {
       if (settled) return;
       settled = true;
       try { zipfile.close(); } catch {}
-      reject(stableError("PDF_DOCX_INVALID_PACKAGE", "Generated DOCX package is invalid."));
+      reject(stableError("PDF_OFFICE_OUTPUT_INVALID"));
     };
     zipfile.on("entry", (entry) => {
       if (!safeEntryName(entry.fileName) || names.has(entry.fileName)) return fail();
@@ -361,6 +384,69 @@ function decodeXml(text) {
     .replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 }
 
+function xmlTexts(xml) {
+  return [...xml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
+    .map((match) => decodeXml(match[1]).trim())
+    .filter(Boolean);
+}
+
+function tableDimensions(tableXml) {
+  const rows = [...tableXml.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/gi)];
+  const grid = tableXml.match(/<w:tblGrid\b[^>]*>([\s\S]*?)<\/w:tblGrid>/i);
+  let columns = grid ? [...grid[1].matchAll(/<w:gridCol\b/gi)].length : 0;
+  if (!columns) {
+    for (const row of rows) {
+      let rowColumns = 0;
+      for (const cell of row[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/gi)) {
+        const span = cell[0].match(/<w:gridSpan\b[^>]*\bw:val=["'](\d+)["']/i);
+        rowColumns += span ? Number(span[1]) : 1;
+      }
+      columns = Math.max(columns, rowColumns);
+    }
+  }
+  return { rows: rows.length, columns, populated: xmlTexts(tableXml).some((text) => text.length >= 2) };
+}
+
+function expectedTablesFromManifest(manifest) {
+  const expected = [];
+  for (const page of Array.isArray(manifest.pages) ? manifest.pages : []) {
+    for (const table of Array.isArray(page.tables) ? page.tables : []) {
+      expected.push({ rows: Number(table.rowCount), columns: Number(table.columnCount) });
+    }
+  }
+  return expected;
+}
+
+function validateExpectedTables(actualTables, expectedTables) {
+  if (expectedTables === undefined) return;
+  if (!Array.isArray(expectedTables) || actualTables.length !== expectedTables.length) {
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+  }
+  for (let index = 0; index < expectedTables.length; index += 1) {
+    const expected = expectedTables[index];
+    if (!expected || !Number.isSafeInteger(expected.rows) || !Number.isSafeInteger(expected.columns) ||
+        actualTables[index].rows !== expected.rows || actualTables[index].columns !== expected.columns) {
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    }
+  }
+}
+
+function referenceDrawings(documentXml, relationships) {
+  const markers = [];
+  for (const match of documentXml.matchAll(/<wp:(?:inline|anchor)\b[^>]*>([\s\S]*?)<\/wp:(?:inline|anchor)>/gi)) {
+    const drawing = match[1];
+    const docProperties = drawing.match(/<wp:docPr\b([^>]*)\/?\s*>/i);
+    if (!docProperties) continue;
+    const description = attribute(docProperties[1], "descr");
+    const marker = description.match(/^Original reference page ([1-9]\d*)$/);
+    if (!marker) continue;
+    const blip = drawing.match(/<a:blip\b[^>]*\br:embed=["']([^"']+)["'][^>]*>/i);
+    if (!blip || !relationships.has(blip[1])) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    markers.push({ number: Number(marker[1]), relationshipId: blip[1] });
+  }
+  return markers;
+}
+
 async function validatePdfOfficeDocx(docxPath, options = {}) {
   let inspected;
   try {
@@ -387,28 +473,46 @@ async function validatePdfOfficeDocx(docxPath, options = {}) {
     for (const match of documentXml.matchAll(/<a:blip\b[^>]*\br:embed=["']([^"']+)["'][^>]*>/gi)) {
       if (!relationships.has(match[1])) throw new Error("broken image relationship");
     }
-    const referenceImageCount = [...documentXml.matchAll(/\bdescr=["']Original reference page \d+["']/g)].length;
+    const allText = xmlTexts(documentXml);
+    if (allText.filter((text) => text === REFERENCE_HEADING).length !== 1) {
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    }
+    const headingOffset = documentXml.indexOf(REFERENCE_HEADING);
+    if (headingOffset < 0) throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    const markers = referenceDrawings(documentXml.slice(headingOffset), relationships);
+    const referenceImageCount = markers.length;
     const expected = Number(options.expectedReferenceImages);
     if (Number.isInteger(expected) && expected >= 0 && referenceImageCount !== expected) {
-      throw new Error("unexpected reference image count");
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
     }
-    const text = [...documentXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
-      .map((match) => decodeXml(match[1]).trim())
-      .filter((value) => value && value !== REFERENCE_HEADING);
-    const hasEditableContent = text.some((value) => value.length >= 2) || /<w:tbl\b/.test(documentXml);
+    const requiredMarkerCount = Number.isInteger(expected) && expected >= 0 ? expected : markers.length;
+    if (requiredMarkerCount === 0 || markers.length !== requiredMarkerCount ||
+        markers.some((marker, index) => marker.number !== index + 1) ||
+        new Set(markers.map((marker) => marker.number)).size !== markers.length) {
+      throw stableError("PDF_OFFICE_OUTPUT_INVALID");
+    }
+
+    const reconstructedXml = documentXml.slice(0, headingOffset);
+    const tableXml = [...reconstructedXml.matchAll(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi)].map((match) => match[0]);
+    const actualTables = tableXml.map(tableDimensions);
+    validateExpectedTables(actualTables, options.expectedTables);
+    const proseXml = reconstructedXml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/gi, "");
+    const meaningfulProse = xmlTexts(proseXml).some((text) => text.length >= 2);
+    const meaningfulTable = actualTables.some((table) => table.populated);
+    const hasEditableContent = meaningfulProse || meaningfulTable;
     if (!hasEditableContent) {
-      throw stableError("PDF_DOCX_NO_EDITABLE_CONTENT", "No editable content was detected in this PDF.");
+      throw stableError("PDF_DOCX_NO_EDITABLE_CONTENT");
     }
-    return { hasEditableContent, referenceImageCount };
+    return { hasEditableContent, referenceImageCount, tables: actualTables.map(({ rows, columns }) => ({ rows, columns })) };
   } catch (error) {
     if (isStable(error)) throw error;
-    throw stableError("PDF_DOCX_INVALID_PACKAGE", "Generated DOCX package is invalid.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
 }
 
 async function writePdfOfficeDocx({ manifest, assetRoot, outputPath }) {
   if (!manifest || typeof outputPath !== "string" || !outputPath) {
-    throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
   const temporaryPath = `${outputPath}.tmp-${crypto.randomUUID()}`;
   try {
@@ -418,7 +522,8 @@ async function writePdfOfficeDocx({ manifest, assetRoot, outputPath }) {
     const buffer = await Packer.toBuffer(createDocument(content, references));
     await fs.writeFile(temporaryPath, buffer, { flag: "wx" });
     const validation = await validatePdfOfficeDocx(temporaryPath, {
-      expectedReferenceImages: Array.isArray(manifest.pages) ? manifest.pages.length : 0
+      expectedReferenceImages: Array.isArray(manifest.pages) ? manifest.pages.length : 0,
+      expectedTables: expectedTablesFromManifest(manifest)
     });
     await fs.rename(temporaryPath, outputPath);
     return validation;
@@ -428,7 +533,7 @@ async function writePdfOfficeDocx({ manifest, assetRoot, outputPath }) {
       fs.rm(outputPath, { force: true })
     ]);
     if (isStable(error)) throw error;
-    throw stableError("PDF_DOCX_BUILD_FAILED", "Unable to build editable DOCX.");
+    throw stableError("PDF_OFFICE_OUTPUT_INVALID");
   }
 }
 

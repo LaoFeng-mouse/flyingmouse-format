@@ -99,13 +99,29 @@ async function workspace(t) {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await png(path.join(root, "page-001.png"), 827, 1169, "#ffffff");
   await png(path.join(root, "seal.png"), 160, 160, "#cc2233");
+  await png(path.join(root, "signature.png"), 240, 80, "#2255aa");
+  await png(path.join(root, "figure.png"), 320, 180, "#44aa66");
   return root;
 }
 
-test("writes editable source-order content, merged tables, seals and page references", async (t) => {
+function outputInvalid(error, privateValue = "") {
+  return error && error.code === "PDF_OFFICE_OUTPUT_INVALID"
+    && typeof error.messages?.zhCN === "string"
+    && typeof error.messages?.enUS === "string"
+    && error.messages.zhCN.length > 0
+    && error.messages.enUS.length > 0
+    && (!privateValue || !JSON.stringify(error).includes(privateValue));
+}
+
+test("writes editable source-order content, merged tables, supported images and page references", async (t) => {
   const root = await workspace(t);
+  const input = manifest();
+  input.pages[0].blocks.splice(4, 0,
+    { type: "signature", bbox: [1080, 1420, 1480, 1560], asset: "signature.png", confidence: 0.93 },
+    { type: "figure", bbox: [180, 1580, 900, 1980], asset: "figure.png", confidence: 0.92 }
+  );
   const outputPath = path.join(root, "result.docx");
-  const result = await writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath });
+  const result = await writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath });
   assert.equal(result.referenceImageCount, 1);
 
   const entries = await readEntries(outputPath);
@@ -116,15 +132,24 @@ test("writes editable source-order content, merged tables, seals and page refere
 
   assert.match(documentXml, /<w:t[^>]*>Anonymous heading<\/w:t>/);
   assert.match(documentXml, /<w:tbl>/);
-  assert.match(documentXml, /<w:tblW w:type="dxa" w:w="9026"\/>/);
+  assert.match(documentXml, /<w:tblW w:type="dxa" w:w="8906"\/>/);
   assert.match(documentXml, /<w:tblInd w:type="dxa" w:w="120"\/>/);
   assert.match(documentXml, /<w:tblLayout w:type="fixed"\/>/);
+  const gridWidths = [...documentXml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((match) => Number(match[1]));
+  assert.equal(gridWidths.reduce((sum, width) => sum + width, 0), 8906);
+  assert.ok(120 + gridWidths.reduce((sum, width) => sum + width, 0) <= 9026);
   assert.match(documentXml, /<w:gridSpan w:val="2"\/>/);
   assert.match(documentXml, /<w:vMerge w:val="restart"\/>/);
   assert.match(documentXml, /<w:vMerge w:val="continue"\/>/);
   assert.match(documentXml, /<w:shd[^>]*w:fill="FFF2CC"/);
   assert.match(documentXml, /<w:t[^>]*>原件对照 \/ Original reference<\/w:t>/);
-  assert.ok(media.length >= 2, "seal and page reference must both be embedded");
+  assert.ok(media.length >= 4, "seal, signature, figure and page reference must all be embedded");
+  assert.match(documentXml, /descr="Seal from source page"/);
+  assert.match(documentXml, /descr="Signature from source page"/);
+  assert.match(documentXml, /descr="Figure from source page"/);
+  const imageOrder = ["Seal from source page", "Signature from source page", "Figure from source page"]
+    .map((description) => documentXml.indexOf(description));
+  assert.deepEqual([...imageOrder].sort((a, b) => a - b), imageOrder, "source images must preserve block reading order");
   assert.match(relsXml, /Target="media\/[^\"]+"/);
 
   const order = ["Anonymous heading", "Review this editable paragraph", "Merged title", "A-001", "原件对照 / Original reference"]
@@ -138,7 +163,10 @@ test("writes editable source-order content, merged tables, seals and page refere
   assert.match(stylesXml, /<w:pPrDefault>[\s\S]*?<w:spacing w:after="120" w:line="264" w:lineRule="auto"/);
   assert.match(stylesXml, /w:styleId="Heading1"[\s\S]*?<w:color w:val="2E74B5"/);
 
-  const validation = await validatePdfOfficeDocx(outputPath, { expectedReferenceImages: 1 });
+  const validation = await validatePdfOfficeDocx(outputPath, {
+    expectedReferenceImages: 1,
+    expectedTables: [{ rows: 3, columns: 3 }]
+  });
   assert.equal(validation.referenceImageCount, 1);
   assert.equal(validation.hasEditableContent, true);
 });
@@ -184,7 +212,17 @@ test("fails closed on missing media without leaking paths or leaving output", as
   input.pages[0].blocks.at(-1).asset = "missing-private-seal.png";
   await assert.rejects(
     writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath }),
-    (error) => error && error.code === "PDF_DOCX_BUILD_FAILED" && !JSON.stringify(error).includes(root)
+    (error) => outputInvalid(error, root)
+  );
+  await assert.rejects(fs.access(outputPath));
+});
+
+test("maps output write failures to the bilingual redacted Office error", async (t) => {
+  const root = await workspace(t);
+  const outputPath = path.join(root, "missing-parent", "private-output.docx");
+  await assert.rejects(
+    writePdfOfficeDocx({ manifest: manifest(), assetRoot: root, outputPath }),
+    (error) => outputInvalid(error, "private-output.docx")
   );
   await assert.rejects(fs.access(outputPath));
 });
@@ -192,12 +230,7 @@ test("fails closed on missing media without leaking paths or leaving output", as
 test("validator rejects an image-only reference package even when its media relationship is valid", async (t) => {
   const root = await workspace(t);
   const packagePath = path.join(root, "image-only.docx");
-  const page = await fs.readFile(path.join(root, "page-001.png"));
-  await writeZip(packagePath, {
-    "word/document.xml": `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>${"原件对照 / Original reference"}</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:docPr xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" descr="Original reference page 1"/><a:blip r:embed="rId1"/></w:drawing></w:r></w:p></w:body></w:document>`,
-    "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/page.png"/></Relationships>`,
-    "word/media/page.png": page
-  });
+  await writeZip(packagePath, referencePackageXml());
   await assert.rejects(
     validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1 }),
     (error) => error && error.code === "PDF_DOCX_NO_EDITABLE_CONTENT"
@@ -213,6 +246,80 @@ test("validator rejects broken or escaping image relationships with a redacted e
   });
   await assert.rejects(
     validatePdfOfficeDocx(packagePath),
-    (error) => error && error.code === "PDF_DOCX_INVALID_PACKAGE" && !JSON.stringify(error).includes(root)
+    (error) => outputInvalid(error, root)
   );
+});
+
+test("validator rejects empty or decorative tables as editable content", async (t) => {
+  const root = await workspace(t);
+  for (const [name, tableXml] of [
+    ["empty", "<w:tbl><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>"],
+    ["decorative", "<w:tbl><w:tr><w:tc><w:p><w:r><w:t> </w:t></w:r></w:p></w:tc></w:tr></w:tbl>"]
+  ]) {
+    const packagePath = path.join(root, `${name}.docx`);
+    await writeZip(packagePath, referencePackageXml({ bodyBeforeReference: tableXml }));
+    await assert.rejects(
+      validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1 }),
+      (error) => error && error.code === "PDF_DOCX_NO_EDITABLE_CONTENT"
+    );
+  }
+});
+
+test("validator requires manifest table dimensions and populated editable cells", async (t) => {
+  const root = await workspace(t);
+  const packagePath = path.join(root, "table-dimensions.docx");
+  const table = `<w:tbl><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A-001</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc></w:tr><w:tr><w:tc><w:p/></w:tc><w:tc><w:p><w:r><w:t>Confirmed</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+  await writeZip(packagePath, referencePackageXml({ bodyBeforeReference: table }));
+  await assert.rejects(
+    validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1, expectedTables: [{ rows: 3, columns: 2 }] }),
+    (error) => outputInvalid(error)
+  );
+  const result = await validatePdfOfficeDocx(packagePath, {
+    expectedReferenceImages: 1,
+    expectedTables: [{ rows: 2, columns: 2 }]
+  });
+  assert.equal(result.hasEditableContent, true);
+});
+
+function referencePackageXml({
+  bodyBeforeReference = "",
+  heading = "原件对照 / Original reference",
+  markers = [{ number: 1, relationshipId: "rId1" }],
+  extraDocumentXml = ""
+} = {}) {
+  const drawings = markers.map(({ number, relationshipId }) => `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:docPr id="${number}" name="Original reference page ${number}" descr="Original reference page ${number}"/><a:graphic><a:graphicData><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:blipFill><a:blip r:embed="${relationshipId}"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`).join("");
+  const relationships = [...new Set(markers.map((marker) => marker.relationshipId))]
+    .map((id, index) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/page-${index + 1}.png"/>`).join("");
+  const media = Object.fromEntries([...new Set(markers.map((marker) => marker.relationshipId))]
+    .map((id, index) => [`word/media/page-${index + 1}.png`, Buffer.from("png")]));
+  return {
+    "word/document.xml": `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${bodyBeforeReference}<w:p><w:r><w:t>${heading}</w:t></w:r></w:p>${drawings}${extraDocumentXml}</w:body></w:document>`,
+    "word/_rels/document.xml.rels": `<?xml version="1.0"?><Relationships>${relationships}</Relationships>`,
+    ...media
+  };
+}
+
+test("validator requires the exact reference heading", async (t) => {
+  const root = await workspace(t);
+  const packagePath = path.join(root, "missing-heading.docx");
+  await writeZip(packagePath, referencePackageXml({ bodyBeforeReference: "<w:p><w:r><w:t>Editable body</w:t></w:r></w:p>", heading: "Original reference" }));
+  await assert.rejects(validatePdfOfficeDocx(packagePath, { expectedReferenceImages: 1 }), outputInvalid);
+});
+
+test("validator rejects spoofed, duplicate or gapped reference markers", async (t) => {
+  const root = await workspace(t);
+  const cases = [
+    ["spoofed", [], `<w:p descr="Original reference page 1"><w:r><w:t>fake</w:t></w:r></w:p>`],
+    ["duplicate", [{ number: 1, relationshipId: "rId1" }, { number: 1, relationshipId: "rId2" }], ""],
+    ["gap", [{ number: 1, relationshipId: "rId1" }, { number: 3, relationshipId: "rId3" }], ""]
+  ];
+  for (const [name, markers, extraDocumentXml] of cases) {
+    const packagePath = path.join(root, `${name}-reference.docx`);
+    await writeZip(packagePath, referencePackageXml({
+      bodyBeforeReference: "<w:p><w:r><w:t>Editable body</w:t></w:r></w:p>",
+      markers,
+      extraDocumentXml
+    }));
+    await assert.rejects(validatePdfOfficeDocx(packagePath, { expectedReferenceImages: name === "spoofed" ? 1 : 2 }), outputInvalid);
+  }
 });
