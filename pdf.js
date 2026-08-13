@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const fsp = require("fs/promises");
+const crypto = require("node:crypto");
 const os = require("os");
 const path = require("path");
 const yazl = require("yazl");
@@ -29,6 +30,7 @@ const { chooseTableCandidate } = require("./pdf-structure-score");
 const { structureError } = require("./pdf-structure-contract");
 const { writePdfOfficeDocx } = require("./pdf-office-docx");
 const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
+const { parseXmlToJson } = require("./xml-json");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const data = await fsp.readFile(inputPath);
@@ -58,34 +60,73 @@ function tableNotDetectedError() {
   );
 }
 
-async function removeNominalOutput(outputPath) {
-  await fsp.rm(outputPath, { force: true }).catch(() => {});
+async function outputInfo(outputPath) {
+  try {
+    return await fsp.lstat(outputPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function publishAttempt(attemptPath, outputPath) {
+  const existing = await outputInfo(outputPath);
+  if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw new Error("unsafe output target");
+  }
+  if (!existing) {
+    await fsp.rename(attemptPath, outputPath);
+    return;
+  }
+  const backupPath = `${outputPath}.backup-${crypto.randomUUID()}`;
+  await fsp.rename(outputPath, backupPath);
+  try {
+    await fsp.rename(attemptPath, outputPath);
+  } catch (error) {
+    try {
+      await fsp.rename(backupPath, outputPath);
+    } catch {
+      await fsp.copyFile(backupPath, outputPath).catch(() => {});
+    }
+    throw error;
+  }
+  await fsp.rm(backupPath, { force: true }).catch(() => {});
+}
+
+async function withAttemptOutput(outputPath, produce) {
+  const attemptPath = `${outputPath}.attempt-${crypto.randomUUID()}`;
+  try {
+    const result = await produce(attemptPath);
+    const info = await fsp.lstat(attemptPath);
+    if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error("invalid attempt output");
+    await publishAttempt(attemptPath, outputPath);
+    return result;
+  } finally {
+    await fsp.rm(attemptPath, { force: true }).catch(() => {});
+  }
 }
 
 async function convertStructuredPdf({ inputPath, outputPath, target, options = {} }) {
   const boundary = options.withStructuredPdf || withStructuredPdf;
-  try {
-    return await boundary(inputPath, options, async (manifest, assetRoot) => {
+  return boundary(inputPath, options, async (manifest, assetRoot) => {
       const selected = selectedStructureManifest(manifest);
       if (target === "xlsx") {
         const tables = selected.pages.reduce((total, page) => total + (page.tables || []).length, 0);
         if (tables === 0) throw tableNotDetectedError();
-        return (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
-          manifest: selected, assetRoot, outputPath
-        });
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
       }
       if (target === "docx") {
-        return (options.writePdfOfficeDocx || writePdfOfficeDocx)({
-          manifest: selected, assetRoot, outputPath
-        });
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeDocx || writePdfOfficeDocx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
       }
       throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
         "不支持该结构化输出格式。", "Unsupported structured PDF target.");
-    });
-  } catch (error) {
-    await removeNominalOutput(outputPath);
-    throw error;
-  }
+  });
 }
 
 function assertPdfTableOcrQuality(model) {
@@ -233,11 +274,25 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
-async function readZipEntryBuffer(zipPath, wanted) {
+const MAX_NATIVE_DOCX_PACKAGE_BYTES = 512 * 1024 * 1024;
+const MAX_NATIVE_DOCX_XML_BYTES = 20 * 1024 * 1024;
+const NATIVE_DOCX_PARTS = new Set([
+  "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels"
+]);
+
+function safePackageEntry(name) {
+  if (typeof name !== "string" || !name || name.includes("\\") || name.startsWith("/")) return false;
+  const candidate = name.endsWith("/") ? name.slice(0, -1) : name;
+  return Boolean(candidate) && candidate.split("/").every((piece) => piece && piece !== "." && piece !== "..");
+}
+
+async function inspectNativeDocxPackage(zipPath) {
   const zipfile = await openZipEntries(zipPath);
   return new Promise((resolve, reject) => {
     let settled = false;
-    let found = false;
+    let total = 0;
+    const names = new Set();
+    const buffers = new Map();
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -245,43 +300,114 @@ async function readZipEntryBuffer(zipPath, wanted) {
       error ? reject(error) : resolve(value);
     };
     zipfile.on("entry", (entry) => {
-      if (entry.fileName !== wanted) return zipfile.readEntry();
-      if (found || Number(entry.uncompressedSize) > 20 * 1024 * 1024) {
-        return finish(new Error("unsafe DOCX document part"));
+      const size = Number(entry.uncompressedSize) || 0;
+      if (!safePackageEntry(entry.fileName) || names.has(entry.fileName) || size < 0) {
+        return finish(new Error("unsafe DOCX package entry"));
       }
-      found = true;
+      names.add(entry.fileName);
+      total += size;
+      if (!Number.isSafeInteger(total) || total > MAX_NATIVE_DOCX_PACKAGE_BYTES) {
+        return finish(new Error("DOCX package is too large"));
+      }
+      if (!NATIVE_DOCX_PARTS.has(entry.fileName)) return zipfile.readEntry();
+      if (size > MAX_NATIVE_DOCX_XML_BYTES) return finish(new Error("DOCX XML part is too large"));
       zipfile.openReadStream(entry, (error, stream) => {
         if (error) return finish(error);
         const chunks = [];
         let length = 0;
         stream.on("data", (chunk) => {
           length += chunk.length;
-          if (length > 20 * 1024 * 1024) {
+          if (length > MAX_NATIVE_DOCX_XML_BYTES) {
             stream.destroy(new Error("DOCX document part is too large"));
             return;
           }
           chunks.push(chunk);
         });
         stream.on("error", finish);
-        stream.on("end", () => finish(null, Buffer.concat(chunks)));
+        stream.on("end", () => {
+          if (settled) return;
+          buffers.set(entry.fileName, Buffer.concat(chunks));
+          zipfile.readEntry();
+        });
       });
     });
-    zipfile.on("end", () => finish(new Error("missing DOCX document part")));
+    zipfile.on("end", () => finish(null, { names, buffers }));
     zipfile.on("error", finish);
     zipfile.readEntry();
   });
 }
 
+function opcAttribute(fragment, name) {
+  const match = fragment.match(new RegExp(`\\b${name}=["']([^"']+)["']`, "i"));
+  return match ? match[1] : "";
+}
+
+function nativeDocxInvalid() {
+  const error = new Error("Native PDF conversion produced an invalid DOCX package.");
+  error.code = "PDF_OFFICE_OUTPUT_INVALID";
+  return error;
+}
+
 async function validateNativePdfDocx(outputPath) {
-  const documentXml = (await readZipEntryBuffer(outputPath, "word/document.xml")).toString("utf8");
-  const editableText = [...documentXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
-    .some((match) => match[1].replace(/<[^>]+>/g, "").trim().length > 0);
-  if (!editableText) {
-    const error = new Error("Native PDF conversion produced no editable content.");
-    error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
-    throw error;
+  try {
+    const inspected = await inspectNativeDocxPackage(outputPath);
+    const contentTypes = inspected.buffers.get("[Content_Types].xml")?.toString("utf8");
+    const rootRelationships = inspected.buffers.get("_rels/.rels")?.toString("utf8");
+    const documentXml = inspected.buffers.get("word/document.xml")?.toString("utf8");
+    if (!contentTypes || !rootRelationships || !documentXml) throw nativeDocxInvalid();
+    const parsedContentTypes = parseXmlToJson(contentTypes);
+    const parsedRootRelationships = parseXmlToJson(rootRelationships);
+    const parsedDocument = parseXmlToJson(documentXml);
+    if (!Object.hasOwn(parsedContentTypes, "Types")
+      || !Object.hasOwn(parsedRootRelationships, "Relationships")
+      || !Object.keys(parsedDocument).some((name) => name === "document" || name.endsWith(":document"))) {
+      throw nativeDocxInvalid();
+    }
+    const mainOverride = [...contentTypes.matchAll(/<Override\b([^>]*)\/?\s*>/gi)].some((match) =>
+      opcAttribute(match[1], "PartName") === "/word/document.xml"
+      && opcAttribute(match[1], "ContentType") === "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+    const mainRelationship = [...rootRelationships.matchAll(/<Relationship\b([^>]*)\/?\s*>/gi)].some((match) =>
+      opcAttribute(match[1], "Type").endsWith("/officeDocument")
+      && opcAttribute(match[1], "Target") === "word/document.xml"
+      && !opcAttribute(match[1], "TargetMode"));
+    if (!mainOverride || !mainRelationship) throw nativeDocxInvalid();
+
+    const blipIds = [...documentXml.matchAll(/<a:blip\b[^>]*\br:embed=["']([^"']+)["'][^>]*>/gi)]
+      .map((match) => match[1]);
+    if (blipIds.length) {
+      const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
+      if (!documentRelationships) throw nativeDocxInvalid();
+      const parsedDocumentRelationships = parseXmlToJson(documentRelationships);
+      if (!Object.hasOwn(parsedDocumentRelationships, "Relationships")) throw nativeDocxInvalid();
+      const relationships = new Map();
+      for (const match of documentRelationships.matchAll(/<Relationship\b([^>]*)\/?\s*>/gi)) {
+        const id = opcAttribute(match[1], "Id");
+        if (!id || relationships.has(id)) throw nativeDocxInvalid();
+        relationships.set(id, {
+          type: opcAttribute(match[1], "Type"), target: opcAttribute(match[1], "Target"),
+          mode: opcAttribute(match[1], "TargetMode")
+        });
+      }
+      for (const id of blipIds) {
+        const relationship = relationships.get(id);
+        if (!relationship || relationship.mode || !relationship.type.endsWith("/image")
+          || !relationship.target.startsWith("media/") || !safePackageEntry(relationship.target)
+          || !inspected.names.has(`word/${relationship.target}`)) throw nativeDocxInvalid();
+      }
+    }
+
+    const editableText = [...documentXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)]
+      .some((match) => match[1].replace(/<[^>]+>/g, "").trim().length > 0);
+    if (!editableText) {
+      const error = new Error("Native PDF conversion produced no editable content.");
+      error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
+      throw error;
+    }
+    return { hasEditableContent: true };
+  } catch (error) {
+    if (["PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_OFFICE_OUTPUT_INVALID"].includes(error?.code)) throw error;
+    throw nativeDocxInvalid();
   }
-  return { hasEditableContent: true };
 }
 
 async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
@@ -289,11 +415,12 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
   if (docenginePath) {
     try {
-      await (options.run || run)(docenginePath, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
-      await (options.validateNativeDocx || validateNativePdfDocx)(outputPath);
+      await withAttemptOutput(outputPath, async (attemptPath) => {
+        await (options.run || run)(docenginePath, ["convert", inputPath, attemptPath], { timeout: 1000 * 60 * 10 });
+        return (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
+      });
       return;
     } catch (error) {
-      await removeNominalOutput(outputPath);
       await (options.convertStructuredPdf || convertStructuredPdf)({
         inputPath, outputPath, target: "docx", options
       });
