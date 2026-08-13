@@ -125,9 +125,9 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
-  // pdf2docx 引擎（Python 3.12 打包）不支持 Windows 7：win7 版排除它，PDF→docx 回退到文字提取。
+  // 文档引擎（docengine，Python 3.12 打包）不支持 Windows 7：win7 版排除它，PDF→docx/表格提取回退到纯 JS 实现。
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => !item.from.includes("pdf2docx"))
+    .filter((item) => !item.from.includes("docengine"))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")

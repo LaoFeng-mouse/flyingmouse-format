@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 const sharp = require("sharp");
 const ExcelJS = require("exceljs");
-const { PDFTOPPM_PATH } = require("./config");
+const { PDFTOPPM_PATH, DOCENGINE_PATH } = require("./config");
 const { run, commandExists } = require("./utils");
 const { inspectImageMetadata } = require("./image");
 const { ocrAvailable, createOcrWorker } = require("./ocr");
@@ -158,7 +158,54 @@ async function recognizePdfTablePage(worker, imagePath, tempDir, pageNumber) {
   return result;
 }
 
+// 调用文档引擎（docengine table = camelot）提取表格，返回 camelot 的 tables 数组；失败/无引擎返回 []。
+async function extractTablesViaDocengine(inputPath) {
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-camelot-"));
+  const jsonPath = path.join(tempDir, "tables.json");
+  try {
+    await run(DOCENGINE_PATH, ["table", inputPath, jsonPath], { timeout: 1000 * 60 * 10 });
+    if (!fs.existsSync(jsonPath)) return [];
+    const data = JSON.parse(await fsp.readFile(jsonPath, "utf8"));
+    return Array.isArray(data.tables) ? data.tables : [];
+  } catch (error) {
+    return [];
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// camelot 的 tables 数组转成 writePdfTableWorkbook 需要的 model 结构。
+function camelotTablesToModel(tables) {
+  const summary = [];
+  const sheets = [];
+  tables.forEach((table, index) => {
+    const accuracy = Number.isFinite(table.accuracy) ? table.accuracy : 100;
+    summary.push({
+      pageNumber: table.page,
+      source: `camelot-${table.flavor}`,
+      tableCount: 1,
+      confidence: accuracy / 100,
+      warnings: []
+    });
+    sheets.push({
+      name: `P${String(table.page).padStart(3, "0")}-T${String(index + 1).padStart(2, "0")}`,
+      rows: Array.isArray(table.cells) ? table.cells : [],
+      merges: [],
+      cellConfidence: undefined
+    });
+  });
+  return { summary, sheets, warnings: [] };
+}
+
 async function extractComplexPdfTableModel(inputPath) {
+  // 优先用文档引擎（docengine table = camelot）提取表格；引擎缺失或无结果时回退到 PDF.js 自研提取。
+  if (DOCENGINE_PATH) {
+    const tables = await extractTablesViaDocengine(inputPath);
+    if (tables.length) {
+      return camelotTablesToModel(tables);
+    }
+  }
+
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
   const loadingTask = pdfjsLib.getDocument({

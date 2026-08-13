@@ -107,10 +107,10 @@ test("Win7 profile includes every current runtime module and absolute binary res
   const avs3 = binaryResources.find((item) => item.to === "avs3");
   assert.equal(avs3.from, path.join(projectRoot, "bin", "avs3"));
 
-  // pdf2docx（Python 3.12）不支持 Windows 7，win7 版必须排除，PDF→docx 回退到文字提取。
+  // 文档引擎（docengine，Python 3.12）不支持 Windows 7，win7 版必须排除，PDF→docx/表格提取回退到纯 JS 实现。
   assert.ok(
-    !profile.build.extraResources.some((item) => item.to === "pdf2docx"),
-    "win7 must exclude the pdf2docx engine"
+    !profile.build.extraResources.some((item) => item.to === "docengine"),
+    "win7 must exclude the docengine engine"
   );
 });
 

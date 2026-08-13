@@ -80,13 +80,13 @@ function bundledDcrawPath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
-function bundledPdf2docxPath() {
+function bundledDocenginePath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
-    process.env.FLYINGMOUSE_PDF2DOCX_PATH,
-    resourcesPath && path.join(resourcesPath, "pdf2docx", "pdf2docx.exe"),
-    path.join(ROOT, "bin", "pdf2docx", "pdf2docx.exe"),
-    path.join(process.cwd(), "bin", "pdf2docx", "pdf2docx.exe")
+    process.env.FLYINGMOUSE_DOCENGINE_PATH,
+    resourcesPath && path.join(resourcesPath, "docengine", "docengine.exe"),
+    path.join(ROOT, "bin", "docengine", "docengine.exe"),
+    path.join(process.cwd(), "bin", "docengine", "docengine.exe")
   ].filter(Boolean);
 
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
@@ -97,7 +97,7 @@ const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
-const PDF2DOCX_PATH = bundledPdf2docxPath();
+const DOCENGINE_PATH = bundledDocenginePath();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
@@ -158,7 +158,7 @@ module.exports = {
   PDFTOPPM_PATH,
   TESSDATA_PATH,
   DCRAW_PATH,
-  PDF2DOCX_PATH,
+  DOCENGINE_PATH,
   imageInput,
   rawInput,
   imageFormatTargets,
