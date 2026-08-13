@@ -1,10 +1,13 @@
 const assert = require("node:assert/strict");
+const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const ExcelJS = require("exceljs");
 const sharp = require("sharp");
+const yazl = require("yazl");
+const { openZipEntries } = require("../zip-util");
 const {
   HARD_TABLE_CONFIDENCE,
   REVIEW_CELL_CONFIDENCE,
@@ -89,6 +92,45 @@ async function loadWorkbook(filePath) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
   return workbook;
+}
+
+async function rewriteZipEntry(inputPath, outputPath, entryName, mutate) {
+  const zipfile = await openZipEntries(inputPath);
+  const entries = await new Promise((resolve, reject) => {
+    const collected = [];
+    zipfile.on("entry", (entry) => {
+      if (entry.fileName.endsWith("/")) {
+        zipfile.readEntry();
+        return;
+      }
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error) return reject(error);
+        const chunks = [];
+        stream.on("data", (chunk) => chunks.push(chunk));
+        stream.on("error", reject);
+        stream.on("end", () => {
+          collected.push({ name: entry.fileName, buffer: Buffer.concat(chunks) });
+          zipfile.readEntry();
+        });
+      });
+    });
+    zipfile.on("end", () => resolve(collected));
+    zipfile.on("error", reject);
+    zipfile.readEntry();
+  });
+  const archive = new yazl.ZipFile();
+  const output = fsSync.createWriteStream(outputPath);
+  const completed = new Promise((resolve, reject) => {
+    output.on("close", resolve);
+    output.on("error", reject);
+    archive.outputStream.on("error", reject);
+  });
+  archive.outputStream.pipe(output);
+  for (const entry of entries) {
+    archive.addBuffer(entry.name === entryName ? mutate(entry.buffer) : entry.buffer, entry.name);
+  }
+  archive.end();
+  await completed;
 }
 
 test("uses the documented hard and review confidence thresholds", () => {
@@ -284,6 +326,23 @@ test("warning details are bounded and redact unsafe path-like or raw text", asyn
   assert.ok(!detail.includes("secretword"));
 });
 
+test("warning count preserves all 12 warnings while details remain bounded to the first 8", async (t) => {
+  const root = await workspace(t);
+  const input = manifest();
+  input.pages[0].warnings = Array.from({ length: 12 }, (_, index) => `WARNING_${String(index + 1).padStart(2, "0")}`);
+  const outputPath = path.join(root, "twelve-warnings.xlsx");
+  await writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath });
+  const workbook = await loadWorkbook(outputPath);
+  const info = workbook.getWorksheet("识别说明");
+  const detail = String(info.getCell("G11").value);
+  assert.equal(info.getCell("E11").value, 12);
+  for (let index = 1; index <= 8; index += 1) assert.ok(detail.includes(`WARNING_${String(index).padStart(2, "0")}`));
+  assert.ok(detail.includes("+4"));
+  assert.ok(!detail.includes("WARNING_09"));
+  assert.ok(!detail.includes("WARNING_12"));
+  assert.ok(detail.length <= 256);
+});
+
 test("validator enforces exact bidirectional review highlights, notes and rows", async (t) => {
   const root = await workspace(t);
   const validPath = path.join(root, "valid-review.xlsx");
@@ -311,6 +370,38 @@ test("validator enforces exact bidirectional review highlights, notes and rows",
   const damaged = path.join(root, "zero-review-bogus.xlsx");
   await workbook.xlsx.writeFile(damaged);
   await assert.rejects(validatePdfOfficeXlsx(damaged, { manifest: noReview, assetRoot: root }), outputInvalid);
+});
+
+test("zero-review validation rejects an isolated missing A2:F2 merge", async (t) => {
+  const root = await workspace(t);
+  const input = manifest();
+  input.pages[0].tables[0].cells.at(-1).confidence = 0.9;
+  const validPath = path.join(root, "zero-review-valid.xlsx");
+  await writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath: validPath });
+  const workbook = await loadWorkbook(validPath);
+  workbook.getWorksheet("待核对").unMergeCells("A2:F2");
+  const damagedPath = path.join(root, "zero-review-unmerged.xlsx");
+  await workbook.xlsx.writeFile(damagedPath);
+  await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: input, assetRoot: root }), outputInvalid);
+});
+
+test("zero-review validation rejects isolated independent B2 content under the expected merge", async (t) => {
+  const root = await workspace(t);
+  const input = manifest();
+  input.pages[0].tables[0].cells.at(-1).confidence = 0.9;
+  const validPath = path.join(root, "zero-review-valid-b2.xlsx");
+  await writePdfOfficeXlsx({ manifest: input, assetRoot: root, outputPath: validPath });
+  const damagedPath = path.join(root, "zero-review-b2-content.xlsx");
+  await rewriteZipEntry(validPath, damagedPath, "xl/worksheets/sheet4.xml", (buffer) => {
+    const xml = buffer.toString("utf8");
+    const mutated = xml.replace(
+      /(<row\b[^>]*\br="2"[^>]*>[\s\S]*?)(<\/row>)/,
+      '$1<c r="B2" t="inlineStr"><is><t>bogus</t></is></c>$2'
+    );
+    assert.notEqual(mutated, xml);
+    return Buffer.from(mutated, "utf8");
+  });
+  await assert.rejects(validatePdfOfficeXlsx(damagedPath, { manifest: input, assetRoot: root }), outputInvalid);
 });
 
 test("validator rejects raw text or images without meaningful editable table data", async (t) => {

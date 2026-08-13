@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const ExcelJS = require("exceljs");
+const { openZipEntries } = require("./zip-util");
 
 const HARD_TABLE_CONFIDENCE = 0.65;
 const REVIEW_CELL_CONFIDENCE = 0.85;
@@ -12,6 +13,7 @@ const MAX_TOTAL_CELLS = 500_000;
 const MAX_ASSET_BYTES = 64 * 1024 * 1024;
 const MAX_TOTAL_ASSET_BYTES = 256 * 1024 * 1024;
 const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
+const MAX_WORKSHEET_XML_BYTES = 16 * 1024 * 1024;
 const REVIEW_FILL_ARGB = "FFFFE2A8";
 const MAX_DISPLAY_WARNING_COUNT = 8;
 const MAX_WARNING_DETAIL_CHARS = 256;
@@ -277,7 +279,7 @@ function summaryRows(manifest, expectedTables) {
       classification,
       tables.length,
       average,
-      Math.min(warnings.length, MAX_DISPLAY_WARNING_COUNT),
+      warnings.length,
       Number.isFinite(page.elapsedMs) && page.elapsedMs >= 0 ? page.elapsedMs : 0,
       safeWarningDetails(warnings)
     ];
@@ -477,6 +479,88 @@ function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+async function readBoundedZipEntry(packagePath, entryName) {
+  const zipfile = await openZipEntries(packagePath);
+  return new Promise((resolve, reject) => {
+    let found = null;
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      try { zipfile.close(); } catch {}
+      reject(error);
+    };
+    zipfile.on("entry", (entry) => {
+      if (entry.fileName !== entryName) {
+        zipfile.readEntry();
+        return;
+      }
+      if (found || entry.uncompressedSize > MAX_WORKSHEET_XML_BYTES) {
+        fail(new Error("invalid package"));
+        return;
+      }
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error) return fail(error);
+        const chunks = [];
+        let total = 0;
+        stream.on("data", (chunk) => {
+          total += chunk.length;
+          if (total > MAX_WORKSHEET_XML_BYTES) {
+            stream.destroy(new Error("invalid package"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        stream.on("error", fail);
+        stream.on("end", () => {
+          found = Buffer.concat(chunks);
+          zipfile.readEntry();
+        });
+      });
+    });
+    zipfile.on("error", fail);
+    zipfile.on("end", () => {
+      if (settled) return;
+      settled = true;
+      if (!found) reject(new Error("invalid package"));
+      else resolve(found);
+    });
+    zipfile.readEntry();
+  });
+}
+
+async function validateZeroReviewSheet(packagePath, reviewSheet) {
+  const merges = [...(reviewSheet.model.merges || [])];
+  if (reviewSheet.rowCount !== 2 || merges.length !== 1 || merges[0] !== "A2:F2" ||
+      reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE) {
+    throw new Error("review row count");
+  }
+  for (const column of ["B", "C", "D", "E", "F"]) {
+    const cell = reviewSheet.getCell(`${column}2`);
+    if (!cell.isMerged || cell.master?.address !== "A2" || notePresent(cell.note)) {
+      throw new Error("review row mismatch");
+    }
+  }
+  const xml = (await readBoundedZipEntry(packagePath, `xl/worksheets/sheet${reviewSheet.id}.xml`)).toString("utf8");
+  const rowRefs = [...xml.matchAll(/<row\b[^>]*\br="([^"]+)"[^>]*>/g)].map((match) => match[1]);
+  if (JSON.stringify(rowRefs) !== JSON.stringify(["1", "2"])) throw new Error("review row count");
+  const mergedCells = new Map();
+  for (const match of xml.matchAll(/<c\b(?=[^>]*\br="([A-F]2)")[^>]*(?:\/>|>[\s\S]*?<\/c>)/g)) {
+    if (mergedCells.has(match[1])) throw new Error("review row mismatch");
+    mergedCells.set(match[1], match[0]);
+  }
+  const masterTag = mergedCells.get("A2") || "";
+  const masterStyle = /\bs="([^"]+)"/.exec(masterTag)?.[1] || "";
+  for (const address of ["B2", "C2", "D2", "E2", "F2"]) {
+    const tag = mergedCells.get(address);
+    if (!tag) continue;
+    const style = /\bs="([^"]+)"/.exec(tag)?.[1] || "";
+    if (style !== masterStyle || /<(?:v|is|f)\b/.test(tag) || /\bt="(?!n\b)[^"]+"/.test(tag)) {
+      throw new Error("review row mismatch");
+    }
+  }
+}
+
 async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSystem = fs } = {}) {
   try {
     const info = await fileSystem.lstat(packagePath);
@@ -550,8 +634,8 @@ async function validatePdfOfficeXlsx(packagePath, { manifest, assetRoot, fileSys
           throw new Error("review row mismatch");
         }
       });
-    } else if (reviewSheet.rowCount !== 2 || reviewSheet.getCell("A2").value !== NO_REVIEW_MESSAGE) {
-      throw new Error("review row count");
+    } else {
+      await validateZeroReviewSheet(packagePath, reviewSheet);
     }
     const referenceSheet = workbook.getWorksheet("原件对照");
     const images = referenceSheet.getImages();
