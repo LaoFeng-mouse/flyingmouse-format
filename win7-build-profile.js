@@ -15,6 +15,7 @@ const REQUIRED_RUNTIME_FILES = [
   "server.js",
   "resource-policy.js",
   "pdf-structure-contract.js",
+  "pdf-structure-score.js",
   "pdf-structure-engine.js",
   "text-conversion.js",
   "office-engine.js",

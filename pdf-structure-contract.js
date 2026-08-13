@@ -2,6 +2,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { STRUCTURE_LIMITS } = require("./resource-policy");
+const {
+  MAX_CANDIDATES,
+  chooseTableCandidate,
+  normalizeTableCandidate
+} = require("./pdf-structure-score");
 
 // Schema v1 intentionally does not enforce tableId cross-references, page sequence,
 // or containment of cell boxes within table boxes. Those are writer/engine semantics,
@@ -130,16 +135,24 @@ function preflightStructureTotals(manifest) {
         totalTables += page.tables.length;
         if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw invalid();
       }
+      if (Array.isArray(page.tableCandidates)) {
+        if (page.tableCandidates.length > MAX_CANDIDATES) throw invalid();
+        totalTables += page.tableCandidates.length;
+        if (totalTables > STRUCTURE_LIMITS.maxTotalTables) throw invalid();
+      }
     }
 
     let totalCells = 0;
     for (const page of manifest.pages) {
-      if (!isPlainObject(page) || !Array.isArray(page.tables)) continue;
-      for (const table of page.tables) {
-        if (!isPlainObject(table) || !Array.isArray(table.cells)) continue;
-        if (table.cells.length > MAX_CELLS_PER_TABLE) throw invalid();
-        totalCells += table.cells.length;
-        if (totalCells > STRUCTURE_LIMITS.maxTotalCells) throw invalid();
+      if (!isPlainObject(page)) continue;
+      for (const collection of [page.tables, page.tableCandidates]) {
+        if (!Array.isArray(collection)) continue;
+        for (const table of collection) {
+          if (!isPlainObject(table) || !Array.isArray(table.cells)) continue;
+          if (table.cells.length > MAX_CELLS_PER_TABLE) throw invalid();
+          totalCells += table.cells.length;
+          if (totalCells > STRUCTURE_LIMITS.maxTotalCells) throw invalid();
+        }
       }
     }
   } catch (error) {
@@ -330,6 +343,24 @@ function validatePage(page, root) {
 
   if (!Array.isArray(page.blocks) || page.blocks.length > MAX_BLOCKS_PER_PAGE) throw invalid();
   if (!Array.isArray(page.tables) || page.tables.length > MAX_TABLES_PER_PAGE) throw invalid();
+  if (!Object.hasOwn(page, "tableLike")) {
+    page.tableLike = page.tables.length > 0 || Array.isArray(page.tableCandidates);
+  }
+  if (typeof page.tableLike !== "boolean") throw invalid();
+  if (!page.tableLike && page.tables.length > 0) throw invalid();
+  if (Object.hasOwn(page, "tableCandidates")) {
+    if (!page.tableLike || page.tables.length !== 0
+      || !Array.isArray(page.tableCandidates)
+      || page.tableCandidates.length === 0
+      || page.tableCandidates.length > MAX_CANDIDATES) {
+      throw invalid();
+    }
+    for (const candidate of page.tableCandidates) {
+      validateTable(normalizeTableCandidate(candidate).table, page);
+    }
+    page.tables.push(chooseTableCandidate(page.tableCandidates).table);
+    delete page.tableCandidates;
+  }
   for (const block of page.blocks) validateBlock(block, page, root);
   for (const table of page.tables) validateTable(table, page);
 
