@@ -553,7 +553,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
         }
       } else {
-        await convertMedia(file.path, outputPath, requestedTarget, category);
+        const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
+          ? String(req.body.videoCodec)
+          : "h264";
+        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec });
       }
     } else {
       throw new Error("暂时无法识别这个文件类型。");

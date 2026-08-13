@@ -93,6 +93,19 @@ test("PDF to XLSX uses a contextual bilingual smart-table label and warning", ()
   assert.match(app, /targetSelect\.value === "xlsx"[\s\S]*info\.category === "pdf"/);
 });
 
+test("video targets expose a codec selector (h264/h265/av1) for mp4/mov/mkv", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="videoCodecField"[^>]*hidden/);
+  assert.match(html, /id="videoCodec"/);
+  assert.match(app, /"videoCodec\.h264"/);
+  assert.match(app, /"videoCodec\.h265"/);
+  assert.match(app, /"videoCodec\.av1"/);
+  assert.match(app, /\["mp4", "mov", "mkv"\]\.includes\(targetSelect\.value\)/);
+  assert.match(app, /\["mp4", "mov", "mkv"\]\.includes\(targetFormat\)/);
+  assert.match(app, /form\.append\("videoCodec"/);
+});
+
 test("renderer enforces the advertised 2 GB batch limit and localizes resource errors", () => {
   const app = readPublic("app.js");
   assert.match(app, /maxBatchBytes/);
