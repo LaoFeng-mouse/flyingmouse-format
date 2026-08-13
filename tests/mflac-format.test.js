@@ -173,7 +173,7 @@ test("static: config exposes mgg input and server dispatches mgg to convertMflac
   assert.ok(configSource.includes('"mflac", "mgg"'), "audioInput 应包含 mgg");
   const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.ok(
-    serverSource.includes('inputExt === "mflac" || inputExt === "mgg"'),
+    serverSource.includes("unlockAudioInputs.has(inputExt)"),
     "server.js 应把 mgg 分发给解密链路"
   );
   const mflacSource = fs.readFileSync(path.join(__dirname, "..", "mflac-format.js"), "utf8");
@@ -186,7 +186,7 @@ test("static: config exposes mmp4 (musicex) input and server dispatches it to co
   assert.ok(configSource.includes('"kgma", "mmp4"'), "audioInput 应包含 mmp4");
   const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.ok(
-    serverSource.includes('inputExt === "kgma" || inputExt === "mmp4"'),
+    serverSource.includes("unlockAudioInputs.has(inputExt)"),
     "server.js 应把 mmp4 分发给解密链路（musicex）"
   );
 });
