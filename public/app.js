@@ -108,7 +108,8 @@ const messages = {
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。",
     "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
     "sponsor.description": "如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费",
-    "sponsor.qrAlt": "微信收款码"
+    "sponsor.qrAlt": "微信收款码",
+    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com"
   },
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
@@ -140,7 +141,8 @@ const messages = {
     "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT.",
     "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
     "sponsor.description": "If FlyingMouse Format helped you, you can buy Mouse a snack. Completely optional; the app stays free.",
-    "sponsor.qrAlt": "WeChat payment QR code"
+    "sponsor.qrAlt": "WeChat payment QR code",
+    "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com"
   }
 };
 
@@ -889,8 +891,8 @@ async function convertCurrentFiles() {
     setWorkflowStep("save");
   }
   setStatus(i18n.language === "en-US"
-    ? (failCount ? `Batch complete: ${successCount} succeeded, ${failCount} failed. Details appear beside each file.` : `Batch complete: ${successCount} succeeded.`)
-    : (failCount ? `批量转换完成：成功 ${successCount} 个，失败 ${failCount} 个。失败原因已显示在对应文件旁边。` : `批量转换完成：成功 ${successCount} 个。`),
+    ? (failCount ? `Batch complete: ${successCount} succeeded, ${failCount} failed. Details appear beside each file. ${t("feedback.hint")}` : `Batch complete: ${successCount} succeeded.`)
+    : (failCount ? `批量转换完成：成功 ${successCount} 个，失败 ${failCount} 个。失败原因已显示在对应文件旁边。${t("feedback.hint")}` : `批量转换完成：成功 ${successCount} 个。`),
   failCount ? (successCount ? "" : "error") : "success");
 
   state.isConverting = false;
