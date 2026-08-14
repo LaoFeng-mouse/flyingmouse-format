@@ -346,7 +346,7 @@ app.post("/api/targets", async (req, res) => {
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
 });
 
-app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
+app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -407,7 +407,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 });
 
-app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
+app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -682,7 +682,7 @@ app.get("/previews/:id", (req, res) => {
 app.use((error, _req, res, _next) => {
   if (error?.code === "LIMIT_FILE_SIZE") {
     logger.warn(`Rejected upload: file too large (max ${MAX_UPLOAD_BYTES} bytes)`);
-    res.status(413).json({ error: "文件太大，当前原型最大支持 1GB。" });
+    res.status(413).json({ error: "文件太大，无法上传。请检查磁盘空间后重试。" });
     return;
   }
   logger.error("Unhandled server error", error);
