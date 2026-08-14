@@ -9,6 +9,13 @@ const SOURCE_FILE_LINE_PATTERN = /\.[^\s\\/"'<>|]{1,32}(?:$|[\s)"',;:])/u;
 const CONVERSION_FILE_EVENT_PATTERN = /(?:Convert (?:request|succeeded|rejected|failed)|Rejected convert request|Images-to-PDF|Merge-PDFs|Rejected images-to-pdf|转换失败)/i;
 const SECRET_LINE_PATTERN = /(?:\bBearer\s+|\b(?:authorization|cookie|credential|password|passwd|secret|token|api[_-]?key)["']?\s*[:=])/i;
 
+// 转换事件行（Convert request / succeeded / failed 等）整行抹掉会让诊断文件失去
+// 信息量（用户反馈 2026-08-14：日志全变成 [REDACTED_FILE] 没法看）。改成只替换
+// 引号内的文件名，保留事件类型、类别、目标格式和字节数。
+function redactQuotedFilenames(line) {
+  return line.replace(/"[^"]*"/g, "[REDACTED_FILE]");
+}
+
 function tailUtf8(value, maxBytes = MAX_DIAGNOSTIC_LOG_BYTES) {
   const buffer = Buffer.from(String(value || ""), "utf8");
   if (buffer.length <= maxBytes) return buffer.toString("utf8");
@@ -35,11 +42,13 @@ function sanitizeDiagnosticText(value, options = {}) {
     if (line.includes("[REDACTED_SECRET]") || SECRET_LINE_PATTERN.test(line)) return "[REDACTED_SECRET]";
     if (
       (homePattern && homePattern.test(line))
-      || /\b[A-Za-z]:\\/.test(line)
+      || /\b[A-Za-z]:\\./.test(line)
       || /\\\\[^\\\r\n]+\\[^\r\n]+/.test(line)
       || /(?:^|[\s("'=])\/(?!\/)(?:[^/\s]+\/)+/.test(line)
     ) return "[REDACTED_PATH]";
-    if (CONVERSION_FILE_EVENT_PATTERN.test(line) || SOURCE_FILE_LINE_PATTERN.test(line)) return "[REDACTED_FILE]";
+    // 转换事件行只抹引号内文件名，保留事件语义（Convert request/succeeded/failed 等）。
+    if (CONVERSION_FILE_EVENT_PATTERN.test(line)) return redactQuotedFilenames(line);
+    if (SOURCE_FILE_LINE_PATTERN.test(line)) return "[REDACTED_FILE]";
     return line;
   }).join("\n");
 }
@@ -77,6 +86,8 @@ function buildDiagnosticsReport(input = {}) {
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
+    "Author: 牢蜂 (LaoFeng), Douyin: 3869421365",
+    "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
     "",
     "Engines:",
     ...(engines.length ? engines.map(([name, details]) => engineLine(name, details)) : ["- unavailable"]),
