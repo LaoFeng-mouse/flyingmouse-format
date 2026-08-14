@@ -13,52 +13,6 @@ async function probeAudioTrack(inputPath) {
   }
 }
 
-// 探测视频流信息：是否带 alpha 透明通道 + 宽高 + 帧率。
-// DXV3=rgba、RLE/qtrle=argb 都带 alpha；转 yuv（h264/h265/av1）会丢弃 alpha，
-// 透明像素 RGB 本身是 0（黑），直接转会导致透明区变黑，需合成白底。
-async function probeVideoInfo(inputPath) {
-  let stderr = "";
-  try {
-    const result = await run(FFMPEG_PATH, ["-hide_banner", "-i", inputPath], { timeout: 30000 });
-    stderr = result.stderr || "";
-  } catch (error) {
-    stderr = String(error.message || "");
-  }
-  const line = stderr.match(/Stream #0:0.*?Video:([^\n]+)/);
-  if (!line) return { hasAlpha: false, width: 0, height: 0, fps: 0 };
-  const desc = line[1];
-  const pixelFormat = desc.match(/,\s*([a-z0-9_]+)\(/i)?.[1] || "";
-  const hasAlpha = /^(rgba|argb|bgra|abgr|yuva|yuv[0-9]+a)/i.test(pixelFormat);
-  // 像素尺寸形如 ", 1466x1080,"（前面是逗号+空格，排除 codec hex 标识 0x20656C72）。
-  const size = desc.match(/,\s*(\d{2,6})x(\d{2,6})\b/);
-  const fpsMatch = desc.match(/([\d.]+)\s*fps/);
-  return {
-    hasAlpha,
-    width: size ? Number(size[1]) : 0,
-    height: size ? Number(size[2]) : 0,
-    fps: fpsMatch ? Number(fpsMatch[1]) : 0
-  };
-}
-
-// 生成「把带 alpha 的视频合成到背景色」的额外输入与 filter_complex 片段。
-// 返回 { inputs, filterComplex }；无 alpha 返回 null。backgroundColor 支持：
-//   "white"（默认）/"black"/十六进制色值（如 "0xff0000" 或 "red" 等 ffmpeg 认的颜色名）。
-function alphaCompositeArgs(info, backgroundColor = "white") {
-  if (!info || !info.hasAlpha) return null;
-  const w = info.width > 0 ? info.width : 1280;
-  const h = info.height > 0 ? info.height : 720;
-  const r = info.fps > 0 ? info.fps : 30;
-  // 只放行安全颜色值（纯字母/井号+hex/0x hex），防止注入 ffmpeg 滤镜参数。
-  const color = /^[A-Za-z]+$|^0x[0-9A-Fa-f]{6,8}$|^#[0-9A-Fa-f]{6,8}$/.test(String(backgroundColor || "").trim())
-    ? String(backgroundColor).trim()
-    : "white";
-  return {
-    inputs: ["-f", "lavfi", "-i", `color=${color}:s=${w}x${h}:r=${r}`],
-    filterComplex: "[1:v][0:v]overlay=shortest=1[alphaout]",
-    videoLabel: "alphaout"
-  };
-}
-
 function videoEncoderArgs(codec) {
   // 视频输出编码选择：默认 h264，可选 h265 / av1。
   if (codec === "h265" || codec === "hevc") {
@@ -73,15 +27,6 @@ function videoEncoderArgs(codec) {
 async function convertMedia(inputPath, outputPath, target, category, options = {}) {
   const args = ["-hide_banner", "-y", "-i", inputPath];
   for (const extraInput of options.extraInputs || []) args.push("-i", extraInput);
-
-  // 视频目标（mp4/mov/mkv/webm）输出 yuv 编码，带 alpha 的源（DXV3 rgba/RLE argb）
-  // 透明区会变黑——先探测，命中则合成白底（filter_complex + 额外 color 输入）。
-  let alphaComposite = null;
-  if (target === "mp4" || target === "mov" || target === "mkv" || target === "webm") {
-    const info = await probeVideoInfo(inputPath);
-    alphaComposite = alphaCompositeArgs(info, options.alphaBackground);
-    if (alphaComposite) args.push(...alphaComposite.inputs);
-  }
 
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
     if (!(options.extraInputs || []).length) {
@@ -119,10 +64,6 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
     );
   }
 
-  if (alphaComposite) {
-    args.push("-filter_complex", alphaComposite.filterComplex, "-map", `[${alphaComposite.videoLabel}]`, "-map", "0:a?");
-  }
-
   for (const [key, value] of Object.entries(options.metadata || {})) {
     if (value) args.push("-metadata", `${key}=${value}`);
   }
@@ -134,8 +75,6 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
 
 module.exports = {
   probeAudioTrack,
-  probeVideoInfo,
   videoEncoderArgs,
-  alphaCompositeArgs,
   convertMedia
 };

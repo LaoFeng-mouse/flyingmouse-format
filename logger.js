@@ -105,8 +105,7 @@ function write(level, message, error) {
     trimIfOversized(filePath);
     // Also mirror to stdout so `node server.js` sessions stay observable.
     if (LEVELS[level] >= LEVELS.WARN) {
-      const stream = process.env.FLYINGMOUSE_LOG_STDERR === "1" ? process.stderr : process.stdout;
-      stream.write(`[${level}] ${message}${formatError(error)}\n`);
+      process.stdout.write(`[${level}] ${message}${formatError(error)}\n`);
     }
   } catch {
     // Never let logging take down the app.

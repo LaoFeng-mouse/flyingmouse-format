@@ -99,10 +99,10 @@ const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
 const DOCENGINE_PATH = bundledDocenginePath();
 
-const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga"]);
+const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
 const rawInput = new Set(["cr2", "cr3", "crw", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "3fr", "erf", "fff", "iiq", "kdc", "mef", "mrw", "x3f"]);
-const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "pdf"];
+const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
@@ -118,20 +118,20 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg", "kgma", "mmp4"]);
 // 加密音频解锁格式（DRM 规避）。商店版（Microsoft Store）构建时隐藏这些入口，降低法律风险。
-const unlockAudioInputs = new Set(["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4", "kwm"]);
+const unlockAudioInputs = new Set(["ncm", "kgg", "mflac", "mgg", "kgma", "mmp4"]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
-  image: ["heic", "heif", "ico", "tga"],
+  image: ["heic", "heif"],
   raw: [...rawInput],
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
-  audio: ["kgg", "mflac", "kwm"]
+  audio: ["kgg", "mflac"]
 });
 const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([

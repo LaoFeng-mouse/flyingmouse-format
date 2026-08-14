@@ -4,8 +4,8 @@ const os = require("node:os");
 const fsp = require("node:fs/promises");
 const { test } = require("node:test");
 
-const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, musicexFallbackFilenames, loadQqMusicCredentials, tryDecryptCandidates } = require("../mflac-format");
-const { QMC2MAP, QMC2RC4, createQMC2 } = require("../kgg-format");
+const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, musicexFallbackFilenames, loadQqMusicCredentials } = require("../mflac-format");
+const { QMC2MAP, QMC2RC4 } = require("../kgg-format");
 
 // 隔离真实桌面凭据：默认 cookie 路径指向不存在的文件，确保测试不读真实凭据、不发起网络请求。
 const { before, after } = require("node:test");
@@ -215,35 +215,8 @@ test("musicexFallbackFilenames 按音质从高到低生成降档候选", () => {
 test("static: musicex 原档无权限时自动降档下载（F0M/O4M/M500）", () => {
   const fs = require("node:fs");
   const mflacSource = fs.readFileSync(path.join(__dirname, "..", "mflac-format.js"), "utf8");
-  assert.ok(mflacSource.includes("collectMusicexCandidates"), "应存在 musicex 候选收集函数");
-  assert.ok(mflacSource.includes("tryDecryptCandidates"), "应存在逐候选解密函数");
+  assert.ok(mflacSource.includes("resolveMusicex"), "应存在 musicex 解析函数");
   assert.ok(mflacSource.includes("downloadMusicexFile"), "应存在 CDN 下载函数");
   assert.ok(mflacSource.includes('`F0M${mediaMid}.mflac`'), "降档应包含 F0M 档");
   assert.ok(mflacSource.includes("所有音质档位"), "全无权限时应报明确错误");
-});
-
-test("tryDecryptCandidates 原档乱码时回退到正确候选", () => {
-  // 构造一个有效测试 ekey（32 零字节 base64），createQMC2 能据此创建 QMC2 流密码
-  const ekey = Buffer.alloc(32).toString("base64");
-  const cipher = createQMC2(ekey);
-  assert.ok(cipher, "测试 ekey 应能创建 QMC2 cipher");
-
-  // 正确候选：用 cipher 加密一段 fLaC 音频（QMC2 XOR 加解密同函数）
-  const flac = Buffer.concat([Buffer.from("fLaC", "latin1"), Buffer.alloc(64, 0x01)]);
-  const encryptedFlac = Buffer.from(flac);
-  cipher.decrypt(encryptedFlac, 0);
-
-  // 乱码候选：有效 ekey，但文件内容是明确非音频的文本（模拟原档 ekey 错误 → 解密后不是音频）
-  const garbageCandidate = { ekey, fileBuf: Buffer.from("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", "latin1"), audioEnd: 32 };
-  const goodCandidate = { ekey, fileBuf: encryptedFlac, audioEnd: encryptedFlac.length };
-
-  // 乱码在前、正确在后 → 应跳过乱码、回退到正确候选
-  const result = tryDecryptCandidates([garbageCandidate, goodCandidate]);
-  assert.ok(result, "应跳过乱码候选、回退到正确候选");
-  assert.equal(result.format, "flac");
-  assert.equal(result.audio.subarray(0, 4).toString("latin1"), "fLaC");
-
-  // 全部乱码 → 返回 null（交给上层报「无权限/下架」而非「解密乱码」）
-  assert.equal(tryDecryptCandidates([garbageCandidate]), null, "全部乱码应返回 null");
-  assert.equal(tryDecryptCandidates([]), null, "空候选应返回 null");
 });

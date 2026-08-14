@@ -72,35 +72,13 @@ function extFromName(name = "") {
 function decodeUploadFileName(name = "") {
   const original = String(name || "file");
 
-  // UTF-8 mojibake：浏览器/Electron 的 FormData 用 UTF-8 编码文件名，
-  // multer 的 busboy 按 latin1 解码后会出现 Ã© 这类字符，还原回 UTF-8。
-  // 解码成功直接返回，不再往下走 GBK（避免把正确中文名二次转换）。
   try {
     const decoded = Buffer.from(original, "latin1").toString("utf8");
     const looksLikeMojibake = /(?:Ã|Â|â|ä|å|æ|ç|è|é|ð|þ|œ|€)/.test(original);
-    if (looksLikeMojibake && decoded && !decoded.includes("\uFFFD")) {
-      return decoded;
-    }
+    return looksLikeMojibake && decoded && !decoded.includes("\uFFFD") ? decoded : original;
   } catch {
-    // fall through to GBK attempt
+    return original;
   }
-
-  // GBK mojibake：命令行/某些上传场景（curl -F filename、微信传输文件名、老
-  // 客户端）会用系统代码页（中文 Windows = GBK/936）编码文件名，multer 按
-  // latin1 解码后出现 °×À¼µÄ 这类字符（2026-08-14 实测：中文文件名上传返回
-  // 乱码）。仅当文件名含高字节 latin1 字符（≥0x80）时按 GBK 再解一次。
-  if ([...original].some((ch) => ch.charCodeAt(0) >= 0x80)) {
-    try {
-      const bytes = Buffer.from(original, "latin1");
-      const decoded = new TextDecoder("gbk").decode(bytes);
-      if (decoded && !decoded.includes("\uFFFD") && decoded !== original) {
-        return decoded;
-      }
-    } catch {
-      // TextDecoder 不支持 gbk 时原样返回
-    }
-  }
-  return original;
 }
 
 function normalizeExt(ext) {
@@ -245,17 +223,7 @@ function outputPathFor(originalName, targetExt, outputExt = targetExt) {
   return path.join(OUTPUT_DIR, `${Date.now()}-${randomUUID()}-${outputNameFor(originalName, targetExt, outputExt)}`);
 }
 
-function previewKindFor(downloadName, mimeType) {
-  const ext = normalizeExt(extFromName(downloadName));
-  if (String(mimeType).startsWith("image/")) return "image";
-  if (mimeType === "application/pdf" || ext === "pdf") return "pdf";
-  if (String(mimeType).startsWith("audio/")) return "audio";
-  if (String(mimeType).startsWith("video/")) return "video";
-  if (["txt", "md", "json", "csv", "tsv", "xml", "yaml", "yml", "log", "html"].includes(ext)) return "text";
-  return "unsupported";
-}
-
-function registerDownload(filePath, downloadName, mimeType) {
+function downloadUrlFor(filePath, downloadName, mimeType) {
   const id = randomUUID();
   downloads.set(id, {
     filePath,
@@ -263,15 +231,7 @@ function registerDownload(filePath, downloadName, mimeType) {
     mimeType,
     createdAt: Date.now()
   });
-  return {
-    downloadUrl: `/downloads/${id}`,
-    previewUrl: `/previews/${id}`,
-    previewKind: previewKindFor(downloadName, mimeType)
-  };
-}
-
-function downloadUrlFor(filePath, downloadName, mimeType) {
-  return registerDownload(filePath, downloadName, mimeType).downloadUrl;
+  return `/downloads/${id}`;
 }
 
 function escapeHtml(value) {
@@ -297,8 +257,6 @@ module.exports = {
   outputExtFor,
   outputNameFor,
   outputPathFor,
-  previewKindFor,
-  registerDownload,
   downloadUrlFor,
   escapeHtml
 };

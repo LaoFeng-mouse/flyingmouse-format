@@ -8,9 +8,7 @@
 // 解密算法与酷狗 KGG v5 同源（QMC2：ekeyDecrypt + QMC2MAP/QMC2RC4），复用 kgg-format.js。
 const path = require("path");
 const os = require("os");
-const fs = require("fs");
 const fsp = require("fs/promises");
-const childProcess = require("child_process");
 
 const { ekeyDecrypt, createQMC2, QMC2MAP, QMC2RC4 } = require("./kgg-format");
 
@@ -22,50 +20,9 @@ const API_URL = "https://u.y.qq.com/cgi-bin/musicu.fcg";
 const API_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 const API_PLATFORM = "20";
 
-// 解析 Windows 真实桌面目录。桌面可能被用户移到 D 盘、或 OneDrive 重定向，
-// os.homedir()+"Desktop" 只对默认位置有效。用 PowerShell [Environment]::GetFolderPath
-// 拿系统真实桌面路径；失败（精简系统/未装 PowerShell）则回退候选。结果缓存，避免
-// 每次解密都起一次 PowerShell。
-let cachedDesktopDir = null;
-let desktopDirResolved = false;
-
-function resolveWindowsDesktopDir() {
-  if (process.platform !== "win32") return null;
-  if (desktopDirResolved) return cachedDesktopDir;
-  desktopDirResolved = true;
-  try {
-    const out = childProcess.execFileSync(
-      "powershell",
-      ["-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('Desktop')"],
-      { encoding: "utf8", timeout: 5000, windowsHide: true }
-    ).trim();
-    if (out && /^[A-Za-z]:[\\/]/.test(out)) cachedDesktopDir = out;
-  } catch {
-    // PowerShell 不可用时回退 os.homedir() 候选路径。
-  }
-  return cachedDesktopDir;
-}
-
 // 每次调用动态计算，便于测试通过 FLYINGMOUSE_QQ_COOKIE 覆盖（隔离真实桌面凭据）。
 function getDefaultCookiePath() {
-  if (process.env.FLYINGMOUSE_QQ_COOKIE) return process.env.FLYINGMOUSE_QQ_COOKIE;
-  const fileName = "QQ音乐_登录cookie.txt";
-  const home = os.homedir();
-  const dirs = [];
-  const realDesktop = resolveWindowsDesktopDir();
-  if (realDesktop) dirs.push(realDesktop);
-  // 兜底候选：默认桌面、OneDrive 重定向桌面（个人版）。去重后返回第一个存在的文件。
-  dirs.push(path.join(home, "Desktop"));
-  dirs.push(path.join(home, "OneDrive", "Desktop"));
-  const seen = new Set();
-  for (const dir of dirs) {
-    const key = dir.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const candidate = path.join(dir, fileName);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return path.join(realDesktop || path.join(home, "Desktop"), fileName);
+  return process.env.FLYINGMOUSE_QQ_COOKIE || path.join(os.homedir(), "Desktop", "QQ音乐_登录cookie.txt");
 }
 
 function qmcError(message, code = "MFLAC_DECRYPT_FAILED") {
@@ -335,20 +292,11 @@ async function downloadMusicexFile(purl, sip) {
   throw qmcError(`下载加密音频失败：${lastError ? lastError.message : "未知错误"}。`, "MFLAC_EKEY_NETWORK");
 }
 
-// 收集 musicex 解密候选：原档（ekey 非空时）+ 降档下载（F0M/O4M/M500）。
-// 臻品母带（AIM 等）原档 GetEVkey 可能返回「非空但错误」的 ekey（账号权限边界），
-// 直接解密会乱码；因此候选逐个尝试，第一个可识别格式者胜出，避免误报解密失败。
-async function collectMusicexCandidates(creds, footer, originalFilename, originalBuf) {
-  const candidates = [];
+// 解析 musicex 密钥：先原档，无权限自动降档下载；返回 { type, ekey, fileBuf?, audioEnd? }
+async function resolveMusicex(creds, footer, originalFilename) {
   const first = await fetchEkeyFromApi(creds, originalFilename, footer.mediaMid);
-  if (first.ekey) {
-    candidates.push({
-      ekey: first.ekey,
-      fileBuf: originalBuf,
-      audioEnd: originalBuf.length - footer.footerSize,
-      note: "原档"
-    });
-  }
+  if (first.ekey) return { type: "direct", ekey: first.ekey };
+
   for (const fb of musicexFallbackFilenames(footer.mediaMid)) {
     const info = await fetchEkeyFromApi(creds, fb.filename, footer.mediaMid);
     if (!info.ekey || !info.purl) continue;
@@ -356,28 +304,19 @@ async function collectMusicexCandidates(creds, footer, originalFilename, origina
     // 下载档位的文件可能带 musicex footer，也可能是无 footer 的裸 QMC2 加密体
     const fbFooter = parseMflacFooter(fileBuf);
     const audioEnd = fbFooter.type === "musicex" ? fileBuf.length - fbFooter.footerSize : fileBuf.length;
-    candidates.push({ ekey: info.ekey, fileBuf, audioEnd, note: fb.label });
+    return {
+      type: "downloaded",
+      ekey: info.ekey,
+      fileBuf,
+      audioEnd,
+      note: fb.label
+    };
   }
-  return candidates;
-}
 
-// 逐个尝试解密候选，返回第一个可识别音频格式的 { audio, format }；全部失败返回 null。
-function tryDecryptCandidates(candidates) {
-  for (const c of candidates) {
-    try {
-      const key = ekeyDecrypt(c.ekey);
-      if (!key || key.length < 8) continue;
-      const qmc2 = createQMC2(c.ekey);
-      if (!qmc2) continue;
-      const audio = Buffer.from(c.fileBuf.subarray(0, c.audioEnd));
-      qmc2.decrypt(audio, 0);
-      const format = detectAudioFormat(audio);
-      if (format !== "unknown") return { audio, format };
-    } catch {
-      // 该候选解密失败，尝试下一个
-    }
-  }
-  return null;
+  throw qmcError(
+    "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
+    "MFLAC_EKEY_NETWORK"
+  );
 }
 
 function detectAudioFormat(buf) {
@@ -415,6 +354,7 @@ async function convertMflac(inputPath, options = {}) {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
   } else if (footer.type === "musicex") {
+    audioEnd = buf.length - footer.footerSize;
     const apiFilename = /\.(mgg|mflac|mgg0|mgg1|mggl|mflac0|mflach)$/i.test(footer.filename)
       ? footer.filename
       : `${footer.filename}${path.extname(inputPath) || ".mflac"}`;
@@ -425,20 +365,13 @@ async function convertMflac(inputPath, options = {}) {
         "MFLAC_EKEY_REQUIRED"
       );
     }
-    // 原档 + 降档候选逐个尝试解密；原档 ekey 可能是「非空但错误」的（臻品母带档权限边界），
-    // 解密乱码时自动落到降档下载的普通音质，避免「解密结果不可识别」误报。
-    const candidates = await collectMusicexCandidates(creds, footer, apiFilename, buf);
-    const decrypted = tryDecryptCandidates(candidates);
-    if (!decrypted) {
-      throw qmcError(
-        "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
-        "MFLAC_EKEY_NETWORK"
-      );
+    // 先原档换密钥；原档无权限时自动尝试同一首歌的其他音质档位（F0M 无损/O4M/M500）
+    const resolved = await resolveMusicex(creds, footer, apiFilename);
+    if (resolved.type === "downloaded") {
+      audioSource = resolved.fileBuf;
+      audioEnd = resolved.audioEnd;
     }
-    const musicexTempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-mflac-"));
-    const musicexNativePath = path.join(musicexTempDir, `native.${decrypted.format}`);
-    await fsp.writeFile(musicexNativePath, decrypted.audio);
-    return { nativePath: musicexNativePath, format: decrypted.format, tempDir: musicexTempDir };
+    ekey = resolved.ekey;
   } else {
     throw qmcError("无法识别这个 MFLAC 的加密版本（footer 缺失或格式未知）。");
   }
@@ -463,4 +396,4 @@ async function convertMflac(inputPath, options = {}) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames, tryDecryptCandidates };
+module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames };

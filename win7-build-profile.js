@@ -10,8 +10,6 @@ const STAGING_EXCLUDED_TESTS = new Set([
 
 const REQUIRED_RUNTIME_FILES = [
   "electron-main.js",
-  "cli.js",
-  "agent-skill-installer.js",
   "electron-security.js",
   "preload.js",
   "server.js",
@@ -22,7 +20,6 @@ const REQUIRED_RUNTIME_FILES = [
   "diagnostics.js",
   "runtime-paths.js",
   "image-conversion.js",
-  "ico-format.js",
   "pdf-table-extractor.js",
   "pdf-table-runtime.js",
   "ci-engines-v1.json",
@@ -34,7 +31,6 @@ const REQUIRED_RUNTIME_FILES = [
   "kgg-format.js",
   "mflac-format.js",
   "kgma-format.js",
-  "kwm-format.js",
   "config.js",
   "utils.js",
   "media.js",
