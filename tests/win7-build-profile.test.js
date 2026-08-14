@@ -86,7 +86,9 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "zip-util.js",
     "image.js",
     "ocr.js",
+    "pdf-structure-contract.js",
     "pdfjs.js",
+    "pdf-classifier.js",
     "pdf-table.js",
     "pdf.js",
     "text-docx.js",
@@ -112,6 +114,18 @@ test("Win7 profile includes every current runtime module and absolute binary res
     !profile.build.extraResources.some((item) => item.to === "docengine"),
     "win7 must exclude the docengine engine"
   );
+  assert.ok(
+    !profile.build.extraResources.some((item) => item.to === "docstructure" || item.from.includes("docstructure")),
+    "win7 must exclude the structured PDF engine and models"
+  );
+});
+
+test("Win7 excludes a future docstructure extraResource", () => {
+  const { createWin7Package } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.win.extraResources.push({ from: "bin/docstructure", to: "docstructure" });
+  const profile = createWin7Package(input, path.resolve(__dirname, ".."));
+  assert.ok(!profile.build.extraResources.some((item) => item.to === "docstructure"));
 });
 
 test("stage source entries contain runtime source and assets but exclude node_modules", () => {
@@ -149,6 +163,48 @@ test("derived package and staging entries restore a missing required runtime mod
 
   assert.ok(packageJson.build.files.includes("logger.js"));
   assert.ok(stagingEntries.includes("logger.js"));
+});
+
+test("derived package and staging entries restore the PDF classifier runtime module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-classifier.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-classifier.js"));
+  assert.ok(stagingEntries.includes("pdf-classifier.js"));
+});
+
+test("derived package and staging entries restore the PDF structure contract runtime module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-structure-contract.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-structure-contract.js"));
+  assert.ok(stagingEntries.includes("pdf-structure-contract.js"));
+});
+
+test("derived package and staging entries restore the PDF structure engine boundary module", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const input = structuredClone(rootPackage);
+  input.build.files = input.build.files.filter((entry) => entry !== "pdf-structure-engine.js");
+
+  const { packageJson, stagingEntries } = createWin7BuildProfile(
+    input,
+    path.resolve(__dirname, "..")
+  );
+
+  assert.ok(packageJson.build.files.includes("pdf-structure-engine.js"));
+  assert.ok(stagingEntries.includes("pdf-structure-engine.js"));
 });
 
 test("test script filtering rejects shell syntax and unknown command forms", () => {

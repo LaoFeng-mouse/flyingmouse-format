@@ -12,6 +12,22 @@ test("Windows runtime paths preserve the packaged x64 engine layout", () => {
   assert.match(paths.libreoffice, /soffice\.com$/);
   assert.match(paths.pdftoppm, /pdftoppm\.exe$/);
   assert.equal(paths.tessdata, path.join(resourcesPath, "tessdata"));
+  assert.equal(paths.docstructureEngine, path.join(resourcesPath, "docstructure", "docstructure-engine.exe"));
+  assert.equal(paths.docstructureModels, path.join(resourcesPath, "docstructure", "models"));
+});
+
+test("Windows structured document paths honor explicit environment overrides", () => {
+  const paths = resolveRuntimePaths({
+    platform: "win32",
+    arch: "x64",
+    resourcesPath: "C:\\resources",
+    env: {
+      FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH: "D:\\private\\engine.exe",
+      FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR: "D:\\private\\models"
+    }
+  });
+  assert.equal(paths.docstructureEngine, "D:\\private\\engine.exe");
+  assert.equal(paths.docstructureModels, "D:\\private\\models");
 });
 
 for (const arch of ["arm64", "x64"]) {

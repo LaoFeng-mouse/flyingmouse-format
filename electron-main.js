@@ -151,6 +151,10 @@ function configureRuntime() {
   process.env.FLYINGMOUSE_LIBREOFFICE_PATH = runtimePaths.libreoffice;
   process.env.FLYINGMOUSE_PDFTOPPM_PATH = runtimePaths.pdftoppm;
   process.env.FLYINGMOUSE_TESSDATA_PATH = runtimePaths.tessdata;
+  if (runtimePaths.docstructureEngine) process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH = runtimePaths.docstructureEngine;
+  else delete process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH;
+  if (runtimePaths.docstructureModels) process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR = runtimePaths.docstructureModels;
+  else delete process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR;
   if (runtimePaths.avs3Decoder) process.env.FLYINGMOUSE_AVS3_DECODER_PATH = runtimePaths.avs3Decoder;
   else delete process.env.FLYINGMOUSE_AVS3_DECODER_PATH;
   log(`Runtime dir: ${process.env.FLYINGMOUSE_RUNTIME_DIR}`);

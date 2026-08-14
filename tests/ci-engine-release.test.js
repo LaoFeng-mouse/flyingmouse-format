@@ -48,3 +48,28 @@ test("release workflow restores engines, runs full conversion tests and builds b
   assert.match(workflow, /--draft=false --latest/);
   assert.match(workflow, /contents: write/);
 });
+
+test("Windows release restores and validates docstructure before probe, conversion tests and build", () => {
+  const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
+  const restore = workflow.indexOf("Restore fixed conversion engines");
+  const validate = workflow.indexOf("Validate locked document structure engine");
+  const probe = workflow.indexOf("Probe document structure engine");
+  const conversion = workflow.indexOf("Full real conversion suite");
+  const build = workflow.indexOf("Build Windows 10 and 11 installer");
+  assert.ok(restore >= 0 && restore < validate && validate < probe && probe < conversion && conversion < build);
+  assert.match(workflow.slice(validate, conversion), /docstructure-engine-lock\.json/);
+  assert.match(workflow.slice(probe, conversion), /docstructure-engine\.exe/);
+});
+
+test("CI engine manifest and restore script include the locked docstructure one-folder tree", () => {
+  const manifest = require("../ci-engines-v1.json");
+  const windows = manifest.assets["win32-x64"];
+  assert.ok(windows.requiredFiles.includes("docstructure/docstructure-engine.exe"));
+  assert.ok(windows.requiredFiles.some((entry) => entry.startsWith("docstructure/models/")));
+
+  const restore = fs.readFileSync(path.join(root, "scripts", "restore-ci-engines.ps1"), "utf8");
+  assert.match(restore, /"docstructure"/);
+  assert.match(restore, /docstructure-engine-lock\.json/);
+  assert.match(restore, /lock-docstructure-engine\.js[\s\S]*--verify/);
+  assert.ok(restore.indexOf("--verify") < restore.indexOf("Move-Item"));
+});

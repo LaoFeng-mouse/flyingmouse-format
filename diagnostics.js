@@ -63,6 +63,13 @@ function safeField(value) {
 }
 
 function engineLine(name, details = {}) {
+  if (name === "docstructure") {
+    const fields = [details.available ? "available" : "unavailable"];
+    if (details.engineVersion) fields.push(`engineVersion=${safeField(details.engineVersion)}`);
+    if (details.modelLockVersion) fields.push(`modelLockVersion=${safeField(details.modelLockVersion)}`);
+    if (details.errorCode) fields.push(`errorCode=${safeField(details.errorCode)}`);
+    return `- docstructure: ${fields.join("; ")}`;
+  }
   const fields = [details.enabled ? "enabled" : "disabled"];
   if (details.version) fields.push(`version=${safeField(details.version)}`);
   if (details.errorCode) fields.push(`errorCode=${safeField(details.errorCode)}`);

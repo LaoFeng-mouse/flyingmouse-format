@@ -83,6 +83,22 @@ function openZipEntries(zipPath) {
   });
 }
 
+// yauzl.open 走 fd_slicer（createFromFd），对某些合法 deflate 流会读流挂起
+// （实测：一个 30 页 docx 的 word/document.xml 读到 49KB 就停，永不 end/error，
+//  而 Node zlib 与 yauzl.fromBuffer 都能完整解压出 332643 字节）。
+// 对需要可靠读取内容的小包（DOCX 校验），改用 fromBuffer 路径绕开该 bug。
+function openZipEntriesFromBuffer(buffer) {
+  return new Promise((resolve, reject) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (error, zipfile) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(zipfile);
+    });
+  });
+}
+
 function readZipEntryToFile(zipfile, entry, outputPath) {
   return new Promise((resolve, reject) => {
     zipfile.openReadStream(entry, (error, stream) => {
@@ -121,6 +137,7 @@ module.exports = {
   collectDirectoryFiles,
   zipDirectory,
   openZipEntries,
+  openZipEntriesFromBuffer,
   readZipEntryToFile,
   listZipEntries
 };

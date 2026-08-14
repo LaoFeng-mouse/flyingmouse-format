@@ -18,7 +18,9 @@ function resolveRuntimePaths(options = {}) {
       avs3Decoder: override(env, "FLYINGMOUSE_AVS3_DECODER_PATH", path.join(resourcesPath, "avs3", "avs3RM0Decoder.exe")),
       libreoffice: override(env, "FLYINGMOUSE_LIBREOFFICE_PATH", path.join(resourcesPath, "libreoffice", "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com")),
       pdftoppm: override(env, "FLYINGMOUSE_PDFTOPPM_PATH", path.join(resourcesPath, "poppler", "Library", "bin", "pdftoppm.exe")),
-      tessdata: override(env, "FLYINGMOUSE_TESSDATA_PATH", path.join(resourcesPath, "tessdata"))
+      tessdata: override(env, "FLYINGMOUSE_TESSDATA_PATH", path.join(resourcesPath, "tessdata")),
+      docstructureEngine: override(env, "FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH", path.join(resourcesPath, "docstructure", "docstructure-engine.exe")),
+      docstructureModels: override(env, "FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR", path.join(resourcesPath, "docstructure", "models"))
     };
   }
 

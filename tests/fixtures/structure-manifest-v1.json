@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "engine": {
+    "name": "anonymous-fixture",
+    "version": "1.0.0"
+  },
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 1653,
+      "height": 2339,
+      "rotation": 0,
+      "referenceImage": "page-001.png",
+      "blocks": [
+        {
+          "type": "heading",
+          "bbox": [120, 180, 1533, 320],
+          "text": "示例确认表",
+          "confidence": 0.99
+        },
+        {
+          "type": "table",
+          "bbox": [120, 690, 1533, 1438],
+          "tableId": "table-001",
+          "confidence": 0.96
+        },
+        {
+          "type": "seal",
+          "bbox": [1260, 1510, 1450, 1700],
+          "asset": "seal.png",
+          "confidence": 0.94
+        }
+      ],
+      "tables": [
+        {
+          "id": "table-001",
+          "rowCount": 4,
+          "columnCount": 4,
+          "bbox": [120, 690, 1533, 1438],
+          "confidence": 0.96,
+          "cells": [
+            { "row": 0, "column": 0, "rowSpan": 1, "columnSpan": 4, "bbox": [120, 690, 1533, 877], "text": "示例确认表", "confidence": 0.99 },
+            { "row": 1, "column": 0, "rowSpan": 1, "columnSpan": 1, "bbox": [120, 877, 473, 1064], "text": "编号", "confidence": 0.98 },
+            { "row": 1, "column": 1, "rowSpan": 1, "columnSpan": 1, "bbox": [473, 877, 827, 1064], "text": "期间", "confidence": 0.98 },
+            { "row": 1, "column": 2, "rowSpan": 1, "columnSpan": 1, "bbox": [827, 877, 1180, 1064], "text": "金额", "confidence": 0.97 },
+            { "row": 1, "column": 3, "rowSpan": 1, "columnSpan": 1, "bbox": [1180, 877, 1533, 1064], "text": "状态", "confidence": 0.97 },
+            { "row": 2, "column": 0, "rowSpan": 1, "columnSpan": 1, "bbox": [120, 1064, 473, 1251], "text": "A-001", "confidence": 0.99 },
+            { "row": 2, "column": 1, "rowSpan": 1, "columnSpan": 1, "bbox": [473, 1064, 827, 1251], "text": "2026-08", "confidence": 0.98 },
+            { "row": 2, "column": 2, "rowSpan": 1, "columnSpan": 1, "bbox": [827, 1064, 1180, 1251], "text": "0.00", "confidence": 0.96 },
+            { "row": 2, "column": 3, "rowSpan": 1, "columnSpan": 1, "bbox": [1180, 1064, 1533, 1251], "text": "Confirmed", "confidence": 0.95 },
+            { "row": 3, "column": 0, "rowSpan": 1, "columnSpan": 1, "bbox": [120, 1251, 473, 1438], "text": "", "confidence": 0.91 },
+            { "row": 3, "column": 1, "rowSpan": 1, "columnSpan": 1, "bbox": [473, 1251, 827, 1438], "text": "", "confidence": 0.91 },
+            { "row": 3, "column": 2, "rowSpan": 1, "columnSpan": 1, "bbox": [827, 1251, 1180, 1438], "text": "", "confidence": 0.9 },
+            { "row": 3, "column": 3, "rowSpan": 1, "columnSpan": 1, "bbox": [1180, 1251, 1533, 1438], "text": "", "confidence": 0.9 }
+          ]
+        }
+      ],
+      "warnings": [],
+      "elapsedMs": 1
+    }
+  ]
+}

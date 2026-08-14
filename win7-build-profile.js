@@ -16,6 +16,9 @@ const REQUIRED_RUNTIME_FILES = [
   "preload.js",
   "server.js",
   "resource-policy.js",
+  "pdf-structure-contract.js",
+  "pdf-structure-score.js",
+  "pdf-structure-engine.js",
   "text-conversion.js",
   "office-engine.js",
   "office-quality.js",
@@ -42,6 +45,7 @@ const REQUIRED_RUNTIME_FILES = [
   "image.js",
   "ocr.js",
   "pdfjs.js",
+  "pdf-classifier.js",
   "pdf-table.js",
   "pdf.js",
   "text-docx.js",
@@ -129,9 +133,10 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
-  // 文档引擎（docengine，Python 3.12 打包）不支持 Windows 7：win7 版排除它，PDF→docx/表格提取回退到纯 JS 实现。
+  // Python-backed docengine and docstructure runtimes are excluded from Win7;
+  // their JavaScript boundary modules remain available for static imports.
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => !item.from.includes("docengine"))
+    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure/i.test(String(value))))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")

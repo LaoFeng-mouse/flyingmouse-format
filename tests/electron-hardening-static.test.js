@@ -252,6 +252,19 @@ test("package bundles the AV3A helper and configures its runtime path", () => {
   assert.match(runtimePaths, /avs3Decoder:\s*null/);
 });
 
+test("structured PDF engine is standard Windows-only and never claimed by Win7 or macOS", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const windows = packageJson.build.win.extraResources;
+  assert.deepStrictEqual(windows.filter((item) => item.to === "docstructure"), [
+    { from: "bin/docstructure", to: "docstructure" }
+  ]);
+  assert.strictEqual(packageJson.build.mac.extraResources.some((item) => item.to === "docstructure"), false);
+
+  const { createWin7Package } = require("../win7-build-profile");
+  const profile = createWin7Package(packageJson, path.resolve(__dirname, ".."));
+  assert.strictEqual(profile.build.extraResources.some((item) => item.to === "docstructure"), false);
+});
+
 test("save dialogs restore and update the last successful directory", () => {
   const packageJson = JSON.parse(readRoot("package.json"));
   const main = readRoot("electron-main.js");

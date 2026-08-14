@@ -5,6 +5,7 @@
 
 const fs = require("fs");
 const fsp = require("fs/promises");
+const crypto = require("node:crypto");
 const os = require("os");
 const path = require("path");
 const yazl = require("yazl");
@@ -12,10 +13,11 @@ const sanitize = require("sanitize-filename");
 const { PDFDocument } = require("pdf-lib");
 const { PDFTOPPM_PATH, DOCENGINE_PATH, QPDF_PATH, pdfImageTargets } = require("./config");
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
-const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
+const { zipFiles, openZipEntries, openZipEntriesFromBuffer, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
 const { ocrAvailable, createOcrWorker, recognizeImageTextWithWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
+const { classifyPdf } = require("./pdf-classifier");
 const {
   extractPdfRowsByPage,
   extractComplexPdfTableModel,
@@ -24,6 +26,12 @@ const {
 const { assertPdfPages } = require("./resource-policy");
 const { mergeCnSpaces } = require("./pdf-table-runtime");
 const { OfficeQualityError } = require("./office-quality");
+const { withStructuredPdf } = require("./pdf-structure-engine");
+const { chooseTableCandidate } = require("./pdf-structure-score");
+const { structureError } = require("./pdf-structure-contract");
+const { writePdfOfficeDocx } = require("./pdf-office-docx");
+const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
+const { parseXmlToJson } = require("./xml-json");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const pwd = String(password || "");
@@ -66,6 +74,95 @@ async function convertPdfEncrypt(inputPath, outputPath, password) {
 
 const OCR_QUALITY_THRESHOLD = 0.65;
 
+function selectedStructureManifest(manifest) {
+  const copy = structuredClone(manifest);
+  copy.pages = (copy.pages || []).map((page) => {
+    if (!Array.isArray(page.tableCandidates)) return page;
+    const selected = chooseTableCandidate(page.tableCandidates).table;
+    const copyPage = { ...page, tables: [structuredClone(selected)] };
+    delete copyPage.tableCandidates;
+    return copyPage;
+  });
+  return copy;
+}
+
+function tableNotDetectedError() {
+  return structureError(
+    "PDF_TABLE_NOT_DETECTED",
+    "未检测到可可靠编辑的表格，无法生成 Excel。",
+    "No reliably editable table was detected, so an Excel workbook cannot be created."
+  );
+}
+
+async function outputInfo(outputPath) {
+  try {
+    return await fsp.lstat(outputPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function publishAttempt(attemptPath, outputPath) {
+  const existing = await outputInfo(outputPath);
+  if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+    throw new Error("unsafe output target");
+  }
+  if (!existing) {
+    await fsp.rename(attemptPath, outputPath);
+    return;
+  }
+  const backupPath = `${outputPath}.backup-${crypto.randomUUID()}`;
+  await fsp.rename(outputPath, backupPath);
+  try {
+    await fsp.rename(attemptPath, outputPath);
+  } catch (error) {
+    try {
+      await fsp.rename(backupPath, outputPath);
+    } catch {
+      await fsp.copyFile(backupPath, outputPath).catch(() => {});
+    }
+    throw error;
+  }
+  await fsp.rm(backupPath, { force: true }).catch(() => {});
+}
+
+async function withAttemptOutput(outputPath, produce) {
+  const attemptPath = `${outputPath}.attempt-${crypto.randomUUID()}`;
+  try {
+    const result = await produce(attemptPath);
+    const info = await fsp.lstat(attemptPath);
+    if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error("invalid attempt output");
+    await publishAttempt(attemptPath, outputPath);
+    return result;
+  } finally {
+    await fsp.rm(attemptPath, { force: true }).catch(() => {});
+  }
+}
+
+async function convertStructuredPdf({ inputPath, outputPath, target, options = {} }) {
+  const boundary = options.withStructuredPdf || withStructuredPdf;
+  return boundary(inputPath, options, async (manifest, assetRoot) => {
+      const selected = selectedStructureManifest(manifest);
+      if (target === "xlsx") {
+        const tables = selected.pages.reduce((total, page) => total + (page.tables || []).length, 0);
+        if (tables === 0) throw tableNotDetectedError();
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
+      }
+      if (target === "docx") {
+        return withAttemptOutput(outputPath, (attemptPath) =>
+          (options.writePdfOfficeDocx || writePdfOfficeDocx)({
+            manifest: selected, assetRoot, outputPath: attemptPath
+          }));
+      }
+      throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
+        "不支持该结构化输出格式。", "Unsupported structured PDF target.");
+  });
+}
+
 function assertPdfTableOcrQuality(model) {
   const ocrPages = (model?.summary || []).filter((page) => page.source === "ocr" && page.tableCount > 0);
   if (!ocrPages.length) return;
@@ -98,6 +195,20 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (pdfImageTargets.includes(target)) {
     await convertPdfPagesToImagesZip(inputPath, outputPath, target);
     return;
+  }
+
+  if (target === "docx" || target === "xlsx") {
+    const classification = await (options.classifyPdf || classifyPdf)(inputPath);
+    if (classification.kind !== "native") {
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath,
+        outputPath,
+        target,
+        classification,
+        options
+      });
+      return;
+    }
   }
 
   if (target === "xlsx") {
@@ -156,7 +267,7 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
   }
 
   if (target === "docx") {
-    await convertPdfToDocx(inputPath, outputPath, pages);
+    await convertPdfToDocx(inputPath, outputPath, pages, options);
     return;
   }
 
@@ -190,58 +301,251 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
-// 检测 pdf2docx（docengine）产出的 docx 是否存在「单词粘连」等质量问题。
-// 粘连是 pdf2docx 对部分字体/字距 PDF 的典型缺陷：英文单词间空格丢失，
-// 整段文字粘成一长串（如 "Also,bycalculation,thequarterly..."）。
-// 返回 true 表示质量差，应降级到 OCR 重转。
-async function docxHasRunTogetherText(docxPath) {
-  let mammoth;
-  try {
-    mammoth = require("mammoth");
-  } catch {
-    return false; // 无 mammoth 无法检测，不降级
-  }
-  let text;
-  try {
-    const result = await mammoth.extractRawText({ path: docxPath });
-    text = result.value || "";
-  } catch {
-    return false;
-  }
+// 物理天花板（Node 单个 Buffer 上限约 2GB），不是业务限制：
+// 正常 DOCX 包与单个 XML part 远小于此值；此阈值仅用于在解压前拦截声明了超大量
+// uncompressedSize 的恶意 ZIP 炸弹条目，避免实际解压导致 OOM。任何正常文档都不会触及。
+const MAX_NATIVE_DOCX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_NATIVE_DOCX_XML_BYTES = 2 * 1024 * 1024 * 1024;
+const NATIVE_DOCX_PARTS = new Set([
+  "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels"
+]);
 
-  // 只统计「连续字母串」（含内嵌逗号等常见粘连场景），作为"单词"样本。
-  // 正常英文：单词平均 4-6 字符，几乎不会出现 >20 字符的连续字母串；
-  // 粘连后：整段文字连成 30~100+ 字符的假单词。
-  const tokens = text.match(/[A-Za-z]+(?:[,.;:][A-Za-z]+)*/g) || [];
-  if (!tokens.length) return false; // 无英文文本（纯中文等），不降级
-
-  const longTokens = tokens.filter((t) => t.replace(/[,.;:]/g, "").length >= 20);
-  const avgLen = tokens.reduce((sum, t) => sum + t.replace(/[,.;:]/g, "").length, 0) / tokens.length;
-  const longCount = longTokens.length;
-
-  // 粘连判定：正常英文文档平均词长约 5~7，粘连后飙到 12+，且伴随超长"单词"。
-  // 平均词长是主信号（≥10 几乎只可能是粘连，正常英文不会到 10），
-  // 超长词数量是佐证。样本太少时（token<10）用「存在超长词」兜底，避免漏判短文档。
-  if (tokens.length < 10) return longCount >= 1 && avgLen >= 20;
-  return avgLen >= 10 && longCount >= 3;
+function safePackageEntry(name) {
+  if (typeof name !== "string" || !name || name.includes("\\") || name.startsWith("/")) return false;
+  const candidate = name.endsWith("/") ? name.slice(0, -1) : name;
+  return Boolean(candidate) && candidate.split("/").every((piece) => piece && piece !== "." && piece !== "..");
 }
 
-async function convertPdfToDocx(inputPath, outputPath, pages) {
-  // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
-  if (DOCENGINE_PATH) {
-    try {
-      await run(DOCENGINE_PATH, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
-      // 质量门：docengine 转出后若存在严重的单词粘连（内容虽在但不可读），
-      // 且 OCR 可用，则降级到整页 OCR 重新转换，保证内容完整可读。
-      if (await docxHasRunTogetherText(outputPath)) {
-        if (ocrAvailable()) {
-          await convertScannedPdfToOcrDocx(inputPath, outputPath);
-        }
-        // OCR 不可用则不降级，保留 docengine 输出（至少内容在）。
+async function inspectNativeDocxPackage(zipPath) {
+  // Read the whole package into memory and drive yauzl via fromBuffer: yauzl.open's
+  // fd_slicer path can silently stall on a valid deflate stream (see openZipEntriesFromBuffer).
+  let buffer;
+  try {
+    const stats = await fsp.stat(zipPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 1) {
+      throw new Error("unsafe DOCX package file");
+    }
+    if (stats.size > MAX_NATIVE_DOCX_PACKAGE_BYTES) {
+      throw new Error("DOCX package is too large");
+    }
+    buffer = await fsp.readFile(zipPath);
+  } catch (error) {
+    if (error?.message === "DOCX package is too large") throw error;
+    throw new Error("unsafe DOCX package file");
+  }
+  const zipfile = await openZipEntriesFromBuffer(buffer);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const names = new Set();
+    const buffers = new Map();
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      try { zipfile.close(); } catch {}
+      error ? reject(error) : resolve(value);
+    };
+    zipfile.on("entry", (entry) => {
+      const size = Number(entry.uncompressedSize) || 0;
+      if (!safePackageEntry(entry.fileName) || names.has(entry.fileName) || size < 0) {
+        return finish(new Error("unsafe DOCX package entry"));
       }
+      names.add(entry.fileName);
+      if (!NATIVE_DOCX_PARTS.has(entry.fileName)) return zipfile.readEntry();
+      if (size > MAX_NATIVE_DOCX_XML_BYTES) return finish(new Error("DOCX XML part is too large"));
+      zipfile.openReadStream(entry, (error, stream) => {
+        if (error) return finish(error);
+        const chunks = [];
+        let length = 0;
+        stream.on("data", (chunk) => {
+          length += chunk.length;
+          if (length > MAX_NATIVE_DOCX_XML_BYTES) {
+            stream.destroy(new Error("DOCX document part is too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        stream.on("error", finish);
+        stream.on("end", () => {
+          if (settled) return;
+          buffers.set(entry.fileName, Buffer.concat(chunks));
+          zipfile.readEntry();
+        });
+      });
+    });
+    zipfile.on("end", () => finish(null, { names, buffers }));
+    zipfile.on("error", finish);
+    zipfile.readEntry();
+  });
+}
+
+const OPC_CONTENT_TYPES_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/content-types";
+const OPC_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships";
+const WORDPROCESSING_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const DRAWINGML_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const OFFICE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function qualifiedName(name) {
+  const separator = name.indexOf(":");
+  return separator < 0
+    ? { prefix: "", localName: name }
+    : { prefix: name.slice(0, separator), localName: name.slice(separator + 1) };
+}
+
+function namespaceElements(parsed) {
+  const elements = [];
+
+  function visit(name, value, inheritedNamespaces) {
+    const namespaces = new Map(inheritedNamespaces);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, declaration] of Object.entries(value)) {
+        if (key === "@xmlns") namespaces.set("", declaration);
+        else if (key.startsWith("@xmlns:")) namespaces.set(key.slice(7), declaration);
+      }
+    }
+    const qname = qualifiedName(name);
+    const attributes = [];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [key, attributeValue] of Object.entries(value)) {
+        if (!key.startsWith("@") || key === "@xmlns" || key.startsWith("@xmlns:")) continue;
+        const attributeName = qualifiedName(key.slice(1));
+        attributes.push({
+          namespaceURI: attributeName.prefix ? namespaces.get(attributeName.prefix) || "" : "",
+          localName: attributeName.localName,
+          value: attributeValue
+        });
+      }
+    }
+    elements.push({
+      namespaceURI: namespaces.get(qname.prefix) || "",
+      localName: qname.localName,
+      text: typeof value === "string" ? value : value?.["#text"] || "",
+      attributes
+    });
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    for (const [childName, childValue] of Object.entries(value)) {
+      if (childName.startsWith("@") || childName === "#text") continue;
+      for (const child of Array.isArray(childValue) ? childValue : [childValue]) {
+        visit(childName, child, namespaces);
+      }
+    }
+  }
+
+  for (const [rootName, rootValue] of Object.entries(parsed)) visit(rootName, rootValue, new Map());
+  return elements;
+}
+
+function parseNamespaceDocument(xml) {
+  const elements = namespaceElements(parseXmlToJson(xml));
+  if (elements.length === 0) throw nativeDocxInvalid();
+  return { root: elements[0], elements };
+}
+
+function elementsNamed(elements, namespaceURI, localName) {
+  return elements.filter((element) =>
+    element.namespaceURI === namespaceURI && element.localName === localName);
+}
+
+function rootNamed(document, namespaceURI, localName) {
+  return document.root.namespaceURI === namespaceURI && document.root.localName === localName;
+}
+
+function elementAttribute(element, namespaceURI, localName) {
+  return element.attributes.find((attribute) =>
+    attribute.namespaceURI === namespaceURI && attribute.localName === localName)?.value || "";
+}
+
+function nativeDocxInvalid() {
+  const error = new Error("Native PDF conversion produced an invalid DOCX package.");
+  error.code = "PDF_OFFICE_OUTPUT_INVALID";
+  return error;
+}
+
+async function validateNativePdfDocx(outputPath) {
+  try {
+    const inspected = await inspectNativeDocxPackage(outputPath);
+    const contentTypes = inspected.buffers.get("[Content_Types].xml")?.toString("utf8");
+    const rootRelationships = inspected.buffers.get("_rels/.rels")?.toString("utf8");
+    const documentXml = inspected.buffers.get("word/document.xml")?.toString("utf8");
+    if (!contentTypes || !rootRelationships || !documentXml) throw nativeDocxInvalid();
+    const contentTypeDocument = parseNamespaceDocument(contentTypes);
+    const rootRelationshipDocument = parseNamespaceDocument(rootRelationships);
+    const wordDocument = parseNamespaceDocument(documentXml);
+    if (!rootNamed(contentTypeDocument, OPC_CONTENT_TYPES_NAMESPACE, "Types")
+      || !rootNamed(rootRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")
+      || !rootNamed(wordDocument, WORDPROCESSING_NAMESPACE, "document")) {
+      throw nativeDocxInvalid();
+    }
+    const contentTypeElements = contentTypeDocument.elements;
+    const rootRelationshipElements = rootRelationshipDocument.elements;
+    const documentElements = wordDocument.elements;
+    const mainOverride = elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Override")
+      .some((element) => elementAttribute(element, "", "PartName") === "/word/document.xml"
+        && elementAttribute(element, "", "ContentType")
+          === "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
+    const mainRelationship = elementsNamed(rootRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")
+      .some((element) => elementAttribute(element, "", "Type").endsWith("/officeDocument")
+        && elementAttribute(element, "", "Target") === "word/document.xml"
+        && !elementAttribute(element, "", "TargetMode"));
+    if (!mainOverride || !mainRelationship) throw nativeDocxInvalid();
+
+    const blips = elementsNamed(documentElements, DRAWINGML_NAMESPACE, "blip");
+    const blipIds = blips
+      .map((element) => elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, "embed"));
+    if (blipIds.some((id) => !id)) throw nativeDocxInvalid();
+    if (blipIds.length) {
+      const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
+      if (!documentRelationships) throw nativeDocxInvalid();
+      const documentRelationshipDocument = parseNamespaceDocument(documentRelationships);
+      if (!rootNamed(documentRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")) {
+        throw nativeDocxInvalid();
+      }
+      const documentRelationshipElements = documentRelationshipDocument.elements;
+      const relationships = new Map();
+      for (const element of elementsNamed(documentRelationshipElements, OPC_RELATIONSHIPS_NAMESPACE, "Relationship")) {
+        const id = elementAttribute(element, "", "Id");
+        if (!id || relationships.has(id)) throw nativeDocxInvalid();
+        relationships.set(id, {
+          type: elementAttribute(element, "", "Type"), target: elementAttribute(element, "", "Target"),
+          mode: elementAttribute(element, "", "TargetMode")
+        });
+      }
+      for (const id of blipIds) {
+        const relationship = relationships.get(id);
+        if (!relationship || relationship.mode || !relationship.type.endsWith("/image")
+          || !relationship.target.startsWith("media/") || !safePackageEntry(relationship.target)
+          || !inspected.names.has(`word/${relationship.target}`)) throw nativeDocxInvalid();
+      }
+    }
+
+    const editableText = elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "t")
+      .some((element) => String(element.text).trim().length > 0);
+    if (!editableText) {
+      const error = new Error("Native PDF conversion produced no editable content.");
+      error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
+      throw error;
+    }
+    return { hasEditableContent: true };
+  } catch (error) {
+    if (["PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_OFFICE_OUTPUT_INVALID"].includes(error?.code)) throw error;
+    throw nativeDocxInvalid();
+  }
+}
+
+async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
+  // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
+  const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
+  if (docenginePath) {
+    try {
+      await withAttemptOutput(outputPath, async (attemptPath) => {
+        await (options.run || run)(docenginePath, ["convert", inputPath, attemptPath], { timeout: 1000 * 60 * 10 });
+        return (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
+      });
       return;
     } catch (error) {
-      // 文档引擎转换失败（异常 PDF）→ 回退到文字提取，不中断转换。
+      await (options.convertStructuredPdf || convertStructuredPdf)({
+        inputPath, outputPath, target: "docx", options
+      });
+      return;
     }
   }
 
@@ -583,12 +887,13 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
 module.exports = {
   convertPdfDecrypt,
   assertPdfTableOcrQuality,
+  convertStructuredPdf,
   convertPdf,
   xmlDocxText,
   xmlDocxParagraph,
   writeDocxZip,
   convertPdfToDocx,
-  docxHasRunTogetherText,
+  validateNativePdfDocx,
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,

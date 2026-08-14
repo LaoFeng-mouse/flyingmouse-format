@@ -36,6 +36,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: .\scripts\restore-ci-engines.ps1
 
+      - name: Validate locked document structure engine
+        shell: powershell
+        run: node scripts/lock-docstructure-engine.js --verify --root bin/docstructure --lock docstructure-engine-lock.json
+
+      - name: Probe document structure engine
+        shell: powershell
+        run: |
+          $status = & .\bin\docstructure\docstructure-engine.exe 2>&1
+          if ($LASTEXITCODE -ne 20 -or ($status -join "`n") -notmatch '"code":"MODEL_MISSING"') {
+            throw 'Document structure engine startup probe failed.'
+          }
+
       - name: Stage locked Thai OCR data for Windows tests
         shell: powershell
         run: |

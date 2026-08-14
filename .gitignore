@@ -18,3 +18,7 @@ scripts/tmp-e2e-log-check.js
 # 临时诊断脚本（agent 会话内创建，保留不入库）
 tmp_*
 scripts/tmp-*.js
+
+# Python 字节码缓存（docstructure 引擎构建产物，不入库）
+__pycache__/
+*.pyc
