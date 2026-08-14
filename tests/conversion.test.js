@@ -19,6 +19,15 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH
   || path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
+const { QPDF_PATH } = require("../config");
+const qpdfAvailable = (() => {
+  try {
+    execFileSync(QPDF_PATH, ["--version"], { timeout: 5000, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 let server;
 let baseUrl;
 
@@ -412,9 +421,10 @@ test("converts a ZIP of images to a single PDF", async () => {
   assertPdf(outputPath);
 });
 
-test("rejects PDF encryption with a clear unavailable error", async () => {
+test("encrypts a PDF with a password via qpdf (requires qpdf engine)", { skip: !qpdfAvailable && "qpdf engine missing" }, async () => {
   const sourcePath = path.join(scratchRoot, "encrypt-source.pdf");
   await createTextPdf(sourcePath);
+  const beforeHash = hashFile(sourcePath);
 
   const form = new FormData();
   form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "application/pdf" }), "encrypt-source.pdf");
@@ -424,9 +434,72 @@ test("rejects PDF encryption with a clear unavailable error", async () => {
   const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
   const body = await parseBody(response);
 
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "encrypt-source.pdf");
+  const outputPath = await downloadResult(body, "encrypted.pdf");
+  assertPdf(outputPath);
+
+  // 输出是加密 PDF：带 /Encrypt 标记，且无密码无法打开
+  const outputBytes = await fsp.readFile(outputPath);
+  assert.match(outputBytes.toString("latin1"), /\/Encrypt/, "encrypted PDF must carry an /Encrypt dictionary");
+  await assert.rejects(
+    () => PDFDocument.load(outputBytes),
+    /encrypted|Encrypt/i,
+    "encrypted PDF must not open without a password"
+  );
+  assert.strictEqual(hashFile(sourcePath), beforeHash, "source must be unchanged");
+});
+
+test("rejects PDF encryption without a password with a clear error", async () => {
+  const sourcePath = path.join(scratchRoot, "encrypt-no-password.pdf");
+  await createTextPdf(sourcePath);
+
+  const form = new FormData();
+  form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "application/pdf" }), "encrypt-no-password.pdf");
+  form.append("targetFormat", "pdf");
+  form.append("pdfAction", "encrypt");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await parseBody(response);
+
   assert.strictEqual(response.status, 422);
-  assert.strictEqual(body.errorCode, "PDF_ENCRYPT_UNAVAILABLE");
-  assert.match(body.error, /加密/);
+  assert.strictEqual(body.errorCode, "PDF_ENCRYPT_NO_PASSWORD");
+  assert.match(body.error, /密码/);
+});
+
+test("decrypts a qpdf-encrypted PDF back to readable content (requires qpdf engine)", { skip: !qpdfAvailable && "qpdf engine missing" }, async () => {
+  const sourcePath = path.join(scratchRoot, "roundtrip-source.pdf");
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([240, 160]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText("SECRET", { x: 30, y: 80, size: 18, font });
+  await fsp.writeFile(sourcePath, await doc.save());
+
+  // 加密
+  const encForm = new FormData();
+  encForm.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "application/pdf" }), "roundtrip-source.pdf");
+  encForm.append("targetFormat", "pdf");
+  encForm.append("pdfAction", "encrypt");
+  encForm.append("password", "secret123");
+  const encResponse = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: encForm });
+  const encBody = await parseBody(encResponse);
+  assert.strictEqual(encResponse.status, 200, encBody.error);
+  const encryptedPath = await downloadResult(encBody, "roundtrip-enc.pdf");
+
+  // 解密
+  const decForm = new FormData();
+  decForm.append("file", new Blob([await fsp.readFile(encryptedPath)], { type: "application/pdf" }), "roundtrip-enc.pdf");
+  decForm.append("targetFormat", "pdf");
+  decForm.append("pdfAction", "decrypt");
+  decForm.append("password", "secret123");
+  const decResponse = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: decForm });
+  const decBody = await parseBody(decResponse);
+  assert.strictEqual(decResponse.status, 200, decBody.error);
+  const decryptedPath = await downloadResult(decBody, "roundtrip-dec.pdf");
+
+  const decryptedBytes = await fsp.readFile(decryptedPath);
+  assert.doesNotMatch(decryptedBytes.toString("latin1"), /\/Encrypt/, "decrypted PDF must not carry /Encrypt");
+  const reopened = await PDFDocument.load(decryptedBytes);
+  assert.strictEqual(reopened.getPageCount(), 1, "decrypted PDF must be readable with 1 page");
 });
 
 test("PDF table OCR quality gate rejects low-confidence scans with a clear reason", async () => {
@@ -837,6 +910,40 @@ test("splits a PDF into a per-page PDF zip without changing the source", async (
   assert.strictEqual(hashFile(twoPagePdf), beforeHash);
 });
 
+test("splits a PDF into N-page groups when splitMode=group", { skip: !qpdfAvailable && "qpdf engine missing" }, async () => {
+  // 造一个 5 页 PDF
+  const fivePage = await PDFDocument.create();
+  for (let i = 0; i < 5; i += 1) fivePage.addPage([240, 160]);
+  const fivePagePath = path.join(scratchRoot, "five-pages.pdf");
+  await fsp.writeFile(fivePagePath, await fivePage.save());
+
+  const form = new FormData();
+  form.append("file", new Blob([await fsp.readFile(fivePagePath)], { type: "application/pdf" }), "five-pages.pdf");
+  form.append("targetFormat", "pdf");
+  form.append("splitMode", "group");
+  form.append("groupSize", "2");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const body = await parseBody(response);
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "five-pages.pdf.zip");
+  const zipPath = await downloadResult(body, "split-group.zip");
+  assertZipWithEntry(zipPath, /page-001-002\.pdf/);
+  assertZipWithEntry(zipPath, /page-003-004\.pdf/);
+  assertZipWithEntry(zipPath, /page-005-005\.pdf/);
+
+  const extractDir = path.join(scratchRoot, "split-group-out");
+  await fsp.rm(extractDir, { recursive: true, force: true });
+  await fsp.mkdir(extractDir, { recursive: true });
+  await extractZipToDir(zipPath, extractDir);
+  const g1 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-001-002.pdf")));
+  const g2 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-003-004.pdf")));
+  const g3 = await PDFDocument.load(await fsp.readFile(path.join(extractDir, "page-005-005.pdf")));
+  assert.strictEqual(g1.getPageCount(), 2, "group 1 must have 2 pages");
+  assert.strictEqual(g2.getPageCount(), 2, "group 2 must have 2 pages");
+  assert.strictEqual(g3.getPageCount(), 1, "group 3 must have 1 page (trailing)");
+});
+
 test("converts an animated GIF to MP4 without changing the source", async () => {
   const sourcePath = path.join(scratchRoot, "anim.gif");
   execFileSync(FFMPEG_BIN, ["-hide_banner", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10", sourcePath]);
@@ -995,7 +1102,7 @@ test("decrypts a Kugou KGG file to audio (real fixture + key db required)", asyn
   }
   const { candidateDbPaths } = require("../kgg-format");
   if (!candidateDbPaths()) {
-    t.skip("缺少酷狗密钥库 KGMusicV3.db（%APPDATA%\\KuGou8\\ 下），无法解密 KGG");
+    t.skip("缺少酷狗密钥库 KGMusicV3.db（本机未安装酷狗客户端或未下载过歌曲），无法解密 KGG");
     return;
   }
   const beforeHash = hashFile(fixture);

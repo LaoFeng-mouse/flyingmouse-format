@@ -184,3 +184,23 @@ test("QQ cookie tutorial offers a copyable credential template", () => {
   assert.match(css, /\.template-card/);
   assert.match(css, /\.template-code/);
 });
+
+test("PDF split mode exposes page/group options and a group-size field bilingually", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="pdfSplitModeField"[^>]*hidden/);
+  assert.match(html, /id="pdfSplitMode"/);
+  assert.match(html, /id="pdfGroupSizeField"[^>]*hidden/);
+  assert.match(html, /id="pdfGroupSize"/);
+  assert.match(app, /"pdfSplitMode\.label": "拆分方式"/);
+  assert.match(app, /"pdfSplitMode\.label": "Split mode"/);
+  assert.match(app, /"pdfSplitMode\.page": "逐页拆分（每页一个 PDF）"/);
+  assert.match(app, /"pdfSplitMode\.page": "Split into single pages"/);
+  assert.match(app, /"pdfSplitMode\.group": "每 N 页一组"/);
+  assert.match(app, /"pdfSplitMode\.group": "Group every N pages"/);
+  assert.match(app, /"pdfGroupSize\.label": "每几页一组"/);
+  assert.match(app, /"pdfGroupSize\.label": "Pages per group"/);
+  assert.match(app, /form\.append\("splitMode"/);
+  assert.match(app, /form\.append\("groupSize"/);
+  assert.match(app, /pdfSplitMode\.addEventListener\("change", syncPdfActionFields\)/);
+});
