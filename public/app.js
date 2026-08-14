@@ -6,6 +6,9 @@ const state = {
   batchResults: [],
   isConverting: false,
   progressValue: 0,
+  previewResult: null,
+  previewOpener: null,
+  folderName: "",
   settings: { schemaVersion: 2, targetBySource: {} }
 };
 
@@ -37,6 +40,8 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 const fileInput = document.querySelector("#fileInput");
+const folderInput = document.querySelector("#folderInput");
+const chooseFolderButton = document.querySelector("#chooseFolderButton");
 const dropZone = document.querySelector("#dropZone");
 const fileStrip = document.querySelector("#fileStrip");
 const fileName = document.querySelector("#fileName");
@@ -47,6 +52,8 @@ const zipCompressionField = document.querySelector("#zipCompressionField");
 const zipCompression = document.querySelector("#zipCompression");
 const videoCodecField = document.querySelector("#videoCodecField");
 const videoCodec = document.querySelector("#videoCodec");
+const alphaBackgroundField = document.querySelector("#alphaBackgroundField");
+const alphaBackground = document.querySelector("#alphaBackground");
 const pdfPasswordField = document.querySelector("#pdfPasswordField");
 const pdfPassword = document.querySelector("#pdfPassword");
 const pdfActionField = document.querySelector("#pdfActionField");
@@ -60,6 +67,13 @@ const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
 const downloadButton = document.querySelector("#downloadButton");
 const batchSaveButton = document.querySelector("#batchSaveButton");
+const previewButton = document.querySelector("#previewButton");
+const previewDrawer = document.querySelector("#previewDrawer");
+const previewBackdrop = document.querySelector("#previewBackdrop");
+const previewClose = document.querySelector("#previewClose");
+const previewTitle = document.querySelector("#previewTitle");
+const previewMeta = document.querySelector("#previewMeta");
+const previewContent = document.querySelector("#previewContent");
 const toolHealth = document.querySelector("#toolHealth");
 const formatTable = document.querySelector("#formatTable");
 const dropHint = document.querySelector("#dropHint");
@@ -72,6 +86,8 @@ const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
+const compressFolderButton = document.querySelector("#compressFolderButton");
+const agentInstallButton = document.querySelector("#agentInstallButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
 const {
   STORAGE_KEY: LEGACY_TARGET_STORAGE_KEY,
@@ -87,16 +103,26 @@ const messages = {
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
+    "agent.install": "接入 Agent", "agent.checking": "正在检索已安装 Agent 的 skill 目录…",
+    "agent.none": "没有发现现有的 Agent skill 目录。请先安装 Codex、Claude 或创建 ~/.agents/skills。",
+    "agent.canceled": "已取消接入 Agent。", "agent.installed": "已接入 {count} 个 Agent：{paths}",
+    "agent.partial": "已接入 {count} 个 Agent，另有 {failed} 个失败：{message}", "agent.failed": "接入 Agent 失败：{message}",
+    "preview.open": "预览", "preview.eyebrow": "转换结果", "preview.title": "文件预览",
+    "preview.close": "关闭预览", "preview.loading": "正在载入预览…", "preview.unsupported": "此格式暂不支持内嵌预览，可以保存后使用系统应用打开。",
+    "preview.tooLarge": "文本文件超过 2 MB，为避免界面卡顿，请保存后查看。", "preview.failed": "预览失败：{message}",
     "update.check": "检查更新", "update.checking": "正在检查更新…",
     "update.latest": "已是最新版本", "update.available": "发现新版本 v{version}，正在下载…",
     "update.downloaded": "新版本 v{version} 已下载，重启后生效", "update.restart": "立即重启",
     "update.error": "更新检查失败：{message}", "update.unavailable": "当前版本不支持自动更新",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
-    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
+    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
-    "action.save": "保存", "action.saveAll": "保存全部", "target.label": "目标格式",
+    "action.save": "保存", "action.saveAll": "保存全部", "action.compressFolder": "压缩文件夹",
+    "compressFolder.saved": "已压缩 {count} 个文件到：{path}",
+    "compressFolder.canceled": "已取消压缩文件夹。", "compressFolder.failed": "压缩文件夹失败：{message}",
+    "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
     "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
@@ -105,6 +131,9 @@ const messages = {
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
     "videoCodec.h265": "H.265（体积更小）", "videoCodec.av1": "AV1（压缩率最高）",
+    "alphaBackground.label": "透明背景色（带透明通道的视频转码时合成）",
+    "alphaBackground.white": "白色（默认）", "alphaBackground.black": "黑色",
+    "alphaBackground.green": "绿色（绿幕）", "alphaBackground.magenta": "洋红（绿幕抠像常用）",
     "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
     "pdfSplitMode.label": "拆分方式", "pdfSplitMode.page": "逐页拆分（每页一个 PDF）", "pdfSplitMode.group": "每 N 页一组",
@@ -113,12 +142,13 @@ const messages = {
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。音频解锁（NCM/mflac/kgma 等）仅支持你已购买或自有的本地文件。",
     "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
-    "sponsor.description": "如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费",
+    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
     "sponsor.qrAlt": "微信收款码",
     "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
+    "feedback.guide": "问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。",
     "tutorial.qq.title": "QQ 音乐登录教程",
     "tutorial.close": "关闭",
-    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。",
+    "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。注意：无论你的歌是从 QQ 音乐下载的、还是从微信聊天里收到的，获取 cookie 的步骤完全一样——都是去网页版 y.qq.com 登录同一个 QQ 账号。",
     "tutorial.qq.s1.title": "① 打开网页版 QQ 音乐并登录",
     "tutorial.qq.s1.desc": "用电脑浏览器打开 y.qq.com，点右上角「登录」，用你下载歌曲的 QQ 账号登录。",
     "tutorial.qq.s1.alt": "QQ 音乐网页版登录后的页面",
@@ -140,7 +170,7 @@ const messages = {
     "tutorial.qq.s5.alt": "qm_keyst 和 uin 两行 Cookie",
     "tutorial.qq.s5.cap": "图 5：qm_keyst 与 uin",
     "tutorial.qq.s6.title": "⑥ 在桌面新建 cookie 文件",
-    "tutorial.qq.s6.desc": "在桌面空白处点鼠标右键 →「新建」→「文本文档」，把文件名改成 QQ音乐_登录cookie.txt（保留 .txt 后缀）。双击打开，点下面的「复制模板」，到记事本里粘贴，把「你的QQ号」和「你复制的qm_keyst值」替换成你自己的，然后 Ctrl+S 保存。",
+    "tutorial.qq.s6.desc": "在桌面空白处点鼠标右键 →「新建」→「文本文档」，把文件名改成 QQ音乐_登录cookie.txt（保留 .txt 后缀）。双击打开，点下面的「复制模板」，到记事本里粘贴，把「你的QQ号」和「你复制的qm_keyst值」替换成你自己的，然后 Ctrl+S 保存。位置说明：文件直接放在你的桌面就行，软件会自动识别你当前的桌面位置（无论桌面在 C 盘、D 盘，还是被 OneDrive 同步）。如果转换仍提示需要凭据，请把文件再复制一份到「C:\\Users\\你的用户名\\Desktop」这个文件夹里。",
     "tutorial.qq.s6.alt": "记事本里 cookie 文件的格式",
     "tutorial.qq.s6.cap": "图 6：cookie 文件内容格式",
     "tutorial.copyTemplate": "复制模板",
@@ -154,16 +184,26 @@ const messages = {
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
+    "agent.install": "Connect to Agent", "agent.checking": "Looking for existing Agent skill directories…",
+    "agent.none": "No existing Agent skill directory was found. Install Codex or Claude, or create ~/.agents/skills first.",
+    "agent.canceled": "Agent connection canceled.", "agent.installed": "Connected to {count} Agent target(s): {paths}",
+    "agent.partial": "Connected to {count} target(s); {failed} failed: {message}", "agent.failed": "Agent connection failed: {message}",
+    "preview.open": "Preview", "preview.eyebrow": "Conversion result", "preview.title": "File preview",
+    "preview.close": "Close preview", "preview.loading": "Loading preview…", "preview.unsupported": "This format cannot be previewed here. Save it and open it with a system application.",
+    "preview.tooLarge": "This text file is larger than 2 MB. Save it to view without slowing the app.", "preview.failed": "Preview failed: {message}",
     "update.check": "Check for Updates", "update.checking": "Checking for updates…",
     "update.latest": "You are up to date", "update.available": "New version v{version} found, downloading…",
     "update.downloaded": "v{version} downloaded; restart to apply", "update.restart": "Restart now",
     "update.error": "Update check failed: {message}", "update.unavailable": "Auto-update is unavailable in this build",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
-    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
+    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
-    "action.save": "Save", "action.saveAll": "Save all", "target.label": "Target format",
+    "action.save": "Save", "action.saveAll": "Save all", "action.compressFolder": "Compress folder",
+    "compressFolder.saved": "Compressed {count} files to: {path}",
+    "compressFolder.canceled": "Folder compression canceled.", "compressFolder.failed": "Folder compression failed: {message}",
+    "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
     "formats.experimental": "Experimental/unverified inputs: {formats}",
@@ -172,6 +212,9 @@ const messages = {
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
     "videoCodec.h265": "H.265 (smaller size)", "videoCodec.av1": "AV1 (highest compression)",
+    "alphaBackground.label": "Transparent background (composited when transcoding videos with alpha)",
+    "alphaBackground.white": "White (default)", "alphaBackground.black": "Black",
+    "alphaBackground.green": "Green (green screen)", "alphaBackground.magenta": "Magenta (common for chroma key)",
     "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
     "pdfSplitMode.label": "Split mode", "pdfSplitMode.page": "Split into single pages", "pdfSplitMode.group": "Group every N pages",
@@ -180,12 +223,13 @@ const messages = {
     "formats.aria": "Supported formats", "formats.title": "Supported now",
     "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT. Audio unlock (NCM/mflac/kgma, etc.) supports only files you own or have purchased locally.",
     "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
-    "sponsor.description": "If FlyingMouse Format helped you, you can buy Mouse a snack. Completely optional; the app stays free.",
+    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack — completely optional. If anyone charges you for this app, it's a scam.",
     "sponsor.qrAlt": "WeChat payment QR code",
     "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
+    "feedback.guide": "Feedback: if a conversion fails, send the problem file, the exported diagnostics, and a screenshot to 3465177342@qq.com and I'll look into it.",
     "tutorial.qq.title": "QQ Music Login Guide",
     "tutorial.close": "Close",
-    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again.",
+    "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again. Note: whether your song came from QQ Music or was received in WeChat, the steps are identical — just sign in to y.qq.com with the same QQ account.",
     "tutorial.qq.s1.title": "① Open QQ Music web and sign in",
     "tutorial.qq.s1.desc": "Open y.qq.com in your computer browser, click \"Sign in\" at the top right, and log in with the QQ account you used to download the song.",
     "tutorial.qq.s1.alt": "QQ Music web page after signing in",
@@ -207,7 +251,7 @@ const messages = {
     "tutorial.qq.s5.alt": "qm_keyst and uin cookie rows",
     "tutorial.qq.s5.cap": "Fig. 5: qm_keyst and uin",
     "tutorial.qq.s6.title": "⑥ Create the cookie file on your desktop",
-    "tutorial.qq.s6.desc": "Right-click an empty area of your desktop → \"New\" → \"Text Document\", rename it to QQ音乐_登录cookie.txt (keep the .txt extension). Double-click to open it, click \"Copy template\" below, paste into Notepad, replace \"your QQ number\" and \"the qm_keyst value you copied\" with your own, then press Ctrl+S to save.",
+    "tutorial.qq.s6.desc": "Right-click an empty area of your desktop → \"New\" → \"Text Document\", rename it to QQ音乐_登录cookie.txt (keep the .txt extension). Double-click to open it, click \"Copy template\" below, paste into Notepad, replace \"your QQ number\" and \"the qm_keyst value you copied\" with your own, then press Ctrl+S to save. Location: just place the file on your desktop — the app auto-detects your real desktop folder (whether it's on the C: drive, D: drive, or synced by OneDrive). If conversion still says credentials are needed, also copy the file to \"C:\\Users\\<your username>\\Desktop\".",
     "tutorial.qq.s6.alt": "Cookie file format in Notepad",
     "tutorial.qq.s6.cap": "Fig. 6: Cookie file content format",
     "tutorial.copyTemplate": "Copy template",
@@ -354,6 +398,44 @@ function setProgress(value, label, type = "") {
   progressTrack.setAttribute("aria-valuenow", String(safeValue));
 }
 
+// 不确定进度（单文件长任务：视频/PDF/Office 转码无实时进度，进度条滑动动画代替死板的 0%）
+function setIndeterminateProgress(label) {
+  state.progressValue = 0;
+  progressPanel.hidden = false;
+  progressPanel.className = "progress-panel indeterminate";
+  progressLabel.textContent = label;
+  progressPercent.textContent = "";
+  progressFill.style.width = "";
+  progressTrack.setAttribute("aria-valuenow", "0");
+}
+
+// 长任务目标：转码/转换耗时较长（视频编码、PDF/Office 经 LibreOffice/docengine），无实时进度。
+const LONG_TASK_TARGETS = new Set([
+  "mp4", "mov", "mkv", "webm", "gif",
+  "pdf", "docx", "odt", "rtf", "xlsx", "xls", "ods", "pptx", "odp"
+]);
+
+function isLongTaskTarget(target) {
+  return LONG_TASK_TARGETS.has(String(target || "").toLowerCase());
+}
+
+function longTaskProgressLabel(target) {
+  const fmt = String(target || "").toLowerCase();
+  if (["mp4", "mov", "mkv", "webm", "gif"].includes(fmt)) {
+    return i18n.language === "en-US"
+      ? "Transcoding video — this can take a few minutes, please wait…"
+      : "正在转码视频，可能需要几分钟，请耐心等待…";
+  }
+  if (fmt === "pdf") {
+    return i18n.language === "en-US"
+      ? "Converting to PDF — this can take a while, please wait…"
+      : "正在转换为 PDF，可能需要一点时间，请耐心等待…";
+  }
+  return i18n.language === "en-US"
+    ? "Converting document — this can take a while, please wait…"
+    : "正在转换文档，可能需要一点时间，请耐心等待…";
+}
+
 function resetProgress() {
   state.progressValue = 0;
   progressPanel.hidden = true;
@@ -371,6 +453,8 @@ function resetDownload() {
   downloadButton.removeAttribute("href");
   downloadButton.removeAttribute("download");
   batchSaveButton.hidden = true;
+  previewButton.hidden = true;
+  closePreview();
 }
 
 function clearFile() {
@@ -448,6 +532,10 @@ function renderFormatTable() {
 }
 
 async function loadTargets(file) {
+  // 空白页占位条目：不调后端，直接返回图片→PDF 能力（仅用于图片合并 PDF）
+  if (file?.isBlankPage) {
+    return { extension: "", category: "image", targets: ["pdf"], experimental: false };
+  }
   const extension = extensionOf(file.name);
   const response = await fetch("/api/targets", {
     method: "POST",
@@ -501,7 +589,7 @@ function renderBatchList() {
     const main = document.createElement("div");
     main.className = "batch-main";
     main.append(
-      createTextElement("p", "batch-name", file.name),
+      createTextElement("p", "batch-name", file.isBlankPage ? (i18n.language === "en-US" ? "Blank page" : "空白页") : file.name),
       createTextElement("p", "batch-detail", result.detail || batchStatusLabel(result.status))
     );
 
@@ -521,9 +609,27 @@ function renderBatchList() {
       downButton.disabled = index === state.files.length - 1;
       downButton.title = i18n.language === "en-US" ? "Move down (later in PDF)" : "下移（在 PDF 中更靠后）";
       actions.append(upButton, downButton);
+      // 插入空白页：在该条目后面插入一页纯白 A4 页（图片合并 PDF 专用）
+      const blankButton = createTextElement("button", "mini-button", i18n.language === "en-US" ? "□+" : "□+");
+      blankButton.type = "button";
+      blankButton.dataset.insertBlank = String(index);
+      blankButton.title = i18n.language === "en-US" ? "Insert blank page after this item" : "在此项后插入空白页";
+      actions.append(blankButton);
+      // 空白页条目支持删除
+      if (file.isBlankPage) {
+        const removeBlank = createTextElement("button", "mini-button", "✕");
+        removeBlank.type = "button";
+        removeBlank.dataset.removeBlank = String(index);
+        removeBlank.title = i18n.language === "en-US" ? "Remove blank page" : "删除空白页";
+        actions.append(removeBlank);
+      }
     }
     actions.append(createTextElement("span", "batch-status", batchStatusLabel(result.status)));
     if (result.status === "success" && result.result) {
+      const resultPreviewButton = createTextElement("button", "mini-button", t("preview.open"));
+      resultPreviewButton.type = "button";
+      resultPreviewButton.dataset.previewIndex = String(index);
+      actions.append(resultPreviewButton);
       const saveButton = createTextElement("button", "mini-button", t("action.save"));
       saveButton.type = "button";
       saveButton.dataset.saveIndex = String(index);
@@ -574,6 +680,13 @@ function syncZipCompressionField() {
 function syncVideoCodecField() {
   if (!videoCodecField || !videoCodec) return;
   videoCodecField.hidden = !["mp4", "mov", "mkv"].includes(targetSelect.value);
+  syncAlphaBackgroundField();
+}
+
+function syncAlphaBackgroundField() {
+  if (!alphaBackgroundField || !alphaBackground) return;
+  // 透明背景色只对视频目标有意义（webm 也走 alpha 合成，一并显示）。
+  alphaBackgroundField.hidden = !["mp4", "mov", "mkv", "webm"].includes(targetSelect.value);
 }
 
 function syncPdfActionFields() {
@@ -607,8 +720,8 @@ async function acceptFiles(fileList) {
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes > maxBatchBytes) {
     setStatus(i18n.language === "en-US"
-      ? "This batch exceeds the 2 GB limit. Convert the files in smaller batches."
-      : "本批文件总大小超过 2GB，请分批转换。", "error");
+      ? "This batch is too large for this computer. Convert the files in smaller batches."
+      : "本批文件总大小超出当前电脑可处理范围，请分批转换。", "error");
     setMouseState("error");
     fileInput.value = "";
     return;
@@ -617,6 +730,11 @@ async function acceptFiles(fileList) {
   state.files = files;
   state.fileInfos = [];
   state.batchResults = files.map(() => ({ status: "pending", detail: "等待转换" }));
+  // 文件夹名：来自 <input webkitdirectory> 或拖入文件夹时 File.webkitRelativePath
+  // 的第一个路径段（如 "相册2026/001.jpg" -> "相册2026"），用于图片合并 PDF 命名。
+  const firstRel = files.find((file) => file.webkitRelativePath);
+  const folderName = firstRel ? firstRel.webkitRelativePath.split("/")[0] : "";
+  state.folderName = folderName && folderName !== firstRel.webkitRelativePath ? folderName : "";
   resetDownload();
   resetProgress();
   setMouseState(files.length > 1 ? "batch" : "analyzing");
@@ -738,6 +856,9 @@ async function convertOneFile(file, targetFormat) {
   if (["mp4", "mov", "mkv"].includes(targetFormat)) {
     form.append("videoCodec", videoCodec?.value || "h264");
   }
+  if (["mp4", "mov", "mkv", "webm"].includes(targetFormat)) {
+    form.append("alphaBackground", alphaBackground?.value || "white");
+  }
   if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
     form.append("pdfAction", pdfAction?.value || "");
     if (pdfPassword?.value) form.append("password", pdfPassword.value);
@@ -766,9 +887,22 @@ function isMergedImagePdfConversion(targetFormat) {
 
 async function convertImagesToPdf(files) {
   const form = new FormData();
-  for (const file of files) {
+  // blanks 语义：空白页在「排除空白页后的上传文件流」中的绝对位置。
+  // 前端队列可能含空白页占位，这里按队列顺序把真实文件依次编号，
+  // 空白页记录它前面已出现的真实文件个数（即插入到该序号之后）。
+  const blankAfter = [];
+  let realCount = 0;
+  files.forEach((file, index) => {
+    if (file?.isBlankPage) {
+      blankAfter.push(realCount);
+      return;
+    }
     form.append("files", file);
-  }
+    realCount += 1;
+  });
+  if (state.folderName) form.append("folderName", state.folderName);
+  // blanks=0,3 表示：在上传文件流的第 0 个（最前）和第 3 个文件之后插入空白页
+  if (blankAfter.length) form.append("blanks", blankAfter.join(","));
 
   const response = await fetch("/api/convert-images-to-pdf", {
     method: "POST",
@@ -801,6 +935,7 @@ async function convertMergedImagesToPdf() {
     downloadButton.download = result.fileName;
     downloadButton.textContent = `${t("action.save")} ${result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `Images merged into ${result.fileName}.` : `图片已合并为：${result.fileName}。`, "success");
@@ -873,6 +1008,7 @@ async function convertMergedPdfs() {
     downloadButton.download = result.fileName;
     downloadButton.textContent = `${t("action.save")} ${result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `PDF files merged into ${result.fileName}.` : `PDF 已合并为：${result.fileName}。`, "success");
@@ -927,11 +1063,17 @@ async function convertCurrentFiles() {
 
   let successCount = 0;
   let failCount = 0;
+  // 单文件长任务（视频/PDF/Office 转码）无实时进度，用不确定滑动动画代替死板的 0%
+  const useIndeterminate = state.files.length === 1 && isLongTaskTarget(targetFormat);
 
   for (let index = 0; index < state.files.length; index += 1) {
     const file = state.files[index];
     setBatchResult(index, { status: "converting", detail: i18n.language === "en-US" ? `Converting to ${targetFormat.toUpperCase()}` : `正在转换为 ${targetFormat.toUpperCase()}` });
-    setProgress((index / state.files.length) * 100, i18n.language === "en-US" ? `Converting ${index + 1}/${state.files.length}` : `正在转换 ${index + 1}/${state.files.length}`);
+    if (useIndeterminate) {
+      setIndeterminateProgress(longTaskProgressLabel(targetFormat));
+    } else {
+      setProgress((index / state.files.length) * 100, i18n.language === "en-US" ? `Converting ${index + 1}/${state.files.length}` : `正在转换 ${index + 1}/${state.files.length}`);
+    }
 
     try {
       const result = await convertOneFile(file, targetFormat);
@@ -966,6 +1108,7 @@ async function convertCurrentFiles() {
     downloadButton.download = successful[0].result.fileName;
     downloadButton.textContent = `${t("action.save")} ${successful[0].result.fileName}`;
     downloadButton.hidden = false;
+    previewButton.hidden = false;
   }
 
   batchSaveButton.hidden = successful.length < 2;
@@ -1004,6 +1147,94 @@ async function saveResult(result) {
   link.href = result.downloadUrl;
   link.download = result.fileName;
   link.click();
+}
+
+function previewFallback(result, message) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "preview-fallback";
+  wrapper.append(
+    createTextElement("p", "preview-fallback-name", result.fileName),
+    createTextElement("p", "", message),
+    createTextElement("p", "preview-fallback-meta", `${result.mimeType || "application/octet-stream"} · ${formatSize(result.previewSize || 0)}`)
+  );
+  previewContent.replaceChildren(wrapper);
+}
+
+async function renderPreview(result) {
+  previewTitle.textContent = result.fileName || t("preview.title");
+  previewMeta.textContent = `${result.mimeType || "application/octet-stream"} · ${formatSize(result.previewSize || 0)}`;
+  previewContent.replaceChildren(createTextElement("p", "preview-loading", t("preview.loading")));
+  const previewKind = result.previewKind;
+  if (!result.previewUrl || previewKind === "unsupported") {
+    previewFallback(result, t("preview.unsupported"));
+    return;
+  }
+  if (previewKind === "image") {
+    const image = document.createElement("img");
+    image.className = "preview-image";
+    image.alt = result.fileName;
+    image.src = result.previewUrl;
+    previewContent.replaceChildren(image);
+    return;
+  }
+  if (previewKind === "pdf") {
+    const frame = document.createElement("iframe");
+    frame.className = "preview-frame";
+    frame.title = result.fileName;
+    frame.src = result.previewUrl;
+    previewContent.replaceChildren(frame);
+    return;
+  }
+  if (previewKind === "audio" || previewKind === "video") {
+    const media = document.createElement(previewKind);
+    media.className = `preview-${previewKind}`;
+    media.controls = true;
+    media.preload = "metadata";
+    media.src = result.previewUrl;
+    previewContent.replaceChildren(media);
+    return;
+  }
+  if (previewKind === "text") {
+    if ((result.previewSize || 0) > 2 * 1024 * 1024) {
+      previewFallback(result, t("preview.tooLarge"));
+      return;
+    }
+    const response = await fetch(result.previewUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const pre = document.createElement("pre");
+    pre.className = "preview-text";
+    pre.textContent = await response.text();
+    previewContent.replaceChildren(pre);
+    return;
+  }
+  previewFallback(result, t("preview.unsupported"));
+}
+
+async function openPreview(result, opener) {
+  if (!result) return;
+  state.previewResult = result;
+  state.previewOpener = opener || document.activeElement;
+  previewDrawer.hidden = false;
+  previewBackdrop.hidden = false;
+  document.body.classList.add("preview-open");
+  previewClose.focus();
+  try {
+    await renderPreview(result);
+  } catch (error) {
+    previewFallback(result, t("preview.failed", { message: error.message || "unknown" }));
+  }
+}
+
+function closePreview() {
+  if (!previewDrawer || previewDrawer.hidden) return;
+  previewDrawer.hidden = true;
+  previewBackdrop.hidden = true;
+  previewContent.replaceChildren();
+  document.body.classList.remove("preview-open");
+  const opener = state.previewOpener;
+  state.previewResult = null;
+  state.previewOpener = null;
+  if (opener && document.contains(opener)) opener.focus();
 }
 
 async function saveConvertedFile(event) {
@@ -1059,20 +1290,83 @@ dropZone.addEventListener("dragleave", () => {
   setMouseState(state.files.length > 1 ? "batch" : state.files.length ? "idle" : "upload");
 });
 
-dropZone.addEventListener("drop", (event) => {
+dropZone.addEventListener("drop", async (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragging");
+  // 支持拖入文件夹：遍历 items 用 webkitGetAsEntry 递归收集文件，
+  // 并把文件夹名记录到 state.folderName（用于图片合并 PDF 命名）。
+  const items = [...(event.dataTransfer?.items || [])];
+  const entries = items.map((item) => item.webkitGetAsEntry && item.webkitGetAsEntry()).filter(Boolean);
+  const hasDirectory = entries.some((entry) => entry?.isDirectory);
+  if (hasDirectory) {
+    const collected = [];
+    let firstDirName = "";
+    for (const entry of entries) {
+      await collectEntryFiles(entry, collected, (dirName) => { firstDirName = firstDirName || dirName; });
+    }
+    if (collected.length) {
+      state.folderName = firstDirName || "";
+      acceptFiles(collected);
+      return;
+    }
+  }
   acceptFiles(event.dataTransfer.files);
 });
 
+// 递归收集文件夹/文件条目（webkitGetAsEntry），onDirName 回调首个目录名。
+async function collectEntryFiles(entry, collected, onDirName) {
+  if (!entry) return;
+  if (entry.isFile) {
+    const file = await new Promise((resolve) => entry.file(resolve));
+    if (file) collected.push(file);
+    return;
+  }
+  if (entry.isDirectory) {
+    if (onDirName) onDirName(entry.name);
+    const reader = entry.createReader();
+    let batch = await new Promise((resolve) => reader.readEntries(resolve));
+    // readEntries 可能分批返回，循环读到空
+    while (batch && batch.length) {
+      for (const child of batch) await collectEntryFiles(child, collected, onDirName);
+      batch = await new Promise((resolve) => reader.readEntries(resolve));
+    }
+  }
+}
+
 fileInput.addEventListener("change", () => {
   acceptFiles(fileInput.files);
+});
+
+// 选择文件夹：webkitdirectory input 的每个 File 带 webkitRelativePath
+// （如 "相册2026/001.jpg"），acceptFiles 用第一个路径段做文件夹名。
+chooseFolderButton.addEventListener("click", () => folderInput.click());
+folderInput.addEventListener("change", () => {
+  if (folderInput.files?.length) {
+    acceptFiles(folderInput.files);
+    folderInput.value = "";
+  }
 });
 
 batchList.addEventListener("click", async (event) => {
   const moveButton = event.target.closest("[data-move]");
   if (moveButton) {
     moveFileInQueue(Number(moveButton.dataset.move), moveButton.dataset.direction);
+    return;
+  }
+  const blankInsert = event.target.closest("[data-insert-blank]");
+  if (blankInsert) {
+    insertBlankPage(Number(blankInsert.dataset.insertBlank));
+    return;
+  }
+  const blankRemove = event.target.closest("[data-remove-blank]");
+  if (blankRemove) {
+    removeBlankPage(Number(blankRemove.dataset.removeBlank));
+    return;
+  }
+  const previewAction = event.target.closest("[data-preview-index]");
+  if (previewAction) {
+    const result = state.batchResults[Number(previewAction.dataset.previewIndex)]?.result;
+    await openPreview(result, previewAction);
     return;
   }
   const button = event.target.closest("[data-save-index]");
@@ -1085,6 +1379,26 @@ batchList.addEventListener("click", async (event) => {
     setStatus(`保存失败：${error.message || "未知错误"}`, "error");
   }
 });
+
+// 在队列 index 之后插入一页空白页（仅图片合并 PDF 时可用）
+function insertBlankPage(index) {
+  if (!canReorderImages()) return;
+  const blankPage = { isBlankPage: true, name: "空白页", size: 0 };
+  const at = Math.min(index + 1, state.files.length);
+  state.files.splice(at, 0, blankPage);
+  state.fileInfos.splice(at, 0, { extension: "", category: "image", targets: ["pdf"], experimental: false });
+  state.batchResults.splice(at, 0, { status: "pending", detail: "等待转换" });
+  renderBatchList();
+}
+
+function removeBlankPage(index) {
+  if (!canReorderImages()) return;
+  if (!state.files[index]?.isBlankPage) return;
+  state.files.splice(index, 1);
+  state.fileInfos.splice(index, 1);
+  state.batchResults.splice(index, 1);
+  renderBatchList();
+}
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
@@ -1116,6 +1430,43 @@ downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
 if (pdfAction) pdfAction.addEventListener("change", syncPdfActionFields);
 if (pdfSplitMode) pdfSplitMode.addEventListener("change", syncPdfActionFields);
+previewButton.addEventListener("click", () => openPreview(state.converted, previewButton));
+previewClose.addEventListener("click", closePreview);
+previewBackdrop.addEventListener("click", closePreview);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !previewDrawer.hidden) closePreview();
+});
+agentInstallButton.addEventListener("click", async () => {
+  if (typeof logBridge.inspectAgentSkillTargets !== "function" || typeof logBridge.installAgentSkill !== "function") return;
+  agentInstallButton.disabled = true;
+  setStatus(t("agent.checking"));
+  try {
+    const inspected = await logBridge.inspectAgentSkillTargets();
+    if (!inspected?.targets?.length) {
+      setStatus(t("agent.none"));
+      return;
+    }
+    const result = await logBridge.installAgentSkill({ targetIds: inspected.targets.map((item) => item.id) });
+    if (result?.canceled) {
+      setStatus(t("agent.canceled"));
+    } else if (result.failed?.length) {
+      setStatus(t("agent.partial", {
+        count: result.installed.length,
+        failed: result.failed.length,
+        message: result.failed.map((item) => item.error).join("；")
+      }), result.installed.length ? "success" : "error");
+    } else {
+      setStatus(t("agent.installed", {
+        count: result.installed.length,
+        paths: result.installed.map((item) => item.path).join("；")
+      }), "success");
+    }
+  } catch (error) {
+    setStatus(t("agent.failed", { message: error.message || "unknown" }), "error");
+  } finally {
+    agentInstallButton.disabled = false;
+  }
+});
 diagnosticsButton.addEventListener("click", async () => {
   if (typeof logBridge.exportDiagnostics !== "function") return;
   diagnosticsButton.disabled = true;
@@ -1129,6 +1480,27 @@ diagnosticsButton.addEventListener("click", async () => {
     rendererLog("error", "导出诊断失败", error);
   } finally {
     diagnosticsButton.disabled = false;
+  }
+});
+
+compressFolderButton.addEventListener("click", async () => {
+  if (typeof logBridge.compressFolder !== "function") {
+    setStatus(t("compressFolder.failed", { message: "compression is only available in the desktop app" }), "error");
+    return;
+  }
+  compressFolderButton.disabled = true;
+  try {
+    const result = await logBridge.compressFolder({ compressionLevel: 6 });
+    if (result?.canceled) {
+      setStatus(t("compressFolder.canceled"));
+    } else {
+      setStatus(t("compressFolder.saved", { count: result.fileCount, path: result.filePath }), "success");
+    }
+  } catch (error) {
+    setStatus(t("compressFolder.failed", { message: error.message || "unknown" }), "error");
+    rendererLog("error", "压缩文件夹失败", error);
+  } finally {
+    compressFolderButton.disabled = false;
   }
 });
 

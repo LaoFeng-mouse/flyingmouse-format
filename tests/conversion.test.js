@@ -186,11 +186,13 @@ async function uploadConvert(filePath, fileName, targetFormat, mimeType = "appli
   return { response, body };
 }
 
-async function uploadImagesToPdf(files) {
+async function uploadImagesToPdf(files, options = {}) {
   const form = new FormData();
   for (const file of files) {
     form.append("files", new Blob([await fsp.readFile(file.path)], { type: "image/png" }), file.name);
   }
+  if (options.blanks) form.append("blanks", options.blanks);
+  if (options.folderName) form.append("folderName", options.folderName);
 
   const response = await fetch(`${baseUrl}/api/convert-images-to-pdf`, {
     method: "POST",
@@ -325,6 +327,32 @@ test("merges multiple images into one PDF without changing any source image", as
   const outputPath = await downloadResult(body, "merged-images.pdf");
   assertPdf(outputPath);
   assert.deepStrictEqual([hashFile(firstPath), hashFile(secondPath)], hashes);
+});
+
+test("merges images with blank pages inserted at requested positions", async () => {
+  const firstPath = path.join(scratchRoot, "空白页测试-一.png");
+  const secondPath = path.join(scratchRoot, "空白页测试-二.png");
+  await createImage(firstPath, { r: 200, g: 30, b: 30, alpha: 1 }, 90, 60);
+  await createImage(secondPath, { r: 30, g: 30, b: 200, alpha: 1 }, 90, 60);
+
+  // blanks=0,2：在第 0 个文件之前 + 第 2 个文件之后插入空白页 → 4 页：白,一,二,白
+  const { response, body } = await uploadImagesToPdf(
+    [
+      { path: firstPath, name: "空白页测试-一.png" },
+      { path: secondPath, name: "空白页测试-二.png" }
+    ],
+    { blanks: "0,2" }
+  );
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.match(body.fileName, /等4个文件\.pdf$/);
+  const outputPath = await downloadResult(body, "blank-merged.pdf");
+  assertPdf(outputPath);
+  // 验证 PDF 页数 = 4（用 pdfjs 读页数）
+  const { getDocument } = await import("file:///C:/Users/34615/Documents/飞鼠格式/node_modules/pdfjs-dist/legacy/build/pdf.mjs");
+  const data = new Uint8Array(await fsp.readFile(outputPath));
+  const doc = await getDocument({ data, isEvalSupported: false }).promise;
+  assert.strictEqual(doc.numPages, 4);
 });
 
 test("converts a PDF to DOCX with extracted text and tables", async () => {

@@ -1,12 +1,12 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-14（GitHub main 已回滚 v0.5.1；OCR 精准度 + KGG 密钥库剪枝 + 真实 RAW 验收 + 同步本地均已收尾；待 push/发版 + 外部验收）
+更新时间：2026-08-14（revert 0774349 已恢复 v0.5.2 内容——KWM 解密/批量上限/Agent 接入/文件夹命名 PDF/中文文件名乱码修复/Office 误报修复；OCR 精准度 + KGG 密钥库剪枝 + 真实 RAW 验收 + 同步本地均已收尾；待 push/发版 + 外部验收）
 
 ## 待办（下一窗口，2026-08-14）
 
 - ① **push 到 GitHub**：本地领先 origin/main 十几个提交（OCR 精准度 3 个 + PDF→Word 粘连降级 + KGG 自动搜索/剪枝/教程 + PDF 加密/解密/拆分 + 竖线阈值 + Office CRC + 合规 c6c6b04）。push 走代理 `HTTPS_PROXY=http://127.0.0.1:7897`
 - ② **打包 + 打 tag + 发版**（等用户明确说）：发版前须补 qpdf 进 ci-engines-v1.json / restore-ci-engines.ps1 分发链（当前只进 package.json extraResources，CI 产物会缺 qpdf，加密/解密/拆分退化）
-- ③ 酷我 KWM：算法已实现并实测，v0.5.2 内容已从 GitHub 回滚、本地 git 历史完整保留，等用户说上传再推
+- ③ 酷我 KWM：算法已实现并实测，真实 3 首歌已转 MP3 放 Downloads（白兰的-得意的笑.mp3 / 田园-这些年在忙什么 (民谣版).mp3 / Zhen Zhen（半夏水玉）-目瑙纵歌.mp3）；revert 0774349 已恢复 v0.5.2 内容，等用户说上传再推
 - ④ 真实 Win7 / Mac 物理设备验收
 - ⑤ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
 - ⑥ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
@@ -54,17 +54,35 @@
   - 关联：office-engine.js 的 `classifyExecutionError` 正则收窄（上一窗口已做，工作树未提交）——把 soffice 正常噪音 `Could not find platform independent libraries` 里的 "profile" 字样误判 PROFILE_FAILED 的问题已收窄。
 
 
-## 2026-08-13 晚：QQ 音乐登录教程弹窗 + psrf cookie 兼容（v0.5.1 发布中）
+## v0.5.2 开发中（2026-08-14 会话）
 
-- **feat bb0155c**：musicex 解密失败（MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK）时前端自动弹出「QQ 音乐登录教程」弹窗：
-  - 7 步图文教程：登录 y.qq.com → F12 → Application 标签 → Cookie 列表 → 复制 qm_keyst/uin → 桌面新建 QQ音乐_登录cookie.txt → 回软件重新转换
-  - 第 6 步「复制模板」按钮：一键复制 `uin=你的QQ号; qm_keyst=你复制的qm_keyst值` 模板（navigator.clipboard，失败降级选中提示 Ctrl+C）
-  - 6 张打码图解随包分发（public/assets/qq-tutorial/step1-6.png，真实 cookie 值/身份信息已打码；qm_keyst 行与新版 psrf_qqmusic_uin/psrf_qqmusic_key 名称清晰可见）
-  - 中英文双语 i18n；Esc / 遮罩 / × / 「我知道了」均可关闭；图片缺失时自动隐藏破图占位
-  - 测试：ui-static.test.js 新增 2 条静态断言
-- **fix fdc4300**：loadQqMusicCredentials 兼容新版扫码登录 cookie 名 `psrf_qqmusic_key`（旧版 qm_keyst / qqmusic_key 仍支持），避免用户复制新版 cookie 名读不到凭据；mflac-format.test.js 加单测
-- 验证：全量 336 = 334 pass + 2 skip + 0 fail；浏览器实测 6 图加载正常；`--dir` 打包同步桌面副本（C:\Users\34615\飞鼠格式\FlyingMouse Format）实测弹窗正常
-- 未推送未发版；本机桌面副本已含该功能（app.asar 20:18 同步）
+### 已实现（已提交并推送 main）
+
+- **KWM 酷我音乐解密**（新增 kwm-format.js）：magic `yeelion-kuwo-tme`，0x18-0x1F 8 字节 key → u64 十进制 → 循环补 32 XOR `MoOtOiTvINGwd2E6n0E1i7L5t2IoOoNk` 生成 mask，数据区从 0x400 起逐字节 XOR；已注册 config.js + server.js 分发 + build.files/win7-profile 白名单；tests/kwm-format.test.js 9 项全过（含真实样本 fixture）；E2E kwm→mp3 200 返回可下载文件
+- **批量上限修复**（server.js）：/api/convert-images-to-pdf 与 /api/merge-pdfs 的 upload.array("files", 100) → upload.array("files") 无上限（138 张图批量 JPG→PDF 的 "Unexpected field" 根因）；413 文案更新
+- **Agent 接入修复**（agent-skill-installer.js）：copyDirectorySafe 从 fsp.cp 改为 readdir+readFile/writeFile 逐文件复制——**根因：打包后 skill 源在 app.asar（Electron 只读虚拟文件系统），asar 补丁不覆盖 fs.cp，安装必抛 ENOENT**。Electron 实测从已装版 asar 完整装到 ~/.codex/skills 并端到端跑通 CLI；新增回归测试
+- **诊断格式改进**（diagnostics.js）：Convert 事件行不再整行抹成 [REDACTED_FILE]，只替换引号内文件名；文件头加 Author/License 行
+- **文件夹命名 PDF**（public/ 三件套 + server.js）：drop 支持 webkitGetAsEntry 递归收集文件夹，新增「选择文件夹转 PDF」按钮（webkitdirectory input）；state.folderName 从 webkitRelativePath 首段取，/api/convert-images-to-pdf 接收 folderName 输出 `<文件夹名>.pdf`
+- **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂 · 抖音 3869421365）+ 禁止商用
+- **Office 误报修复**（office-engine.js）：classifyExecutionError 正则收窄，stderr 含 "profile" 字样不再误判为 PROFILE_FAILED（《博物志》docx 事故根因）；新增回归测试
+- **中文文件名乱码修复**（utils.js）：decodeUploadFileName 增加 GBK mojibake 解码（curl/命令行/微信传输场景，°×À¼µÄ → 白兰的）；UTF-8 mojibake 解码成功即返回不再二次转换；tests/utils.test.js 6 项
+- **图片合并 PDF 插入空白页**（public/server/image）：队列每项「□+」插入空白页 + ✕ 删除，可与 ↑/↓ 排序组合；blanks 参数从后往前插入；纯白 A4 页（595×842pt）；E2E 3图+2空白页=5页验证通过；批量文件数无硬上限（取决于本地配置），前端「2GB」文案更新
+- **release.yml 修复**：NOTES 文件名生成 `${var//./}` 误删 .md 扩展名点（v0.5.1 Release 显示 RELEASE.md 内容的根因），改为先对版本号去点
+- 版本号 0.5.1 → 0.5.2（package.json/package-lock/win7-package-lock/README/release-notes-052.md 已建）
+
+### 测试
+
+- 全量 376 = 374 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
+- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 3 项（文件夹入口 + 作者标注 + 空白页）、office-engine 误报回归 1 项、utils 6 项、conversion 空白页集成 1 项
+
+## v0.5.1 已发布（2026-08-13 晚）
+
+- **QQ 音乐登录教程弹窗**（bb0155c）：musicex 解密失败（MFLAC_EKEY_REQUIRED / MFLAC_EKEY_NETWORK）时前端自动弹出 7 步图文教程（登录 y.qq.com → F12 → Application → Cookie 列表 → 复制 qm_keyst/uin → 桌面新建 cookie 文件 → 重试），第 6 步「复制模板」按钮一键复制模板；6 张打码图解随包分发；中英文双语；ui-static 断言保护
+- **psrf_qqmusic_key 兼容**（fdc4300）：loadQqMusicCredentials 接受新版扫码登录 cookie 名（旧版 qm_keyst / qqmusic_key 仍支持），mflac-format.test.js 加单测
+- GitHub Release v0.5.1 已发布并设 Latest（六件套齐全，自动更新闭环：装 0.5.0 用户开软件自动收更新）；CI run 31700878539 四 job 全绿（Windows + mac x64 + mac arm64 + publish 云端发布）
+- 本地安装包四件套：桌面 v0.5.1分发\（Win10/11 x64 646MB + win7 522MB + mac arm64 683MB + mac x64 719MB，与 Release 字节数一致），供 123 云盘分发
+- 商店 APPX：dist/FlyingMouse Format-Setup-0.5.1-x64.appx（912,294,218 字节，0.5.1.0 / Identity 488B6338.354574AC174AD / x64 / 鼠鼠图标非橙色 / qqTutorialModal×7 + psrf×4 + AUDIO_UNLOCK_UNAVAILABLE_ON_STORE×1 / 引擎齐全），桌面副本 FlyingMouse-Format-Setup-0.5.1-x64.appx；Partner Center 上传待用户
+- 验证：全量 336 = 334 pass + 2 skip + 0 fail；APPX 校验记录同 dist/ 校验脚本
 
 ## v0.4.1 发布状态（2026-08-13，已完成）
 

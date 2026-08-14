@@ -14,7 +14,7 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
-const mammoth = require("mammoth");
+
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
@@ -36,6 +36,7 @@ const { prepareDecryptedAudio } = require("./av3a-format");
 const { convertKgg } = require("./kgg-format");
 const { convertMflac } = require("./mflac-format");
 const { convertKgma } = require("./kgma-format");
+const { convertKwm } = require("./kwm-format");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
@@ -62,7 +63,7 @@ const {
   outputExtFor,
   outputNameFor,
   outputPathFor,
-  downloadUrlFor,
+  registerDownload,
   escapeHtml
 } = require("./utils");
 const { convertMedia, probeAudioTrack } = require("./media");
@@ -191,6 +192,8 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self'",
   "img-src 'self' data:",
   "connect-src 'self'",
+  "frame-src 'self'",
+  "media-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
@@ -344,7 +347,7 @@ app.post("/api/targets", async (req, res) => {
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
 });
 
-app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
+app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -369,6 +372,19 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     };
   });
 
+  // 空白页：前端队列里插入的空白页条目。blanks=0,3 表示在上传文件流（不含
+  // 空白页）的第 0 个文件之前、第 3 个文件之后插入空白页；从后往前插入避免
+  // 索引错位，PDF 生成时空白页输出纯白 A4 页。
+  const blankAfter = new Set(
+    String(req.body?.blanks || "")
+      .split(",")
+      .map((item) => Number(item.trim()))
+      .filter((item) => Number.isFinite(item) && item >= 0 && item <= imageFiles.length)
+  );
+  for (const blankIndex of [...blankAfter].sort((a, b) => b - a)) {
+    imageFiles.splice(blankIndex, 0, { inputPath: "", originalName: "", category: "image", blank: true });
+  }
+
   if (imageFiles.some((file) => file.category !== "image")) {
     logger.warn(`Rejected images-to-pdf: non-image file included (${imageFiles.map((f) => f.originalName).join(", ")})`);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
@@ -377,7 +393,13 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 
   const firstBaseName = safeBaseName(imageFiles[0].originalName);
-  const combinedName = imageFiles.length > 1 ? `${firstBaseName}等${imageFiles.length}个文件.pdf` : `${firstBaseName}.pdf`;
+  // 拖入文件夹/选择目录转 PDF 时直接用文件夹名命名（folderName 由前端从
+  // webkitRelativePath 或目录选择器传入），否则沿用「第一个文件等N个文件」。
+  const folderName = String(req.body?.folderName || "").trim();
+  const pdfBaseName = folderName ? safeBaseName(folderName) : firstBaseName;
+  const combinedName = folderName
+    ? `${pdfBaseName}.pdf`
+    : (imageFiles.length > 1 ? `${firstBaseName}等${imageFiles.length}个文件.pdf` : `${firstBaseName}.pdf`);
   const outputPath = outputPathFor(combinedName, "pdf");
   const downloadName = outputNameFor(combinedName, "pdf");
   logger.info(`Images-to-PDF request: ${imageFiles.length} image(s) -> "${downloadName}"`);
@@ -387,12 +409,15 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     const mimeType = "application/pdf";
     logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     res.json({
       ok: true,
       fileName: downloadName,
       category: "image",
       mimeType,
-      downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
+      ...registered,
+      previewSize
     });
   } catch (error) {
     logger.error(`Images-to-PDF failed: "${combinedName}"`, error);
@@ -402,7 +427,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 });
 
-app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), async (req, res) => {
+app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files"), async (req, res) => {
   const files = req.files || [];
 
   try {
@@ -439,12 +464,16 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, upload.array("files", 100), a
     await mergePdfFiles(pdfFiles, outputPath);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
+    const mimeType = "application/pdf";
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     res.json({
       ok: true,
       fileName: downloadName,
       category: "pdf",
-      mimeType: "application/pdf",
-      downloadUrl: downloadUrlFor(outputPath, downloadName, "application/pdf")
+      mimeType,
+      ...registered,
+      previewSize
     });
   } catch (error) {
     logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
@@ -554,6 +583,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
         else if (inputExt === "kgma") decrypted = await convertKgma(file.path);
+        else if (inputExt === "kwm") decrypted = await convertKwm(file.path);
         else decrypted = await convertMflac(file.path);
         try {
           const conversionInput = inputExt === "ncm"
@@ -570,7 +600,9 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
           ? String(req.body.videoCodec)
           : "h264";
-        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec });
+        // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
+        const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
+        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
       }
     } else {
       throw new Error("暂时无法识别这个文件类型。");
@@ -578,12 +610,15 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
 
     await fsp.rm(file.path, { force: true }).catch(() => {});
     const mimeType = mime.lookup(downloadName) || "application/octet-stream";
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    const previewSize = (await fsp.stat(outputPath)).size;
     const payload = {
       ok: true,
       fileName: downloadName,
       category,
       mimeType,
-      downloadUrl: downloadUrlFor(outputPath, downloadName, mimeType)
+      ...registered,
+      previewSize
     };
     if (Array.isArray(conversionResult?.warnings) && conversionResult.warnings.length) {
       payload.warnings = conversionResult.warnings;
@@ -652,10 +687,31 @@ app.get("/downloads/:id", (req, res) => {
   });
 });
 
+app.get("/previews/:id", (req, res) => {
+  const item = downloads.get(req.params.id);
+  if (!item || !/^[A-Za-z0-9-]+$/.test(req.params.id) || req.originalUrl.includes("?")) {
+    res.status(404).send("File expired or not found.");
+    return;
+  }
+  const inlineName = encodeURIComponent(path.basename(item.downloadName)).replaceAll("'", "%27");
+  res.setHeader("Content-Type", item.mimeType || "application/octet-stream");
+  res.setHeader("Content-Disposition", `inline; filename="preview"; filename*=UTF-8''${inlineName}`);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  if (String(item.mimeType).includes("html")) {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'; sandbox");
+  } else {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'self'");
+  }
+  res.sendFile(path.resolve(item.filePath), (error) => {
+    if (!error) return;
+    if (!res.headersSent) res.status(500).send(error.message);
+  });
+});
+
 app.use((error, _req, res, _next) => {
   if (error?.code === "LIMIT_FILE_SIZE") {
     logger.warn(`Rejected upload: file too large (max ${MAX_UPLOAD_BYTES} bytes)`);
-    res.status(413).json({ error: "文件太大，当前原型最大支持 1GB。" });
+    res.status(413).json({ error: "文件太大，无法上传。请检查磁盘空间后重试。" });
     return;
   }
   logger.error("Unhandled server error", error);

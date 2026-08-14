@@ -81,3 +81,37 @@ test("missing executables and failed user installation are classified", async (t
     (error) => error.code === "OFFICE_ENGINE_PROFILE_FAILED"
   );
 });
+
+test("conversion failures with profile-word noise are not misclassified as profile errors", async (t) => {
+  // 回归：2026-08-14《博物志》docx→pdf 失败被误报成「无法创建独立用户配置」。
+  // LibreOffice headless 的 stderr 常含 profile 字样（路径回显/platform libraries），
+  // 转换真正失败时应归为 OFFICE_CONVERSION_FAILED 而非 OFFICE_ENGINE_PROFILE_FAILED。
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-office-noise-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  await assert.rejects(
+    runLibreOffice("soffice", ["--convert-to", "pdf", "sample.docx"], {
+      runtimeDir: scratch,
+      executor: async () => {
+        throw Object.assign(new Error("soffice failed"), {
+          code: 77,
+          stderr: "Could not find platform independent libraries <prefix>\nconvert failed: filter not available",
+          stdout: ""
+        });
+      }
+    }),
+    (error) => error.code === "OFFICE_CONVERSION_FAILED" && error.details?.exitCode === 77
+  );
+  // 真正的 profile 创建失败短语仍归 PROFILE_FAILED
+  await assert.rejects(
+    runLibreOffice("soffice", ["--convert-to", "pdf", "sample.docx"], {
+      runtimeDir: scratch,
+      executor: async () => {
+        throw Object.assign(new Error("soffice failed"), {
+          stderr: "no access to the user profile (access denied)",
+          stdout: ""
+        });
+      }
+    }),
+    (error) => error.code === "OFFICE_ENGINE_PROFILE_FAILED"
+  );
+});

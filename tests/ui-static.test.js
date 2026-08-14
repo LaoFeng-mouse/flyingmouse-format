@@ -82,6 +82,17 @@ test("renderer exposes a bilingual diagnostics export through the trusted bridge
   assert.match(app, /error\.errorCode/);
 });
 
+test("renderer exposes Agent skill installation immediately before diagnostics", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="agentInstallButton"/);
+  assert.ok(html.indexOf('id="agentInstallButton"') < html.indexOf('id="diagnosticsButton"'));
+  assert.match(app, /"agent\.install": "接入 Agent"/);
+  assert.match(app, /"agent\.install": "Connect to Agent"/);
+  assert.match(app, /logBridge\.inspectAgentSkillTargets/);
+  assert.match(app, /logBridge\.installAgentSkill/);
+});
+
 test("PDF to XLSX uses a contextual bilingual smart-table label and warning", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
@@ -104,6 +115,18 @@ test("video targets expose a codec selector (h264/h265/av1) for mp4/mov/mkv", ()
   assert.match(app, /\["mp4", "mov", "mkv"\]\.includes\(targetSelect\.value\)/);
   assert.match(app, /\["mp4", "mov", "mkv"\]\.includes\(targetFormat\)/);
   assert.match(app, /form\.append\("videoCodec"/);
+});
+
+test("video targets expose a transparent background color selector", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="alphaBackgroundField"[^>]*hidden/);
+  assert.match(html, /id="alphaBackground"/);
+  assert.match(app, /"alphaBackground\.label"/);
+  assert.match(app, /"alphaBackground\.white"/);
+  assert.match(app, /"alphaBackground\.black"/);
+  assert.match(app, /alphaBackgroundField\.hidden/);
+  assert.match(app, /form\.append\("alphaBackground"/);
 });
 
 test("update entry is hidden by default and revealed only on update-available", () => {
@@ -203,4 +226,58 @@ test("PDF split mode exposes page/group options and a group-size field bilingual
   assert.match(app, /form\.append\("splitMode"/);
   assert.match(app, /form\.append\("groupSize"/);
   assert.match(app, /pdfSplitMode\.addEventListener\("change", syncPdfActionFields\)/);
+});
+
+test("folder compression is exposed through the trusted bridge bilingually", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="compressFolderButton"/);
+  assert.match(app, /"action\.compressFolder": "压缩文件夹"/);
+  assert.match(app, /"action\.compressFolder": "Compress folder"/);
+  assert.match(app, /"compressFolder\.saved": "已压缩 \{count\} 个文件到：\{path\}"/);
+  assert.match(app, /"compressFolder\.saved": "Compressed \{count\} files to: \{path\}"/);
+  assert.match(app, /logBridge\.compressFolder/);
+  assert.match(app, /compressFolderButton\.addEventListener\("click"/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+});
+
+test("folder-to-PDF entry is exposed bilingually with webkitdirectory input", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /id="folderInput"[^>]*webkitdirectory/);
+  assert.match(html, /id="chooseFolderButton"/);
+  assert.match(app, /"upload\.chooseFolder": "选择文件夹转 PDF"/);
+  assert.match(app, /"upload\.chooseFolder": "Choose folder → PDF"/);
+  assert.match(app, /chooseFolderButton\.addEventListener\("click", \(\) => folderInput\.click\(\)\)/);
+  assert.match(app, /folderInput\.addEventListener\("change"/);
+  assert.match(app, /state\.folderName/);
+  assert.match(app, /webkitRelativePath/);
+  assert.match(app, /collectEntryFiles/);
+  assert.match(css, /\.drop-folder-line/);
+});
+
+test("blank page insertion is exposed in the image merge queue", () => {
+  const app = readPublic("app.js");
+  assert.match(app, /insertBlankPage\(index\)/);
+  assert.match(app, /removeBlankPage\(index\)/);
+  assert.match(app, /isBlankPage/);
+  assert.match(app, /data-insert-blank/);
+  assert.match(app, /data-remove-blank/);
+  assert.match(app, /form\.append\("blanks"/);
+  assert.match(app, /Blank page/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+});
+
+test("author attribution and non-commercial notice are present in UI and styles", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /class="author-line"/);
+  assert.match(html, /牢蜂/);
+  assert.match(html, /音频解锁仅支持你已购买/);
+  assert.match(html, /禁止商业售卖/);
+  assert.match(css, /\.author-line/);
+  // 渲染器不重新引入 innerHTML
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });

@@ -17,12 +17,13 @@
               <p class="eyebrow">FlyingMouse Format <span class="app-version" id="appVersion"></span></p>
               <div class="brand-title-row">
                 <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
-                <p class="feedback-line"><span data-i18n="feedback.label">问题反馈</span>：<span class="feedback-email">3465177342@qq.com</span></p>
+                <p class="feedback-line" data-i18n="feedback.guide">问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。</p>
               </div>
               <p class="author-line">作者：牢蜂（LaoFeng）· 仅供个人免费使用，禁止商业售卖/转卖/套壳 · 音频解锁仅支持你已购买/自有的本地文件，请支持正版音乐</p>
             </div>
           </div>
           <div class="topbar-actions">
+            <button class="ghost-button diagnostics-button" id="agentInstallButton" type="button" data-i18n="agent.install">接入 Agent</button>
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
             <button class="ghost-button" id="updateButton" type="button" data-i18n="update.check" hidden>检查更新</button>
             <span class="update-status" id="updateStatus" hidden></span>
@@ -47,12 +48,16 @@
         <div class="converter-grid">
           <section class="drop-panel" data-i18n-aria="upload.aria" aria-label="上传文件">
             <input id="fileInput" type="file" class="sr-only" multiple>
+            <input id="folderInput" type="file" class="sr-only" webkitdirectory>
             <button class="drop-zone" id="dropZone" type="button">
               <span class="mouse-stage" aria-hidden="true">
                 <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
               </span>
               <span class="drop-main" data-i18n="upload.title">把文件丢给鼠鼠</span>
               <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
+              <span class="drop-folder-line">
+                <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
+              </span>
             </button>
 
             <div class="file-strip" id="fileStrip" hidden>
@@ -93,6 +98,16 @@
               </select>
             </label>
 
+            <label class="field" id="alphaBackgroundField" hidden>
+              <span data-i18n="alphaBackground.label">透明背景色（带透明通道的视频转码时合成）</span>
+              <select id="alphaBackground">
+                <option value="white" selected data-i18n="alphaBackground.white">白色（默认）</option>
+                <option value="black" data-i18n="alphaBackground.black">黑色</option>
+                <option value="0x00ff00" data-i18n="alphaBackground.green">绿色（绿幕）</option>
+                <option value="0xff00ff" data-i18n="alphaBackground.magenta">洋红（绿幕抠像常用）</option>
+              </select>
+            </label>
+
             <label class="field" id="pdfPasswordField" hidden>
               <span data-i18n="pdfPassword.label">PDF 密码（加密/解密）</span>
               <input id="pdfPassword" type="password" autocomplete="off">
@@ -119,6 +134,8 @@
 
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
 
+            <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
+
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">
                 <span id="progressLabel" data-i18n="progress.label">转换进度</span>
@@ -130,6 +147,7 @@
             </div>
 
             <div class="status-box" id="statusBox" role="status" data-i18n="status.ready">选择文件后会显示可用的转换格式。</div>
+            <button class="ghost-button preview-button" id="previewButton" type="button" hidden data-i18n="preview.open">预览</button>
             <a class="download-button" id="downloadButton" hidden data-i18n="action.download">下载转换后的文件</a>
             <button class="download-button" id="batchSaveButton" type="button" hidden data-i18n="action.saveAll">保存全部</button>
           </aside>
@@ -144,6 +162,19 @@
         </section>
       </section>
     </main>
+
+    <div class="preview-backdrop" id="previewBackdrop" hidden></div>
+    <aside class="preview-drawer" id="previewDrawer" hidden aria-labelledby="previewTitle" aria-modal="true" role="dialog">
+      <div class="preview-header">
+        <div>
+          <p class="eyebrow" data-i18n="preview.eyebrow">转换结果</p>
+          <h2 id="previewTitle" data-i18n="preview.title">文件预览</h2>
+          <p class="preview-meta" id="previewMeta"></p>
+        </div>
+        <button class="ghost-button preview-close" id="previewClose" type="button" data-i18n-aria="preview.close" aria-label="关闭预览">×</button>
+      </div>
+      <div class="preview-content" id="previewContent"></div>
+    </aside>
 
     <aside class="sponsor-widget" id="sponsorWidget" data-i18n-aria="sponsor.aria" aria-label="支持鼠鼠">
       <button class="sponsor-toggle" id="sponsorToggle" type="button" data-i18n-title="sponsor.aria" title="支持鼠鼠" aria-expanded="false">

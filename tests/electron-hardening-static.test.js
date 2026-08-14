@@ -290,6 +290,30 @@ test("trusted IPC exports a sanitized diagnostics report to the remembered direc
   assert.match(preload, /ipcRenderer\.invoke\("export-diagnostics"/);
 });
 
+test("trusted IPC discovers and installs the bundled Agent skill", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  const preload = readRoot("preload.js");
+  assert.ok(packageJson.build.files.includes("agent-skill-installer.js"));
+  assert.ok(packageJson.build.files.includes("agent-skill/**/*"));
+  assert.match(main, /ipcMain\.handle\("inspect-agent-skill-targets"/);
+  assert.match(main, /ipcMain\.handle\("install-agent-skill"/);
+  assert.match(main, /assertTrustedIpc\(event\)/);
+  assert.match(main, /dialog\.showMessageBox/);
+  assert.match(preload, /ipcRenderer\.invoke\("inspect-agent-skill-targets"/);
+  assert.match(preload, /ipcRenderer\.invoke\("install-agent-skill"/);
+});
+
+test("packaged Electron exposes CLI mode without creating a window", () => {
+  const packageJson = JSON.parse(readRoot("package.json"));
+  const main = readRoot("electron-main.js");
+  assert.ok(packageJson.build.files.includes("cli.js"));
+  assert.strictEqual(packageJson.bin["flyingmouse-format"], "cli.js");
+  assert.match(main, /process\.argv\.indexOf\("--cli"\)/);
+  assert.match(main, /if \(cliMode\)[\s\S]*runCli/);
+  assert.match(main, /if \(!cliMode && !mainWindow/);
+});
+
 test("runtime diagnostics read Sharp's supported runtime version API", () => {
   const server = readRoot("server.js");
   assert.doesNotMatch(server, /require\(["']sharp\/package\.json["']\)/);
