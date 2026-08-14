@@ -116,3 +116,10 @@ npm audit --omit=dev --prefix output\win7-stage
 - `docs/HANDOFF.md`：当前可交接状态和剩余风险。
 - `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
+
+## 著作权与许可（2026-08-14 起强制执行）
+
+- 作者：牢蜂（LaoFeng），抖音号 3869421365。所有公开发布物（README、Release、安装包、UI、诊断文件、商店材料）必须保留作者署名。
+- 许可证为非商用：禁止销售、转卖、收费服务、电商平台倒卖、套壳换皮重新发布。LICENSE 已从 MIT 更换为非商用许可。
+- 任何界面文案/文档新增作者信息时：作者=牢蜂，抖音=3869421365，禁止商用表述为「仅供个人免费使用，禁止商业售卖/转卖/套壳」。
+- 包内版本号、README 版本号、release notes、package-lock/win7-package-lock 版本号必须与 package.json 同步，发版前逐一核对。

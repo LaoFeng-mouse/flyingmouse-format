@@ -1,8 +1,8 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
-  "author": "LaoFeng",
+  "author": "牢蜂 (LaoFeng) <douyin:3869421365>",
   "productName": "FlyingMouse Format",
   "engines": {
     "node": ">=18"
@@ -95,6 +95,7 @@
       "kgg-format.js",
       "mflac-format.js",
       "kgma-format.js",
+      "kwm-format.js",
       "config.js",
       "utils.js",
       "media.js",

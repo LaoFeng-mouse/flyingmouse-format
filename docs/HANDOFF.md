@@ -1,17 +1,37 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-13（v0.5.1 已发布：QQ 音乐登录教程弹窗 + psrf cookie 兼容；v0.5.0 之前版本见下）
+更新时间：2026-08-14（v0.5.2 开发中：KWM 解密 + 批量上限修复 + Agent 接入修复 + 文件夹命名 PDF + 著作权标注；未提交未发版）
 
-## 待办（下一窗口，2026-08-13 晚更新）
+## 待办（下一窗口）
 
-- ① v0.5.1 已发布（2026-08-13 晚）：GitHub Release 六件套已自动发布（x64 exe + blockmap + latest.yml + win7 + mac arm64/x64）；本地安装包四件套已复制桌面 v0.5.1分发\ 供 123 云盘上传（用户操作中）；商店 APPX 0.5.1 已构建校验（912MB，桌面，Identity 488B6338.354574AC174AD / 0.5.1.0 / 鼠鼠图标 / 商店隐藏解锁），Partner Center 上传归用户本人；README 版本号已同步 0.5.1
-- ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证
-- ③ 真实 RAW 样本验收（无真实相机样张）
-- ④ 真实 Win7/Mac 物理设备验收
-- ⑤ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
-- ⑥ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
-- ⑦ 123 云盘上传：v0.5.1 四平台安装包（用户操作中）；分享需设「直链/免登录下载」
-- ⑧ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ① v0.5.2 本次改动未提交未发版（工作树有全部改动）：待用户确认后语义化分块提交 → 全量测试 → 本地打包 → asar 验证 → CI tag 发版 → 123 云盘分发
+- ② 真实 KWM 样本已用用户 3 首歌验证（白兰的-得意的笑 / 田园-这些年在忙什么 / Zhen Zhen-目瑙纵歌，均 320MP3 转出成功），fixture 已入库 tests/fixtures/sample.kwm（9.9MB，可留可删）
+- ③ 用户 3 首 kwm 已直接转成 MP3 放 Downloads（白兰的-得意的笑.mp3 / 田园-这些年在忙什么 (民谣版).mp3 / Zhen Zhen （半夏水玉）-目瑙纵歌.mp3）
+- ④ Word→PDF 不精确：日志抓到 OFFICE_ENGINE_PROFILE_FAILED（《博物志》docx 走 roundtrip 修复时 LO 配置创建失败），需用户提供原 docx 复现定位；外部"word 转 pdf 不精确"反馈需真实样本
+- ⑤ 真实 RAW 样本验收（无真实相机样张）
+- ⑥ 真实 Win7/Mac 物理设备验收
+- ⑦ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
+- ⑧ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
+- ⑨ 123 云盘上传：v0.5.1 四平台安装包（用户操作中）；分享需设「直链/免登录下载」
+- ⑩ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ⑪ **著作权标注已落地但未发版**：LICENSE 从 MIT 换非商用许可（作者牢蜂/抖音 3869421365）；README/AGENTS.md/UI 作者行/CLI help/diagnostics 已标注；商店材料（微软商店上架清单/上架材料包）待补作者+非商用声明；发布前检查 Release notes 与包内版本号一致
+
+## v0.5.2 开发中（2026-08-14 会话，全部未提交）
+
+### 已实现（工作树）
+
+- **KWM 酷我音乐解密**（新增 kwm-format.js）：magic `yeelion-kuwo-tme`，0x18-0x1F 8 字节 key → u64 十进制 → 循环补 32 XOR `MoOtOiTvINGwd2E6n0E1i7L5t2IoOoNk` 生成 mask，数据区从 0x400 起逐字节 XOR；已注册 config.js（audioInput/unlockAudioInputs/experimentalInputs.audio）+ server.js 分发 + build.files/win7-profile 白名单；tests/kwm-format.test.js 9 项全过（含真实样本 fixture）；E2E /api/convert kwm→mp3 200 返回可下载文件
+- **批量上限修复**（server.js）：/api/convert-images-to-pdf 与 /api/merge-pdfs 的 upload.array("files", 100) → upload.array("files") 无上限（138 张图批量 JPG→PDF 的 "Unexpected field" 根因）；413 文案从「最大支持 1GB」改通用提示
+- **Agent 接入修复**（agent-skill-installer.js）：copyDirectorySafe 从 fsp.cp 改为 readdir+readFile/writeFile 逐文件复制——**根因：打包后 skill 源在 app.asar（Electron 只读虚拟文件系统），asar 补丁不覆盖 fs.cp，安装必抛 ENOENT**。Electron 环境实测修复后从已装版 asar 完整装到 ~/.codex/skills 并端到端跑通 CLI；新增回归测试（只读源复制）
+- **诊断格式改进**（diagnostics.js）：Convert request/succeeded/failed 行不再整行抹成 [REDACTED_FILE]，改 redactQuotedFilenames 只替换引号内文件名，保留事件类型/类别/目标/字节数；文件头加 Author/License 行
+- **文件夹命名 PDF**（public/ 三件套 + server.js）：drop 支持 webkitGetAsEntry 递归收集文件夹（含子目录），新增「选择文件夹转 PDF」按钮（webkitdirectory input）；state.folderName 从 webkitRelativePath 首段取，/api/convert-images-to-pdf 接收 folderName，有则输出 `<文件夹名>.pdf`
+- **著作权标注**（用户要求，防闲鱼倒卖/套壳）：LICENSE 换非商用许可（中英双语，禁止销售/转卖/电商/套壳换皮）；README 头部作者行+非商用声明+License 徽章改 Non-Commercial；AGENTS.md 新增「著作权与许可」强制条款；UI 页眉 author-line（作者：牢蜂 · 抖音：3869421365 · 仅供个人免费使用，禁止商业售卖/转卖/套壳）；cli.js help 加 Author/License；diagnostics 头部加作者
+- 版本号 0.5.1 → 0.5.2（package.json/package-lock/win7-package-lock/README/release-notes-052.md 已建）
+
+### 测试
+
+- 全量 373 = 371 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
+- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 2 项（文件夹入口 + 作者标注）
 
 ## v0.5.1 已发布（2026-08-13 晚）
 

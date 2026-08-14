@@ -1,21 +1,60 @@
-MIT License
+飞鼠格式（FlyingMouse Format）非商用许可协议
+=============================================
 
-Copyright (c) 2026 LaoFeng
+Copyright (c) 2026 牢蜂（抖音号：3869421365）
+版权所有。
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+一、许可范围
+------------
+1. 本软件（含源码、安装包、文档、图标与界面素材）允许个人用户免费下载、
+   安装、使用和传播（传播时必须保留本协议及原作者署名，不得删除或遮挡
+   软件内、仓库内的作者与版权信息）。
+2. 允许个人学习、研究和二次开发，二次开发成果如公开发布，必须显著标注
+   原作者：牢蜂（抖音号：3869421365），并同样遵守本协议的非商用限制。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+二、禁止事项
+------------
+1. 禁止将本软件或其修改版本用于任何商业用途，包括但不限于：销售、转卖、
+   收费提供服务、用于商业项目、嵌入收费产品。
+2. 禁止将本软件或其修改版本在闲鱼、淘宝、拼多多等任何电商平台或任何
+   渠道以任何形式出售、倒卖、捆绑销售。
+3. 禁止对本软件进行套壳、换皮、改名后重新打包发布，冒充自有产品。
+4. 禁止删除、遮挡、篡改本软件及源码中的作者署名、版权声明、版本信息。
+5. 禁止在未获原作者（牢蜂）书面许可的情况下，将本软件用于商业机构内部
+   商业性质的运营或服务。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+三、免责声明
+------------
+本软件按「现状」提供，作者不对其适用性、完整性、稳定性作任何明示或
+默示的担保。因使用本软件造成的任何直接或间接损失，作者不承担任何责任。
+
+四、侵权处理
+------------
+对违反本协议进行商业售卖、套壳转卖等行为，作者保留依法追究责任的权利，
+包括但不限于要求停止侵权、下架、赔偿损失及公开道歉。
+
+五、其他
+--------
+本协议未授予的权利均归作者所有。本协议的解释权归作者（牢蜂）所有。
+
+联系方式：抖音号 3869421365（作者：牢蜂）
+
+--------------------------------------------------------------------------
+
+FlyingMouse Format Non-Commercial License
+==========================================
+
+Copyright (c) 2026 LaoFeng (Douyin: 3869421365). All rights reserved.
+
+1. Personal, non-commercial use of this software (source code, installers,
+   documentation, icons and UI assets) is free. Redistribution must retain
+   this license and the original author attribution.
+2. Commercial use is PROHIBITED: selling, reselling, charging for service,
+   embedding in paid products, or any commercial activity — including selling
+   on e-commerce platforms (Xianyu, Taobao, Pinduoduo, etc.).
+3. Rebranding, reskinning, or repackaging this software as your own product
+   is PROHIBITED.
+4. Removing or altering the author attribution or license notice is PROHIBITED.
+5. The software is provided "AS IS" without warranty of any kind.
+
+Author: LaoFeng (牢蜂), Douyin: 3869421365

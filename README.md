@@ -2,10 +2,14 @@
 
 > A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
 
+> **作者 Author：牢蜂（LaoFeng） · 抖音 Douyin：3869421365**
+>
+> **⚠️ 非商用声明 Non-Commercial Notice：本软件仅供个人免费使用，禁止任何形式的商业售卖、转卖、套壳换皮重新发布（详见 [LICENSE](LICENSE)）。发现闲鱼/淘宝等渠道倒卖请告知作者，感谢！**
+
 [![Release](https://img.shields.io/github/v/release/LaoFeng-mouse/flyingmouse-format?color=e95f6d)](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest)
 ![CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/workflows/ci.yml/badge.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-0078D6)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-Non--Commercial-e95f6d)
 
 [下载最新版 / Download](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [问题反馈 / Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues)
 
@@ -21,6 +25,7 @@
 - NCM 解密与转码：支持来自 `music.163.com` 对应网易云音乐客户端的常规 NCM，以及 Audio Vivid（AV3A）NCM。
 - mflac/mgg 解密：支持 QQ 音乐官方客户端下载的 mflac/mgg（新版 musicex 需 QQ 音乐登录凭据在线换密钥；原档无权限时自动降档下载同一首歌的可用音质档位；缺少凭据时会弹出图文教程引导你获取 cookie）。
 - KGMA 解密：支持酷狗会员下载的 kgma 加密音频，密钥内嵌文件头，完全离线可解（无需酷狗客户端）。
+- KWM 解密：支持酷我音乐下载的 kwm 加密音频（320kbps MP3 / FLAC），密钥内嵌文件头，完全离线可解（无需酷我客户端）。
 - .mmp4 解密：支持 QQ 音乐 musicex 变体（D0M1 档位），走现有 musicex 在线换密钥链路。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
@@ -44,7 +49,7 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.5.1 对应系统的安装包。
+1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.5.2 对应系统的安装包。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -80,15 +85,15 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.5.1-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
-- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.5.1-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
+- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.5.2-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
+- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.5.2-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.5.1 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实 NCM/AV3A/mflac/KGG 样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.5.2 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实 NCM/AV3A/mflac/KGG 样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.5.1-mac-arm64.dmg`。
-- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.5.1-mac-x64.dmg`。
+- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.5.2-mac-arm64.dmg`。
+- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.5.2-mac-x64.dmg`。
 
 首批 macOS 包支持 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。标准 NCM 可用；Audio Vivid（AV3A）NCM 依赖 Windows 专用解码器，不在 macOS 支持范围内。两个架构已在原生 GitHub runner 完成固定引擎、完整转换、包结构和 12 秒启动冒烟；真实 Mac 设备仍待验收。
 
@@ -112,6 +117,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Decrypts and converts standard NCM plus Audio Vivid (AV3A) NCM from the NetEase Cloud Music client associated with `music.163.com`.
 - Decrypts mflac/mgg from the official QQ Music client (newer musicex variants require a QQ Music login cookie for online key exchange; when the original quality tier is unauthorized, the app automatically downloads an available tier of the same song; when credentials are missing, a step-by-step illustrated guide pops up to help you obtain the cookie).
 - Decrypts KGMA from the Kugou Music client offline (the key is embedded in the file header; no Kugou client needed).
+- Decrypts KWM from the Kuwo Music client offline (320kbps MP3 / FLAC; the key is embedded in the file header; no Kuwo client needed).
 - Decrypts .mmp4, a QQ Music musicex variant (D0M1 tier), through the existing musicex online key exchange.
 - Video codec selection: H.264 / H.265 / AV1 for video conversion (shown when targeting mp4/mov/mkv).
 - Remembers the chosen target separately for each source extension. Changing it replaces that extension's default.
@@ -135,7 +141,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Quick start
 
-1. Download the v0.5.1 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+1. Download the v0.5.2 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -157,15 +163,15 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.5.1-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
-- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.5.1-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
+- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.5.2-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.5.2-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.5.1 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real NCM/AV3A/mflac/KGG regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.5.2 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real NCM/AV3A/mflac/KGG regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.5.1-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse.Format-Setup-0.5.1-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.5.2-mac-arm64.dmg`.
+- **Intel Mac:** use `FlyingMouse.Format-Setup-0.5.2-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Standard NCM is supported; Audio Vivid (AV3A) NCM depends on a Windows-only decoder and is unavailable on macOS. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 
@@ -190,7 +196,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, xls, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html, png, jpg (逐页转图 zip) |
 | PDF | pdf | xlsx, docx, txt, html, png, jpg, split/解密 PDF |
-| Audio / 音频 | ncm, mflac, mgg, kgma, mmp4, mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
+| Audio / 音频 | ncm, mflac, mgg, kgma, mmp4, kwm, mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Video / 视频 | mp4, mov, mkv, webm, avi, m4v, wmv, flv | mp4, webm, mkv, mov, gif, mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | ZIP / 压缩包 | zip | pdf (图片合并) |
 | Any file / 任意文件 | any | zip |
@@ -204,7 +210,17 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 ## License / 许可证
 
-Source code is released under the [MIT License](LICENSE). Bundled third-party components retain their respective licenses. / 项目代码采用 [MIT License](LICENSE)，内置第三方组件遵循各自许可证。
+**非商用许可 Non-Commercial License** — 作者：牢蜂（LaoFeng），抖音号：3869421365。
+
+- 允许个人免费使用与传播（须保留作者署名与本协议）。
+- **禁止商业用途**：禁止销售、转卖、收费提供服务、在电商平台（闲鱼/淘宝/拼多多等）倒卖。
+- **禁止套壳换皮**：禁止对本软件改名、换肤、重新打包后冒充自有产品发布。
+- 二次开发公开发布须显著标注原作者，并遵守同样的非商用限制。
+- 内置第三方组件遵循各自许可证。
+
+完整条款见 [LICENSE](LICENSE)。/ Full terms in [LICENSE](LICENSE).
+
+发现任何渠道倒卖本软件，欢迎通过抖音 3869421365 联系作者举报。
 
 ## Support / 支持
 
