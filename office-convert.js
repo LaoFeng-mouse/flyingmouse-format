@@ -15,6 +15,7 @@ const { OfficeEngineError, runLibreOffice } = require("./office-engine");
 // 注意：htmlToText 从 text-docx.js 延迟 require（convertDocumentToText 内），
 // 避免与 text-docx.js 顶层 require 本模块形成循环依赖。
 const sanitize = require("sanitize-filename");
+const yazl = require("yazl");
 
 // WPS 生成的 docx 常带 wpsCustomData 命名空间；LibreOffice 的 PDF 导出对
 // WPS 公式（OMML oMath）+ 交叉引用域（fldChar）组合会静默截断（exit 0 但
@@ -119,6 +120,77 @@ async function repairDocxViaRoundtrip(inputPath, originalName, tempDir) {
   return findConvertedFile(repairDir, "docx");
 }
 
+// 微信传输 / 某些生成工具打包 docx/xlsx/pptx 时，media 图片用 store + data descriptor
+// 存储，却把 CRC 字段写成 0（偷懒未计算）。LibreOffice 严格校验 zip CRC，遇到这种
+// entry 会整体拒绝加载（报 "Error: source file could not be loaded"），而 MS Word 容错
+// 所以能打开。这里扫描 central directory，找出 CRC=0 且数据非空的损坏 entry。
+function findCrcBrokenZipEntries(buf) {
+  const eocd = findEocd(buf);
+  if (eocd === -1) return null;
+  const cdCount = buf.readUInt16LE(eocd + 10);
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  const entries = [];
+  let off = cdOffset;
+  for (let i = 0; i < cdCount; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) return null; // central directory 异常，放弃修复
+    const method = buf.readUInt16LE(off + 10);
+    const crc = buf.readUInt32LE(off + 16);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOffset = buf.readUInt32LE(off + 42);
+    const name = buf.subarray(off + 46, off + 46 + nameLen).toString("utf8");
+    entries.push({ name, method, compSize, localOffset, crc });
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+// 若 zip 容器存在 CRC 损坏（CRC=0 但数据非空），读取所有 entry 并重新打包重算 CRC。
+// 返回修复后的文件路径；无损坏或非 zip 容器时返回 null。
+async function repairZipCrcIfNeeded(inputPath, tempDir, originalExt) {
+  let buf;
+  try {
+    buf = await fsp.readFile(inputPath);
+  } catch {
+    return null;
+  }
+  if (buf.length < 4 || buf.readUInt32LE(0) !== 0x04034b50) return null;
+
+  const entries = findCrcBrokenZipEntries(buf);
+  if (!entries) return null;
+  const brokenCount = entries.filter((e) => e.crc === 0 && e.compSize > 0).length;
+  if (brokenCount === 0) return null;
+
+  const ext = originalExt || "docx";
+  const repairedPath = path.join(tempDir, `crc-fixed-${randomUUID()}.${ext}`);
+  await new Promise((resolve, reject) => {
+    const archive = new yazl.ZipFile();
+    const output = fs.createWriteStream(repairedPath);
+    output.on("close", resolve);
+    output.on("error", reject);
+    archive.outputStream.on("error", reject);
+    archive.outputStream.pipe(output);
+    try {
+      for (const entry of entries) {
+        if (entry.name.endsWith("/")) continue; // 跳过目录项
+        const data = inflateZipEntry(buf, entry);
+        if (data == null) {
+          reject(new Error(`无法读取 zip entry: ${entry.name}`));
+          return;
+        }
+        archive.addBuffer(data, entry.name, { compress: entry.method !== 0 });
+      }
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    archive.end();
+  });
+  return repairedPath;
+}
+
 function libreOfficeFilterFor(target) {
   const filters = {
     txt: "txt:Text",
@@ -155,12 +227,16 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
 
   try {
     await fsp.copyFile(inputPath, workingInput);
-    // WPS 生成的 docx（OMML 公式 + 交叉引用域）转 PDF 会被 LibreOffice 静默截断：
-    // exit 0 但只输出前几页。命中特征时先 roundtrip 规范化修复再导出。
     const targetExt = normalizeExt(target);
     let effectiveInput = workingInput;
-    if (targetExt === "pdf" && normalizeExt(originalExt) === "docx" && await docxNeedsPdfRepair(workingInput)) {
-      const repaired = await repairDocxViaRoundtrip(workingInput, safeName, tempDir);
+    // 先修复 zip CRC 损坏：微信传输 / 某些工具生成的 docx 会把 media 图片 CRC 写成 0，
+    // LibreOffice 严格校验会拒绝加载（"source file could not be loaded"）。重打包重算 CRC。
+    const crcFixed = await repairZipCrcIfNeeded(workingInput, tempDir, normalizeExt(originalExt));
+    if (crcFixed) effectiveInput = crcFixed;
+    // WPS 生成的 docx（OMML 公式 + 交叉引用域）转 PDF 会被 LibreOffice 静默截断：
+    // exit 0 但只输出前几页。命中特征时先 roundtrip 规范化修复再导出。
+    if (targetExt === "pdf" && normalizeExt(originalExt) === "docx" && await docxNeedsPdfRepair(effectiveInput)) {
+      const repaired = await repairDocxViaRoundtrip(effectiveInput, safeName, tempDir);
       if (repaired) effectiveInput = repaired;
     }
     const args = [
@@ -243,5 +319,7 @@ module.exports = {
   convertDocumentToText,
   readDocxEntryString,
   docxNeedsPdfRepair,
-  repairDocxViaRoundtrip
+  repairDocxViaRoundtrip,
+  findCrcBrokenZipEntries,
+  repairZipCrcIfNeeded
 };

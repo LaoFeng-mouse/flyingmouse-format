@@ -57,7 +57,7 @@ function classifyExecutionError(error, operation) {
   const detail = `${error?.stderr || ""}\n${error?.stdout || ""}\n${error?.message || ""}`;
   let code = operation === "convert" ? "OFFICE_CONVERSION_FAILED" : "OFFICE_ENGINE_START_FAILED";
   if (error?.code === "ENOENT") code = "OFFICE_ENGINE_MISSING";
-  else if (/user installation|profile|access rights|permission denied/i.test(detail)) code = "OFFICE_ENGINE_PROFILE_FAILED";
+  else if (/user installation (could not be completed|is not available)|unable to create user profile|no access to the user profile|access denied|permission denied/i.test(detail)) code = "OFFICE_ENGINE_PROFILE_FAILED";
   else if (/not a valid win32|incompatible|unsupported operating system|requires windows/i.test(detail)) code = "OFFICE_ENGINE_INCOMPATIBLE";
   return new OfficeEngineError(code, {
     exitCode: typeof error?.code === "number" ? error.code : null,
