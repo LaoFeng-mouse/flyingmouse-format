@@ -465,7 +465,10 @@ async function ocrScannedPdfPages(inputPath) {
     throw error;
   }
 
-  const rendered = await renderPdfPages(inputPath, "png", 300, { ocr: true });
+  // 扫描版 OCR 用 200 DPI 渲染：手机扫描 PDF 内嵌图片实际约 200 DPI，
+  // 300 DPI 渲染会上采样产生伪影，导致大标题误判（实测「购货合同」→ 乱码）；
+  // 200 DPI 更贴合原始分辨率，再经 prepareImageForOcr 放大到 2480 补偿清晰度。
+  const rendered = await renderPdfPages(inputPath, "png", 200, { ocr: true });
   let worker = null;
   try {
     worker = await createOcrWorker();
