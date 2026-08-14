@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import stat
 import tempfile
 from dataclasses import dataclass
@@ -42,16 +43,20 @@ def _model(module_name: str, model_name: str, path: Path, **settings) -> dict:
             "model_dir": str(path), "batch_size": 1, **settings}
 
 
+def _general_ocr_config(models: dict[str, Path]) -> dict:
+    return {"pipeline_name": "OCR", "batch_size": 1, "text_type": "general",
+            "use_doc_preprocessor": False, "use_textline_orientation": False,
+            "SubModules": {
+                "TextDetection": _model("text_detection", "PP-OCRv5_server_det",
+                                       models["text_detection"], limit_side_len=736,
+                                       limit_type="min", max_side_limit=4000, thresh=.3,
+                                       box_thresh=.6, unclip_ratio=1.5),
+                "TextRecognition": _model("text_recognition", "PP-OCRv5_server_rec",
+                                          models["text_recognition"], score_thresh=0.0)}}
+
+
 def _local_paddlex_config(models: dict[str, Path]) -> dict:
-    ocr = {"pipeline_name": "OCR", "batch_size": 1, "text_type": "general",
-           "use_doc_preprocessor": False, "use_textline_orientation": False,
-           "SubModules": {
-               "TextDetection": _model("text_detection", "PP-OCRv5_server_det",
-                                      models["text_detection"], limit_side_len=736,
-                                      limit_type="min", max_side_limit=4000, thresh=.3,
-                                      box_thresh=.6, unclip_ratio=1.5),
-               "TextRecognition": _model("text_recognition", "PP-OCRv5_server_rec",
-                                         models["text_recognition"], score_thresh=0.0)}}
+    ocr = _general_ocr_config(models)
     return {"pipeline_name": "PP-StructureV3", "batch_size": 1,
             "use_doc_preprocessor": True, "use_seal_recognition": True,
             "use_table_recognition": True, "use_formula_recognition": False,
@@ -81,7 +86,8 @@ def _local_paddlex_config(models: dict[str, Path]) -> dict:
                         "WirelessTableCellsDetection": _model("table_cells_detection",
                             "RT-DETR-L_wireless_table_cell_det", models["wireless_table_cells"]),
                         "TableOrientationClassify": _model("doc_text_orientation",
-                            "PP-LCNet_x1_0_doc_ori", models["doc_orientation_classification"])}},
+                            "PP-LCNet_x1_0_doc_ori", models["doc_orientation_classification"])},
+                    "SubPipelines": {"GeneralOCR": _general_ocr_config(models)}},
                 "SealRecognition": {"pipeline_name": "seal_recognition", "batch_size": 1,
                     "use_layout_detection": False, "use_doc_preprocessor": False,
                     "SubPipelines": {"SealOCR": {"pipeline_name": "OCR", "batch_size": 1,
@@ -106,6 +112,54 @@ def _contained(root: Path, candidate: Path) -> bool:
         return candidate != root
     except ValueError:
         return False
+
+
+def _is_ascii(value: str) -> bool:
+    try:
+        value.encode("ascii")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _ascii_staging_root() -> Path:
+    # Paddle's native inference runtime (paddle_inference) opens model files through
+    # the ANSI code page and cannot resolve paths containing non-ASCII characters
+    # (verified: `paddle::inference::IsFileExists` returns false for a valid
+    # `C:\...\飞鼠格式\...` model path). Prefer a temp root that is itself ASCII.
+    for candidate in (os.environ.get("TEMP"), os.environ.get("TMP"),
+                      os.environ.get("LOCALAPPDATA"), tempfile.gettempdir()):
+        if candidate and _is_ascii(candidate):
+            return Path(candidate)
+    raise MissingModelError()
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    if source.is_dir():
+        target.mkdir()
+        for child in source.iterdir():
+            _link_or_copy(child, target / child.name)
+        return
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
+def _stage_ascii_models(models: dict[str, Path]) -> tuple[dict[str, Path], Path | None]:
+    if all(_is_ascii(str(path)) for path in models.values()):
+        return models, None
+    staging = Path(tempfile.mkdtemp(prefix="flyingmouse-models-", dir=str(_ascii_staging_root())))
+    staged: dict[str, Path] = {}
+    for name, source in models.items():
+        target = staging / name
+        try:
+            _link_or_copy(source, target)
+        except OSError as error:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise MissingModelError() from error
+        staged[name] = target
+    return staged, staging
 
 
 def _resolve_models(models_root: Path) -> dict[str, Path]:
@@ -143,12 +197,16 @@ def _resolve_models(models_root: Path) -> dict[str, Path]:
 class LocalPipeline:
     backend: object
     config_path: Path
+    staging_root: Path | None = None
 
     def close(self) -> None:
         try: self.config_path.unlink(missing_ok=True)
         finally:
             try: self.config_path.parent.rmdir()
             except OSError: pass
+        if self.staging_root is not None:
+            shutil.rmtree(self.staging_root, ignore_errors=True)
+            self.staging_root = None
 
     def parse(self, input_path: Path, output_dir: Path) -> list[dict]:
         # PyMuPDF is delayed until a real conversion is requested.
@@ -183,6 +241,11 @@ class LocalPipeline:
                 raw = results[0].json if results else {}
                 if callable(raw): raw = raw()
                 raw = dict(raw or {})
+                # PaddleX JsonMixin wraps the parsed page under a "res" key
+                # ({"res": {"parsing_res_list": ..., "table_res_list": ...}}).
+                nested = raw.get("res")
+                if isinstance(nested, dict):
+                    raw = nested
                 raw.update(width=pixmap.width, height=pixmap.height,
                            rotation=page.rotation)
                 materialize_assets(raw, reference, output_dir, page_index + 1)
@@ -289,6 +352,7 @@ def attach_second_opinion(raw: dict, reference: Path, page_number: int) -> None:
 
 def build_pipeline(models_root: Path, language: str) -> LocalPipeline:
     models = _resolve_models(Path(models_root))
+    models, staging_root = _stage_ascii_models(models)
     config = _local_paddlex_config(models)
     config_dir = Path(tempfile.mkdtemp(prefix="flyingmouse-paddlex-"))
     config_path = config_dir / "paddlex-local.yaml"
@@ -309,5 +373,7 @@ def build_pipeline(models_root: Path, language: str) -> LocalPipeline:
                                 use_region_detection=False, cpu_threads=1, **model_arguments)
     except Exception:
         config_path.unlink(missing_ok=True); config_dir.rmdir()
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
         raise
-    return LocalPipeline(backend, config_path)
+    return LocalPipeline(backend, config_path, staging_root)

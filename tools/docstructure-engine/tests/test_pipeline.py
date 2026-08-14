@@ -13,7 +13,8 @@ sys.path.insert(0, str(ENGINE_ROOT))
 from PIL import Image
 
 from flyingmouse_docstructure.pipeline import (MODEL_ARGUMENTS, InvalidOutputError,
-                                                MissingModelError, attach_second_opinion,
+                                                LocalPipeline, MissingModelError,
+                                                _is_ascii, attach_second_opinion,
                                                 build_pipeline, materialize_assets,
                                                 validate_manifest_limits)
 
@@ -69,6 +70,71 @@ class PipelineTests(unittest.TestCase):
             config_path = built.config_path
             built.close()
             self.assertFalse(config_path.exists())
+
+    def test_table_recognition_nests_general_ocr_pipeline(self):
+        # PaddleX's table_recognition_v2 lazily rebuilds its general OCR pipeline from
+        # SubPipelines.GeneralOCR when use_ocr_model is False; without it the pipeline
+        # raises KeyError('pipeline_name') during predict.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "models"
+            self._models(root)
+            fake_module = mock.Mock()
+            fake_module.PPStructureV3.return_value = object()
+            with mock.patch.dict(sys.modules, {"paddleocr": fake_module}):
+                built = build_pipeline(root, "ch")
+            try:
+                config = json.loads(
+                    Path(fake_module.PPStructureV3.call_args.kwargs["paddlex_config"]).read_text("utf-8"))
+                table = config["SubPipelines"]["TableRecognition"]
+                self.assertFalse(table["use_ocr_model"])
+                general = table["SubPipelines"]["GeneralOCR"]
+                self.assertEqual(general["pipeline_name"], "OCR")
+                self.assertIn("TextDetection", general["SubModules"])
+                self.assertIn("TextRecognition", general["SubModules"])
+            finally:
+                built.close()
+
+    def test_non_ascii_model_path_is_staged_to_ascii_temp_and_cleaned(self):
+        # Paddle's native inference runtime cannot open model files under a non-ASCII
+        # path (verified: RuntimeError NotFound for a valid `...\飞鼠格式\...` model dir).
+        # build_pipeline must materialize an ASCII-only staging copy and clean it on close.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "飞鼠格式模型"
+            self._models(root)
+            fake_module = mock.Mock()
+            fake_module.PPStructureV3.return_value = object()
+            with mock.patch.dict(sys.modules, {"paddleocr": fake_module}):
+                built = build_pipeline(root, "ch")
+            self.assertIsNotNone(built.staging_root)
+            staging = built.staging_root
+            self.assertTrue(staging.exists())
+            self.assertTrue(_is_ascii(str(staging)))
+            config = json.loads(
+                Path(fake_module.PPStructureV3.call_args.kwargs["paddlex_config"]).read_text("utf-8"))
+            collected = []
+            def walk(value):
+                if isinstance(value, dict):
+                    for key, item in value.items():
+                        if key == "model_dir": collected.append(item)
+                        walk(item)
+                elif isinstance(value, list):
+                    for item in value: walk(item)
+            walk(config)
+            self.assertTrue(collected)
+            self.assertTrue(all(_is_ascii(str(item)) for item in collected))
+            built.close()
+            self.assertFalse(staging.exists())
+
+    def test_ascii_model_path_does_not_stage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "models"
+            self._models(root)
+            fake_module = mock.Mock()
+            fake_module.PPStructureV3.return_value = object()
+            with mock.patch.dict(sys.modules, {"paddleocr": fake_module}):
+                built = build_pipeline(root, "ch")
+            self.assertIsNone(built.staging_root)
+            built.close()
 
     def test_missing_model_and_url_or_escape_are_rejected_before_import(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -191,7 +257,7 @@ class PipelineTests(unittest.TestCase):
                     supplied = {key for key in self.kwargs if key.endswith("_model_dir")}
                     config = json.loads(Path(self.kwargs["paddlex_config"]).read_text("utf-8"))
                     configured = configured_model_dirs(config)
-                    missing = supplied != expected_arguments or len(configured) != 13 or any(
+                    missing = supplied != expected_arguments or len(configured) != 15 or any(
                         not Path(path).is_dir() for path in [
                             *(self.kwargs[key] for key in supplied), *configured])
                     if missing:
@@ -263,6 +329,32 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(supplied_arguments, expected_arguments)
             supplied = {Path(kwargs[key]).resolve() for key in supplied_arguments}
             self.assertEqual(supplied, {path.resolve() for path in models.iterdir()})
+
+    def test_parse_unwraps_paddlex_res_envelope(self):
+        # PaddleX JsonMixin.json returns {"res": {...}}; the engine must unwrap it
+        # or every real document normalizes to zero blocks/tables.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); source = root / "in.pdf"; source.write_bytes(b"%PDF")
+            output = root / "out"; output.mkdir()
+            config_path = root / "config.json"; config_path.write_text("{}", "utf-8")
+            backend = mock.Mock()
+            backend.predict.return_value = [SimpleNamespace(json={"res": {
+                "parsing_res_list": [{"block_label": "text", "block_bbox": [1, 1, 10, 10],
+                                      "block_content": "hi", "block_score": .9}],
+                "table_res_list": [], "layout_det_res": {"boxes": []},
+                "overall_ocr_res": {}, "width": 40, "height": 60}})]
+            pipeline = LocalPipeline(backend, config_path)
+            fake_page = mock.Mock(rect=SimpleNamespace(width=20, height=30), rotation=0)
+            fake_pixmap = SimpleNamespace(width=40, height=60,
+                save=lambda target: Image.new("RGB", (40, 60), "white").save(target))
+            fake_page.get_pixmap.return_value = fake_pixmap
+            document = mock.Mock(page_count=1, load_page=mock.Mock(return_value=fake_page))
+            fitz = SimpleNamespace(open=mock.Mock(return_value=document), Matrix=lambda x, y: (x, y))
+            with mock.patch.dict(sys.modules, {"fitz": fitz}):
+                pages = pipeline.parse(source, output)
+            self.assertEqual(len(pages), 1)
+            self.assertEqual(len(pages[0]["blocks"]), 1)
+            self.assertEqual(pages[0]["blocks"][0]["type"], "text")
 
     @unittest.skipIf(os.name == "nt", "symlink creation is not reliably permitted on Windows")
     def test_symlink_model_is_rejected(self):
