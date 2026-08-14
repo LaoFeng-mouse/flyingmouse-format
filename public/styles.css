@@ -535,6 +535,7 @@ select {
   padding: 13px;
   color: var(--muted);
   font-weight: 600;
+  white-space: pre-line;
   line-height: 1.5;
   overflow: auto;
   overflow-wrap: anywhere;

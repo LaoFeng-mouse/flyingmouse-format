@@ -28,7 +28,7 @@ test("searchForKugouKeyDb prefers the most recently modified DB when several exi
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fm-kggdb2-"));
 
   const older = makeDb(root, "KuGou");
-  const newer = makeDb(root, "other/kugou/nested");
+  const newer = makeDb(root, "kgmusic");
   const past = new Date(Date.now() - 60000);
   const now = new Date();
   fs.utimesSync(older, past, past);
@@ -38,8 +38,15 @@ test("searchForKugouKeyDb prefers the most recently modified DB when several exi
   assert.equal(found, newer);
 });
 
-test("searchForKugouKeyDb returns undefined when no DB exists", () => {
+test("searchForKugouKeyDb skips unrelated top-level directories", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "fm-kggdb3-"));
+  // 「other」不是酷狗相关目录名，按剪枝规则不会深入，因此里面的库不会被找到
+  makeDb(root, "other/kugou/nested");
+  assert.equal(searchForKugouKeyDb([root]), undefined);
+});
+
+test("searchForKugouKeyDb returns undefined when no DB exists", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "fm-kggdb4-"));
   fs.mkdirSync(path.join(root, "unrelated", "dir"), { recursive: true });
   fs.writeFileSync(path.join(root, "unrelated", "notes.txt"), "x");
   assert.equal(searchForKugouKeyDb([root]), undefined);

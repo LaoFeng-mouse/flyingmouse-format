@@ -135,25 +135,31 @@ function candidateDbPaths() {
 }
 
 function kugouDbSearchRoots() {
+  const home = os.homedir();
   const roots = [];
   if (process.platform === "darwin") {
-    roots.push(path.join(os.homedir(), "Library", "Application Support"));
-    roots.push(path.join(os.homedir(), "Library", "Containers"));
+    roots.push(path.join(home, "Library", "Application Support"));
+    roots.push(path.join(home, "Library", "Containers"));
   } else if (process.platform === "win32") {
     if (process.env.APPDATA) roots.push(process.env.APPDATA);
     if (process.env.LOCALAPPDATA) roots.push(process.env.LOCALAPPDATA);
   } else {
-    roots.push(path.join(os.homedir(), ".config"));
-    roots.push(path.join(os.homedir(), ".local", "share"));
+    roots.push(path.join(home, ".config"));
+    roots.push(path.join(home, ".local", "share"));
   }
+  roots.push(home); // 兜底：扫描用户主目录（配合目录名剪枝，不会全盘扫）
   return roots.filter((p) => fs.existsSync(p));
 }
 
-// 递归搜索 KGMusicV3.db。带深度/访问量上限防止拖慢；命中多个时取最近修改的（活动库）。
+// 递归搜索 KGMusicV3.db：只深入「酷狗相关目录」（kugou/kgmusic/酷狗）与
+// macOS 沙盒容器通用层（Data/Library/Application Support），避免全盘扫描拖慢或
+// 把访问量预算浪费在无关目录（node_modules 等）上导致漏检。
 function searchForKugouKeyDb(roots = kugouDbSearchRoots()) {
   const DB_NAME_RE = /^KGMusicV3\.db$/i;
-  const MAX_DEPTH = 6;
-  const MAX_VISITED = 10000;
+  const KUGOU_DIR_RE = /kugou|kgmusic|酷狗/i;
+  const SANDBOX_DIR_RE = /^(Data|Library|Application Support|Contents|Resources)$/i;
+  const MAX_DEPTH = 8;
+  const MAX_VISITED = 5000;
   const matches = [];
   let visited = 0;
 
@@ -163,17 +169,18 @@ function searchForKugouKeyDb(roots = kugouDbSearchRoots()) {
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-      return;
+      return; // 无权限/不可读目录静默跳过
     }
     for (const entry of entries) {
       if (visited >= MAX_VISITED) return;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith(".")) continue; // 跳过隐藏目录（.Trash、.Spotlight 等）
-        visited += 1;
-        walk(full, depth + 1);
-      } else if (entry.isFile() && DB_NAME_RE.test(entry.name)) {
-        matches.push(full);
+      if (entry.isFile()) {
+        if (DB_NAME_RE.test(entry.name)) matches.push(full);
+      } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        if (KUGOU_DIR_RE.test(entry.name) || SANDBOX_DIR_RE.test(entry.name)) {
+          visited += 1;
+          walk(full, depth + 1);
+        }
       }
     }
   }
@@ -391,7 +398,14 @@ async function getKeyMap() {
   if (cachedKeyMap) return cachedKeyMap;
   const dbPath = candidateDbPaths();
   if (!dbPath) {
-    throw new Error("找不到酷狗密钥库 KGMusicV3.db。请确认本机安装了酷狗音乐客户端，并且用客户端下载过歌曲（密钥只存在本机客户端下载过的那批歌里）。");
+    throw new Error(
+      "找不到酷狗密钥库（KGMusicV3.db），无法解密 KGG。\n" +
+      "解密密钥存在本机酷狗客户端的数据目录里，请按顺序排查：\n" +
+      "1. 确认本机已安装「酷狗音乐」客户端；\n" +
+      "2. 这首歌必须是用酷狗客户端下载的（浏览器或第三方脚本抓的文件没有密钥）；\n" +
+      "3. 如果是在别的设备或系统（Mac、手机等）下载的，密钥不会同步到本机，请在本机酷狗客户端重新下载这首歌；\n" +
+      "4. 仍不行：手动指定密钥库路径——找到 KGMusicV3.db（Windows 默认在 %APPDATA%\\KuGou8\\KGMusicV3.db），把它的完整路径设为环境变量 FLYINGMOUSE_KGG_DB_PATH，完全退出并重启软件后再试。"
+    );
   }
   cachedKeyMap = await loadKeyMap(dbPath);
   return cachedKeyMap;
@@ -411,7 +425,11 @@ async function convertKgg(inputPath) {
   const keyMap = await getKeyMap();
   const ekey = keyMap[audioHash];
   if (!ekey) {
-    throw new Error("在酷狗密钥库中找不到这首歌的密钥：这首歌没有用本机酷狗客户端下载过（可能在别的设备/系统上下载，密钥不会同步）。请在本机酷狗客户端重新下载这首歌后再转。");
+    throw new Error(
+      "酷狗密钥库里没有这首歌的密钥。\n" +
+      "说明这首歌不是用本机酷狗客户端下载的（密钥只存在本机客户端下载过的那批歌里，且不跨设备同步）。\n" +
+      "解决办法：用本机酷狗客户端重新下载这首歌，再转换。"
+    );
   }
   const qmc2 = createQMC2(ekey);
   if (!qmc2) throw new Error("KGG 密钥解析失败。");
