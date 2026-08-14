@@ -1,6 +1,6 @@
 {
   "version": "ci-engines-v1",
-  "repository": "LaoFeng-mouse/flyingmouse-format",
+  "repository": "flyingmouse-format",
   "releaseTag": "ci-engines-v1",
   "assetName": "ci-engines-v1.tar.zst",
   "sha256": "130f43b32af799372ba9fc125bbe28244ff32e6090ec1f97a9eb2dd73230e1f3",
