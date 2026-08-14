@@ -177,6 +177,14 @@ function detectTableLinesFromRaw(options) {
   if (data.length < width * height * channels) throw new Error("Raw image buffer is smaller than its dimensions");
   const threshold = Number.isFinite(Number(options.threshold)) ? Number(options.threshold) : 160;
   const ratio = clamp(Number(options.minLengthRatio) || 0.35, 0.05, 1);
+  // 垂直线用独立的、更小的比例：表格竖线（列分隔线/外框）横贯整个表格高度，
+  // 但表格往往只占页面高度的一小部分，且整页高度可达上千像素。若沿用 height * ratio
+  // （默认 0.35 ≈ 页高 35%），横贯表格区域的竖线会被滤掉（实测 750px 竖线在 2340px
+  // 页上只占 32%，过不了 819px 阈值），导致扫描件识别不到列结构。
+  // 但也不能过低：文字笔画（单个字竖笔）约占页高 5~10%，降到 0.05 会把字形竖笔当竖线，
+  // 碎片化表格网格、拉低 OCR 置信度（实测从 65%+ 掉到 56% 触发 LOW_QUALITY 门禁）。
+  // 取 0.20：既收下真实的 32% 表格竖线，又滤掉 10.5% 的字形竖笔，两侧留足裕量。
+  const verticalRatio = clamp(Number(options.verticalMinLengthRatio) || 0.20, 0.05, 1);
   const darkAt = (x, y) => pixelIntensity(data, (y * width + x) * channels, channels) <= threshold;
   const horizontal = [];
   const vertical = [];
@@ -186,7 +194,7 @@ function detectTableLinesFromRaw(options) {
     }
   }
   for (let x = 0; x < width; x += 1) {
-    for (const run of findRuns(height, (y) => darkAt(x, y), Math.ceil(height * ratio))) {
+    for (const run of findRuns(height, (y) => darkAt(x, y), Math.ceil(height * verticalRatio))) {
       vertical.push({ axis: x, start: run.start, end: run.end });
     }
   }

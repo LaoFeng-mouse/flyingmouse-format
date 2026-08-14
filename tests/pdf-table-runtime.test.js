@@ -55,6 +55,25 @@ test("detects long horizontal and vertical rules and merges thick adjacent pixel
   ]);
 });
 
+test("vertical rules use a smaller ratio: catches 32% table columns but ignores 10% glyph strokes", () => {
+  // 真实扫描件：表格竖线只占页高 32%，35% 阈值会误滤；文字竖笔占约 10%，5% 阈值会误收。
+  // 默认 verticalMinLengthRatio=0.20 必须：收下 32% 竖线、滤掉 10% 竖笔。
+  const height = 100;
+  const width = 60;
+  const data = Buffer.alloc(width * height, 255);
+  const dark = (x, y) => { data[y * width + x] = 0; };
+  // 32% 高的表格竖线（x=10，y=5..36）
+  for (let y = 5; y <= 36; y += 1) dark(10, y);
+  // 10% 高的字形竖笔（x=30，y=45..54）
+  for (let y = 45; y <= 54; y += 1) dark(30, y);
+
+  const lines = detectTableLinesFromRaw({ data, width, height, channels: 1 });
+  const vertical = lines.filter((line) => line.x1 === line.x2);
+  const axes = vertical.map((line) => line.x1);
+  assert.ok(axes.includes(10), "32% table column must be detected");
+  assert.ok(!axes.includes(30), "10% glyph stroke must be ignored");
+});
+
 test("consumes PDF pages from an async iterable one page at a time", async () => {
   let yielded = 0;
   async function* pages() {
