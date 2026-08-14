@@ -2,7 +2,7 @@
 
 > A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
 
-> **作者 Author：牢蜂（LaoFeng） · 抖音 Douyin：3869421365**
+> **作者 Author：牢蜂（LaoFeng）**
 >
 > **⚠️ 非商用声明 Non-Commercial Notice：本软件仅供个人免费使用，禁止任何形式的商业售卖、转卖、套壳换皮重新发布（详见 [LICENSE](LICENSE)）。发现闲鱼/淘宝等渠道倒卖请告知作者，感谢！**
 
@@ -34,6 +34,7 @@
 - 转换质量：HTML / Office 转 Markdown 保留标题、列表和代码块；CSV 支持 BOM、转义引号和字段内换行。
 - PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
 - PDF → Word（版式还原）：内置 pdf2docx 引擎还原段落、表格、图片、字体与布局；扫描版自动 OCR 回退。Windows 10/11 版支持版式还原，Windows 7 版回退到文字提取。
+- PDF 拆分 / 加密 / 解密：PDF 可逐页拆分或每 N 页一组（打包 ZIP），也可用密码加密（AES-256）或解密（需原密码）。
 - 电子书：txt/md/html → EPUB（纯本地生成）；EPUB → TXT/Markdown；MOBI → EPUB/TXT/Markdown（MOBI 解析为实验性，复杂版式可能不完整）。
 - 图片合并 PDF 支持调整顺序：多张图片转 PDF 前可在队列中上移/下移，PDF 页序跟随队列顺序。
 - HEIC/HEIF 图片可转换为 JPG/PNG/WebP 等（内置 ffmpeg 解码）。
@@ -108,6 +109,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Higher-quality text conversion: structural HTML/Office Markdown plus standards-compliant quoted and multiline CSV parsing.
 - PDF → Excel smart table extraction for digital text and scanned pages, including multiple tables, continued pages, merged cells, confidence notes, and Raw fallback.
 - PDF → Word (layout-preserving): the bundled pdf2docx engine restores paragraphs, tables, images, fonts, and layout; scanned PDFs fall back to OCR. Layout restoration is available on Windows 10/11; Windows 7 falls back to text extraction.
+- PDF split / encrypt / decrypt: split a PDF per page or into groups of N pages (packed as a ZIP), or password-protect it (AES-256) and decrypt it (requires the original password).
 - E-books: txt/md/html → EPUB (generated locally); EPUB → TXT/Markdown; MOBI → EPUB/TXT/Markdown (MOBI parsing is experimental; complex layouts may be incomplete).
 - Image-to-PDF ordering: when merging multiple images into a PDF, reorder items with up/down controls before converting; PDF page order follows the queue.
 - HEIC/HEIF images convert to JPG/PNG/WebP and more (built-in ffmpeg decoding).
@@ -174,7 +176,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 ## License / 许可证
 
-**非商用许可 Non-Commercial License** — 作者：牢蜂（LaoFeng），抖音号：3869421365。
+**非商用许可 Non-Commercial License** — 作者：牢蜂（LaoFeng）。
 
 - 允许个人免费使用与传播（须保留作者署名与本协议）。
 - **禁止商业用途**：禁止销售、转卖、收费提供服务、在电商平台（闲鱼/淘宝/拼多多等）倒卖。
@@ -184,7 +186,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 完整条款见 [LICENSE](LICENSE)。/ Full terms in [LICENSE](LICENSE).
 
-发现任何渠道倒卖本软件，欢迎通过抖音 3869421365 联系作者举报。
+发现任何渠道倒卖本软件，欢迎通过 GitHub Issues 联系作者举报。
 
 ## Support / 支持
 

@@ -77,7 +77,7 @@ function buildDiagnosticsReport(input = {}) {
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
-    "Author: 牢蜂 (LaoFeng), Douyin: 3869421365",
+    "Author: 牢蜂 (LaoFeng)",
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
     "",
     "Engines:",
