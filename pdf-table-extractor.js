@@ -318,7 +318,11 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
 }
 
 function rawRowsFromWords(words) {
-  return clusterRows(words).map((row) => [row.words.map((entry) => entry.text).join(" ")]);
+  // mergeCnSpaces 同源逻辑（pdf-table-runtime.js）：删除汉字间空格
+  // （OCR 拆字 `纳税 人 名 称` → `纳税人名称`），汉字与英文/数字间空格保留。
+  // 此处内联而非 require，避免 runtime↔extractor 模块依赖纠缠。
+  const mergeCnSpaces = (text) => String(text || "").replace(/([\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, "$1");
+  return clusterRows(words).map((row) => [mergeCnSpaces(row.words.map((entry) => entry.text).join(" "))]);
 }
 
 function editDistance(left, right) {

@@ -22,6 +22,7 @@ const {
   writePdfTableWorkbook
 } = require("./pdf-table");
 const { assertPdfPages } = require("./resource-policy");
+const { mergeCnSpaces } = require("./pdf-table-runtime");
 const { OfficeQualityError } = require("./office-quality");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
@@ -475,7 +476,8 @@ async function ocrScannedPdfPages(inputPath) {
     const pages = [];
     for (let index = 0; index < rendered.files.length; index += 1) {
       const text = await recognizeImageTextWithWorker(worker, rendered.files[index]);
-      pages.push({ name: `Page ${index + 1}`, text: String(text || "").trim() });
+      // 中文 OCR 拆字空格合并（`纳税 人 名 称` → `纳税人名称`），提升扫描件文本可读性
+      pages.push({ name: `Page ${index + 1}`, text: String(mergeCnSpaces(text) || "").trim() });
     }
     if (!pages.some((page) => page.text)) {
       throw new Error("OCR 没有识别出文字。请确认 PDF 扫描页清晰、文字方向正确。");

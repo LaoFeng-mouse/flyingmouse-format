@@ -130,14 +130,29 @@ async function preparePdfTableOcrImage(imagePath, tempDir, pageNumber) {
     .grayscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const lines = detectTableLinesFromRaw({ data, width: info.width, height: info.height, channels: info.channels });
+  // 擦线用较低竖线阈值：扫描件表格竖线常断裂/较淡（实测中间列分隔线仅 223px ≈ 9.5% 页高，
+  // 默认 0.20 会漏掉 → 断线被 OCR 识别成 `|` 字符混进文字）。
+  // 低阈值会顺带检测到字形竖笔/字母笔画，靠「跨横线」过滤兜底（见下）。
+  const lines = detectTableLinesFromRaw({
+    data, width: info.width, height: info.height, channels: info.channels,
+    verticalMinLengthRatio: 0.05
+  });
+  // 只擦「表格线」：横线全擦；竖线必须跨越 ≥2 条横线（与横线交叉）才是表格列线，
+  // 字形竖笔/字母笔画局限在单行内、不跨横线，绝不能擦（否则文字缺笔画 → OCR 质量崩）。
+  const horizontalLines = lines.filter((line) => Math.abs(line.y2 - line.y1) <= Math.abs(line.x2 - line.x1));
+  const verticalLines = lines.filter((line) => Math.abs(line.y2 - line.y1) > Math.abs(line.x2 - line.x1));
+  const horizontalYs = horizontalLines.map((line) => (line.y1 + line.y2) / 2).sort((a, b) => a - b);
+  const eraseLines = [
+    ...horizontalLines,
+    ...verticalLines.filter((line) => horizontalYs.filter((y) => y >= line.y1 - 3 && y <= line.y2 + 3).length >= 2)
+  ];
   const pipeline = sharp(imagePath, { limitInputPixels: LIMITS.maxImagePixels })
     .flatten({ background: "#ffffff" })
     .grayscale()
     .normalize()
     .sharpen({ sigma: 1 });
-  if (lines.length) {
-    const rectangles = lines.map((line) => {
+  if (eraseLines.length) {
+    const rectangles = eraseLines.map((line) => {
       const eraseHalfWidth = Math.max(2, Math.ceil((Number(line.thickness) || 1) / 2) + 1);
       const horizontal = Math.abs(line.y2 - line.y1) <= Math.abs(line.x2 - line.x1);
       if (horizontal) {
