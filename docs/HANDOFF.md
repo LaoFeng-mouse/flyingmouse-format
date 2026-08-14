@@ -27,13 +27,15 @@
 - **文件夹命名 PDF**（public/ 三件套 + server.js）：drop 支持 webkitGetAsEntry 递归收集文件夹，新增「选择文件夹转 PDF」按钮（webkitdirectory input）；state.folderName 从 webkitRelativePath 首段取，/api/convert-images-to-pdf 接收 folderName 输出 `<文件夹名>.pdf`
 - **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂 · 抖音 3869421365）+ 禁止商用
 - **Office 误报修复**（office-engine.js）：classifyExecutionError 正则收窄，stderr 含 "profile" 字样不再误判为 PROFILE_FAILED（《博物志》docx 事故根因）；新增回归测试
+- **中文文件名乱码修复**（utils.js）：decodeUploadFileName 增加 GBK mojibake 解码（curl/命令行/微信传输场景，°×À¼µÄ → 白兰的）；UTF-8 mojibake 解码成功即返回不再二次转换；tests/utils.test.js 6 项
+- **图片合并 PDF 插入空白页**（public/server/image）：队列每项「□+」插入空白页 + ✕ 删除，可与 ↑/↓ 排序组合；blanks 参数从后往前插入；纯白 A4 页（595×842pt）；E2E 3图+2空白页=5页验证通过；批量文件数无硬上限（取决于本地配置），前端「2GB」文案更新
 - **release.yml 修复**：NOTES 文件名生成 `${var//./}` 误删 .md 扩展名点（v0.5.1 Release 显示 RELEASE.md 内容的根因），改为先对版本号去点
 - 版本号 0.5.1 → 0.5.2（package.json/package-lock/win7-package-lock/README/release-notes-052.md 已建）
 
 ### 测试
 
-- 全量 374 = 372 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
-- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 2 项（文件夹入口 + 作者标注）、office-engine 误报回归 1 项
+- 全量 376 = 374 pass + 2 skip（NCM/KGG fixture 缺失属正常）+ 0 fail（2026-08-14 实测）
+- 新增：kwm-format.test.js 9 项、agent-skill-installer 只读源回归 1 项、ui-static 3 项（文件夹入口 + 作者标注 + 空白页）、office-engine 误报回归 1 项、utils 6 项、conversion 空白页集成 1 项
 
 ## v0.5.1 已发布（2026-08-13 晚）
 
