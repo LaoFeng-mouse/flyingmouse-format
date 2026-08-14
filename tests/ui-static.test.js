@@ -20,12 +20,13 @@ test("renderer exposes workflow hooks and drop zone copy", () => {
   assert.match(html, /id="dropHint"/);
 });
 
-test("renderer restores the original mouse mascot and sponsor widget", () => {
+test("renderer restores the original mouse mascot and removes sponsor widget", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   assert.match(html, /mouse-mascot|mouseMascot/);
-  assert.match(html, /sponsorWidget/);
+  assert.doesNotMatch(html, /sponsorWidget|sponsorToggle/);
   assert.match(app, /setMouseState|mouseAssets|mouseMascot/);
+  assert.doesNotMatch(app, /sponsorToggle/);
 });
 
 test("renderer uses the mouse brand and favicon", () => {
@@ -41,7 +42,7 @@ test("original mouse visual theme classes are present", () => {
   assert.match(css, /\.workflow-steps/);
   assert.match(css, /\.mouse-stage/);
   assert.match(css, /\.mouse-mascot/);
-  assert.match(css, /\.sponsor-widget/);
+  assert.doesNotMatch(css, /\.sponsor-widget/);
   assert.match(css, /border-radius:\s*var\(--radius\)/);
 });
 
@@ -162,16 +163,16 @@ test("renderer labels experimental inputs and the macOS AV3A boundary bilinguall
   assert.match(app, /macOS 支持标准 NCM；Audio Vivid AV3A 目前仅支持 Windows/);
 });
 
-test("renderer surfaces a feedback email in the header and on failures", () => {
+test("renderer surfaces a feedback hint without personal contact details", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
   assert.match(html, /class="feedback-line"/);
-  assert.match(html, /3465177342@qq\.com/);
+  assert.doesNotMatch(html, /3465177342@qq\.com/);
   assert.match(app, /"feedback\.label": "问题反馈"/);
   assert.match(app, /"feedback\.label": "Feedback"/);
-  assert.match(app, /"feedback\.hint": "如需帮助，请反馈至 3465177342@qq\.com"/);
-  assert.match(app, /"feedback\.hint": "For help, please contact 3465177342@qq\.com"/);
+  assert.match(app, /"feedback\.hint": "如需帮助，请导出诊断报告/);
+  assert.match(app, /"feedback\.hint": "For help, export the diagnostics report/);
   assert.match(app, /t\("feedback\.hint"\)/);
   assert.match(css, /\.feedback-line/);
 });
@@ -269,12 +270,12 @@ test("blank page insertion is exposed in the image merge queue", () => {
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("author attribution and non-commercial notice are present in UI and styles", () => {
+test("non-commercial notice is present in UI and styles without author attribution", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
   assert.match(html, /class="author-line"/);
-  assert.match(html, /牢蜂/);
+  assert.doesNotMatch(html, /牢蜂|LaoFeng/);
   assert.match(html, /音频解锁仅支持你已购买/);
   assert.match(html, /禁止商业售卖/);
   assert.match(css, /\.author-line/);

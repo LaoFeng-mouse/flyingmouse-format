@@ -93,7 +93,6 @@ function buildDiagnosticsReport(input = {}) {
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
-    "Author: 牢蜂 (LaoFeng)",
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
     "Notice: Audio unlock supports only locally owned/purchased files. Please support the artists.",
     "",

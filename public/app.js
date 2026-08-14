@@ -141,11 +141,8 @@ const messages = {
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。音频解锁（NCM/mflac/kgma 等）仅支持你已购买或自有的本地文件。",
-    "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
-    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
-    "sponsor.qrAlt": "微信收款码",
-    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请反馈至 3465177342@qq.com",
-    "feedback.guide": "问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。",
+    "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请导出诊断报告并查看错误提示。",
+    "feedback.guide": "问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。",
     "tutorial.qq.title": "QQ 音乐登录教程",
     "tutorial.close": "关闭",
     "tutorial.qq.lead": "新版 QQ 音乐加密音频（musicex）的密钥存在服务器上，需要你登录 QQ 音乐的网页版凭据在线换取。请按下面步骤获取凭据，放好后重新转换即可。注意：无论你的歌是从 QQ 音乐下载的、还是从微信聊天里收到的，获取 cookie 的步骤完全一样——都是去网页版 y.qq.com 登录同一个 QQ 账号。",
@@ -221,12 +218,9 @@ const messages = {
     "pdfGroupSize.label": "Pages per group",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
-    "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT. Audio unlock (NCM/mflac/kgma, etc.) supports only files you own or have purchased locally.",
-    "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
-    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack — completely optional. If anyone charges you for this app, it's a scam.",
-    "sponsor.qrAlt": "WeChat payment QR code",
-    "feedback.label": "Feedback", "feedback.hint": "For help, please contact 3465177342@qq.com",
-    "feedback.guide": "Feedback: if a conversion fails, send the problem file, the exported diagnostics, and a screenshot to 3465177342@qq.com and I'll look into it.",
+    "formats.description": "Document conversion preserves layout where possible; PDFs can export page images, and images and scanned PDFs can be OCRed to TXT. Audio unlock (NCM/mflac/kgma etc.) only supports local files you own or have purchased.",
+    "feedback.label": "Feedback", "feedback.hint": "For help, export the diagnostics report and check the error details.",
+    "feedback.guide": "Feedback: if a conversion fails, export the diagnostics report and check the error details. Help is described in the app documentation.",
     "tutorial.qq.title": "QQ Music Login Guide",
     "tutorial.close": "Close",
     "tutorial.qq.lead": "New QQ Music encrypted audio (musicex) keeps its key on the server; it must be fetched online using your QQ Music web login credentials. Follow the steps below, place the credential file, then convert again. Note: whether your song came from QQ Music or was received in WeChat, the steps are identical — just sign in to y.qq.com with the same QQ account.",
@@ -1601,22 +1595,6 @@ initializeApp().catch((error) => {
   toolHealth.textContent = t("health.failed");
   setStatus(error.message, "error");
   rendererLog("error", "能力检测失败", error);
-});
-
-const sponsorToggle = document.querySelector("#sponsorToggle");
-const sponsorPanel = document.querySelector("#sponsorPanel");
-const sponsorClose = document.querySelector("#sponsorClose");
-const sponsorWidget = document.querySelector("#sponsorWidget");
-
-function setSponsorOpen(open) {
-  sponsorPanel.hidden = !open;
-  sponsorToggle.setAttribute("aria-expanded", String(open));
-}
-
-sponsorToggle.addEventListener("click", () => setSponsorOpen(sponsorPanel.hidden));
-sponsorClose.addEventListener("click", () => setSponsorOpen(false));
-document.addEventListener("click", (event) => {
-  if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) setSponsorOpen(false);
 });
 
 /* --- QQ 音乐登录教程弹窗 --- */

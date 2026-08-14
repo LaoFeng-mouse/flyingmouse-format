@@ -40,7 +40,6 @@ Packaged app:
   macOS: "FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format" --cli ...
   Windows: "FlyingMouse Format.exe" --cli ...
 
-Author: 牢蜂 (LaoFeng)
 License: Non-Commercial — personal use only. Commercial resale or rebranding is prohibited.
 `;
 

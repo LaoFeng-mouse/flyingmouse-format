@@ -2,7 +2,7 @@
   "name": "flyingmouse-format",
   "version": "0.5.2",
   "private": true,
-  "author": "LaoFeng",
+  "author": "FlyingMouse Format",
   "productName": "FlyingMouse Format",
   "engines": {
     "node": ">=18"
@@ -218,7 +218,7 @@
       "applicationId": "FlyingMouseFormat",
       "identityName": "488B6338.354574AC174AD",
       "publisher": "CN=56D7A4A1-B653-4162-A5E2-7D9B3F3754AD",
-      "publisherDisplayName": "牢蜂喜欢开飞机",
+      "publisherDisplayName": "FlyingMouse Format",
       "displayName": "FlyingMouse Format",
       "languages": [
         "zh-CN",
