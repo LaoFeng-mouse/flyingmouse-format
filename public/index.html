@@ -19,6 +19,7 @@
                 <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
                 <p class="feedback-line" data-i18n="feedback.guide">问题反馈：转换遇到问题，请把出问题的文件、导出诊断报告和问题截图，一起发到 3465177342@qq.com，我会尽快处理。</p>
               </div>
+              <p class="author-line">作者：牢蜂 · 抖音：3869421365 · 仅供个人免费使用，禁止商业售卖/转卖/套壳</p>
             </div>
           </div>
           <div class="topbar-actions">
@@ -47,12 +48,16 @@
         <div class="converter-grid">
           <section class="drop-panel" data-i18n-aria="upload.aria" aria-label="上传文件">
             <input id="fileInput" type="file" class="sr-only" multiple>
+            <input id="folderInput" type="file" class="sr-only" webkitdirectory>
             <button class="drop-zone" id="dropZone" type="button">
               <span class="mouse-stage" aria-hidden="true">
                 <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
               </span>
               <span class="drop-main" data-i18n="upload.title">把文件丢给鼠鼠</span>
               <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
+              <span class="drop-folder-line">
+                <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
+              </span>
             </button>
 
             <div class="file-strip" id="fileStrip" hidden>

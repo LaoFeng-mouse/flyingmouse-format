@@ -220,3 +220,32 @@ test("folder compression is exposed through the trusted bridge bilingually", () 
   assert.match(app, /compressFolderButton\.addEventListener\("click"/);
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
+
+test("folder-to-PDF entry is exposed bilingually with webkitdirectory input", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /id="folderInput"[^>]*webkitdirectory/);
+  assert.match(html, /id="chooseFolderButton"/);
+  assert.match(app, /"upload\.chooseFolder": "选择文件夹转 PDF"/);
+  assert.match(app, /"upload\.chooseFolder": "Choose folder → PDF"/);
+  assert.match(app, /chooseFolderButton\.addEventListener\("click", \(\) => folderInput\.click\(\)\)/);
+  assert.match(app, /folderInput\.addEventListener\("change"/);
+  assert.match(app, /state\.folderName/);
+  assert.match(app, /webkitRelativePath/);
+  assert.match(app, /collectEntryFiles/);
+  assert.match(css, /\.drop-folder-line/);
+});
+
+test("author attribution and non-commercial notice are present in UI and styles", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  const css = readPublic("styles.css");
+  assert.match(html, /class="author-line"/);
+  assert.match(html, /牢蜂/);
+  assert.match(html, /3869421365/);
+  assert.match(html, /禁止商业售卖/);
+  assert.match(css, /\.author-line/);
+  // 渲染器不重新引入 innerHTML
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+});

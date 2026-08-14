@@ -380,7 +380,13 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   }
 
   const firstBaseName = safeBaseName(imageFiles[0].originalName);
-  const combinedName = imageFiles.length > 1 ? `${firstBaseName}等${imageFiles.length}个文件.pdf` : `${firstBaseName}.pdf`;
+  // 拖入文件夹/选择目录转 PDF 时直接用文件夹名命名（folderName 由前端从
+  // webkitRelativePath 或目录选择器传入），否则沿用「第一个文件等N个文件」。
+  const folderName = String(req.body?.folderName || "").trim();
+  const pdfBaseName = folderName ? safeBaseName(folderName) : firstBaseName;
+  const combinedName = folderName
+    ? `${pdfBaseName}.pdf`
+    : (imageFiles.length > 1 ? `${firstBaseName}等${imageFiles.length}个文件.pdf` : `${firstBaseName}.pdf`);
   const outputPath = outputPathFor(combinedName, "pdf");
   const downloadName = outputNameFor(combinedName, "pdf");
   logger.info(`Images-to-PDF request: ${imageFiles.length} image(s) -> "${downloadName}"`);

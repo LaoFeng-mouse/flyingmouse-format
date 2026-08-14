@@ -818,6 +818,24 @@ input:focus-visible {
   user-select: text;
 }
 
+.author-line {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.drop-folder-line {
+  margin-top: 8px;
+  display: block;
+}
+
+.drop-folder-line .ghost-button {
+  font-size: 12px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

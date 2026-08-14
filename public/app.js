@@ -8,6 +8,7 @@ const state = {
   progressValue: 0,
   previewResult: null,
   previewOpener: null,
+  folderName: "",
   settings: { schemaVersion: 2, targetBySource: {} }
 };
 
@@ -39,6 +40,8 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 const fileInput = document.querySelector("#fileInput");
+const folderInput = document.querySelector("#folderInput");
+const chooseFolderButton = document.querySelector("#chooseFolderButton");
 const dropZone = document.querySelector("#dropZone");
 const fileStrip = document.querySelector("#fileStrip");
 const fileName = document.querySelector("#fileName");
@@ -109,7 +112,7 @@ const messages = {
     "update.error": "更新检查失败：{message}", "update.unavailable": "当前版本不支持自动更新",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
-    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试",
+    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
     "action.save": "保存", "action.saveAll": "保存全部", "action.compressFolder": "压缩文件夹",
@@ -188,7 +191,7 @@ const messages = {
     "update.error": "Update check failed: {message}", "update.unavailable": "Auto-update is unavailable in this build",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
-    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video",
+    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
     "action.save": "Save", "action.saveAll": "Save all", "action.compressFolder": "Compress folder",
@@ -693,6 +696,11 @@ async function acceptFiles(fileList) {
   state.files = files;
   state.fileInfos = [];
   state.batchResults = files.map(() => ({ status: "pending", detail: "等待转换" }));
+  // 文件夹名：来自 <input webkitdirectory> 或拖入文件夹时 File.webkitRelativePath
+  // 的第一个路径段（如 "相册2026/001.jpg" -> "相册2026"），用于图片合并 PDF 命名。
+  const firstRel = files.find((file) => file.webkitRelativePath);
+  const folderName = firstRel ? firstRel.webkitRelativePath.split("/")[0] : "";
+  state.folderName = folderName && folderName !== firstRel.webkitRelativePath ? folderName : "";
   resetDownload();
   resetProgress();
   setMouseState(files.length > 1 ? "batch" : "analyzing");
@@ -846,6 +854,7 @@ async function convertImagesToPdf(files) {
   for (const file of files) {
     form.append("files", file);
   }
+  if (state.folderName) form.append("folderName", state.folderName);
 
   const response = await fetch("/api/convert-images-to-pdf", {
     method: "POST",
@@ -1233,14 +1242,61 @@ dropZone.addEventListener("dragleave", () => {
   setMouseState(state.files.length > 1 ? "batch" : state.files.length ? "idle" : "upload");
 });
 
-dropZone.addEventListener("drop", (event) => {
+dropZone.addEventListener("drop", async (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragging");
+  // 支持拖入文件夹：遍历 items 用 webkitGetAsEntry 递归收集文件，
+  // 并把文件夹名记录到 state.folderName（用于图片合并 PDF 命名）。
+  const items = [...(event.dataTransfer?.items || [])];
+  const entries = items.map((item) => item.webkitGetAsEntry && item.webkitGetAsEntry()).filter(Boolean);
+  const hasDirectory = entries.some((entry) => entry?.isDirectory);
+  if (hasDirectory) {
+    const collected = [];
+    let firstDirName = "";
+    for (const entry of entries) {
+      await collectEntryFiles(entry, collected, (dirName) => { firstDirName = firstDirName || dirName; });
+    }
+    if (collected.length) {
+      state.folderName = firstDirName || "";
+      acceptFiles(collected);
+      return;
+    }
+  }
   acceptFiles(event.dataTransfer.files);
 });
 
+// 递归收集文件夹/文件条目（webkitGetAsEntry），onDirName 回调首个目录名。
+async function collectEntryFiles(entry, collected, onDirName) {
+  if (!entry) return;
+  if (entry.isFile) {
+    const file = await new Promise((resolve) => entry.file(resolve));
+    if (file) collected.push(file);
+    return;
+  }
+  if (entry.isDirectory) {
+    if (onDirName) onDirName(entry.name);
+    const reader = entry.createReader();
+    let batch = await new Promise((resolve) => reader.readEntries(resolve));
+    // readEntries 可能分批返回，循环读到空
+    while (batch && batch.length) {
+      for (const child of batch) await collectEntryFiles(child, collected, onDirName);
+      batch = await new Promise((resolve) => reader.readEntries(resolve));
+    }
+  }
+}
+
 fileInput.addEventListener("change", () => {
   acceptFiles(fileInput.files);
+});
+
+// 选择文件夹：webkitdirectory input 的每个 File 带 webkitRelativePath
+// （如 "相册2026/001.jpg"），acceptFiles 用第一个路径段做文件夹名。
+chooseFolderButton.addEventListener("click", () => folderInput.click());
+folderInput.addEventListener("change", () => {
+  if (folderInput.files?.length) {
+    acceptFiles(folderInput.files);
+    folderInput.value = "";
+  }
 });
 
 batchList.addEventListener("click", async (event) => {
