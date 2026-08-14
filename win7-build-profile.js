@@ -34,6 +34,7 @@ const REQUIRED_RUNTIME_FILES = [
   "kgg-format.js",
   "mflac-format.js",
   "kgma-format.js",
+  "kwm-format.js",
   "config.js",
   "utils.js",
   "media.js",

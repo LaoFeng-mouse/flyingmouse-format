@@ -198,7 +198,7 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
-  assert.deepEqual(capabilities.groups.audio.experimentalInputs, ["kgg", "mflac"]);
+  assert.deepEqual(capabilities.groups.audio.experimentalInputs, ["kgg", "mflac", "kwm"]);
   assert.equal(capabilities.platform.standardNcm, true);
   assert.equal(capabilities.platform.av3a, process.platform === "win32");
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
