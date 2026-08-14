@@ -189,11 +189,55 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
+// 检测 pdf2docx（docengine）产出的 docx 是否存在「单词粘连」等质量问题。
+// 粘连是 pdf2docx 对部分字体/字距 PDF 的典型缺陷：英文单词间空格丢失，
+// 整段文字粘成一长串（如 "Also,bycalculation,thequarterly..."）。
+// 返回 true 表示质量差，应降级到 OCR 重转。
+async function docxHasRunTogetherText(docxPath) {
+  let mammoth;
+  try {
+    mammoth = require("mammoth");
+  } catch {
+    return false; // 无 mammoth 无法检测，不降级
+  }
+  let text;
+  try {
+    const result = await mammoth.extractRawText({ path: docxPath });
+    text = result.value || "";
+  } catch {
+    return false;
+  }
+
+  // 只统计「连续字母串」（含内嵌逗号等常见粘连场景），作为"单词"样本。
+  // 正常英文：单词平均 4-6 字符，几乎不会出现 >20 字符的连续字母串；
+  // 粘连后：整段文字连成 30~100+ 字符的假单词。
+  const tokens = text.match(/[A-Za-z]+(?:[,.;:][A-Za-z]+)*/g) || [];
+  if (!tokens.length) return false; // 无英文文本（纯中文等），不降级
+
+  const longTokens = tokens.filter((t) => t.replace(/[,.;:]/g, "").length >= 20);
+  const avgLen = tokens.reduce((sum, t) => sum + t.replace(/[,.;:]/g, "").length, 0) / tokens.length;
+  const longCount = longTokens.length;
+
+  // 粘连判定：正常英文文档平均词长约 5~7，粘连后飙到 12+，且伴随超长"单词"。
+  // 平均词长是主信号（≥10 几乎只可能是粘连，正常英文不会到 10），
+  // 超长词数量是佐证。样本太少时（token<10）用「存在超长词」兜底，避免漏判短文档。
+  if (tokens.length < 10) return longCount >= 1 && avgLen >= 20;
+  return avgLen >= 10 && longCount >= 3;
+}
+
 async function convertPdfToDocx(inputPath, outputPath, pages) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
   if (DOCENGINE_PATH) {
     try {
       await run(DOCENGINE_PATH, ["convert", inputPath, outputPath], { timeout: 1000 * 60 * 10 });
+      // 质量门：docengine 转出后若存在严重的单词粘连（内容虽在但不可读），
+      // 且 OCR 可用，则降级到整页 OCR 重新转换，保证内容完整可读。
+      if (await docxHasRunTogetherText(outputPath)) {
+        if (ocrAvailable()) {
+          await convertScannedPdfToOcrDocx(inputPath, outputPath);
+        }
+        // OCR 不可用则不降级，保留 docengine 输出（至少内容在）。
+      }
       return;
     } catch (error) {
       // 文档引擎转换失败（异常 PDF）→ 回退到文字提取，不中断转换。
@@ -539,6 +583,7 @@ module.exports = {
   xmlDocxParagraph,
   writeDocxZip,
   convertPdfToDocx,
+  docxHasRunTogetherText,
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,
