@@ -118,14 +118,71 @@ async function loadKeyMap(dbPath) {
   return map;
 }
 
+// 酷狗密钥库候选路径：先查显式已知路径（Windows 标准位置 + env 覆盖），
+// 查不到再按平台数据目录递归搜 KGMusicV3.db，自动识别 Mac 等非标准位置。
 function candidateDbPaths() {
-  const candidates = [
+  const explicitCandidates = [
     process.env.FLYINGMOUSE_KGG_DB_PATH,
     path.join(process.env.APPDATA || "", "KuGou8", "KGMusicV3.db"),
     path.join(process.env.LOCALAPPDATA || "", "KuGou8", "KGMusicV3.db"),
     path.join(os.homedir(), "AppData", "Roaming", "KuGou8", "KGMusicV3.db")
   ].filter(Boolean);
-  return candidates.find((p) => fs.existsSync(p));
+
+  const explicit = explicitCandidates.find((p) => fs.existsSync(p));
+  if (explicit) return explicit;
+
+  return searchForKugouKeyDb();
+}
+
+function kugouDbSearchRoots() {
+  const roots = [];
+  if (process.platform === "darwin") {
+    roots.push(path.join(os.homedir(), "Library", "Application Support"));
+    roots.push(path.join(os.homedir(), "Library", "Containers"));
+  } else if (process.platform === "win32") {
+    if (process.env.APPDATA) roots.push(process.env.APPDATA);
+    if (process.env.LOCALAPPDATA) roots.push(process.env.LOCALAPPDATA);
+  } else {
+    roots.push(path.join(os.homedir(), ".config"));
+    roots.push(path.join(os.homedir(), ".local", "share"));
+  }
+  return roots.filter((p) => fs.existsSync(p));
+}
+
+// 递归搜索 KGMusicV3.db。带深度/访问量上限防止拖慢；命中多个时取最近修改的（活动库）。
+function searchForKugouKeyDb(roots = kugouDbSearchRoots()) {
+  const DB_NAME_RE = /^KGMusicV3\.db$/i;
+  const MAX_DEPTH = 6;
+  const MAX_VISITED = 10000;
+  const matches = [];
+  let visited = 0;
+
+  function walk(dir, depth) {
+    if (visited >= MAX_VISITED || depth > MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (visited >= MAX_VISITED) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".")) continue; // 跳过隐藏目录（.Trash、.Spotlight 等）
+        visited += 1;
+        walk(full, depth + 1);
+      } else if (entry.isFile() && DB_NAME_RE.test(entry.name)) {
+        matches.push(full);
+      }
+    }
+  }
+
+  for (const root of roots) walk(root, 0);
+
+  if (!matches.length) return undefined;
+  matches.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return matches[0];
 }
 
 // --- TEA (tc_tea_cbc_decrypt) ---
@@ -334,7 +391,7 @@ async function getKeyMap() {
   if (cachedKeyMap) return cachedKeyMap;
   const dbPath = candidateDbPaths();
   if (!dbPath) {
-    throw new Error("找不到酷狗密钥库 KGMusicV3.db（预期在 %APPDATA%\\KuGou8\\ 下）。请确认本机安装过酷狗音乐并下载过歌曲。");
+    throw new Error("找不到酷狗密钥库 KGMusicV3.db。请确认本机安装了酷狗音乐客户端，并且用客户端下载过歌曲（密钥只存在本机客户端下载过的那批歌里）。");
   }
   cachedKeyMap = await loadKeyMap(dbPath);
   return cachedKeyMap;
@@ -354,7 +411,7 @@ async function convertKgg(inputPath) {
   const keyMap = await getKeyMap();
   const ekey = keyMap[audioHash];
   if (!ekey) {
-    throw new Error("在酷狗密钥库中找不到这首歌的密钥：可能是密钥库过期，或歌曲不是在本机酷狗客户端下载的。");
+    throw new Error("在酷狗密钥库中找不到这首歌的密钥：这首歌没有用本机酷狗客户端下载过（可能在别的设备/系统上下载，密钥不会同步）。请在本机酷狗客户端重新下载这首歌后再转。");
   }
   const qmc2 = createQMC2(ekey);
   if (!qmc2) throw new Error("KGG 密钥解析失败。");
@@ -371,4 +428,4 @@ async function convertKgg(inputPath) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertKgg, loadKeyMap, candidateDbPaths, ekeyDecrypt, createQMC2, QMC2MAP, QMC2RC4 };
+module.exports = { convertKgg, loadKeyMap, candidateDbPaths, searchForKugouKeyDb, kugouDbSearchRoots, ekeyDecrypt, createQMC2, QMC2MAP, QMC2RC4 };
