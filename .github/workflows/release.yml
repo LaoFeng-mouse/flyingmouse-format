@@ -229,8 +229,12 @@ jobs:
             [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
           done
           cd ..
-          NOTES="docs/release-notes-${TAG#v}.md"
-          NOTES="${NOTES//./}"
+          # 版本号去点生成 release notes 文件名（v0.5.1 → release-notes-051.md）。
+          # 注意：不能对整个路径做 ${var//./}——会连 .md 扩展名的点一起删掉，
+          # 导致文件不存在而回退到 RELEASE.md（v0.5.1 发布事故根因）。
+          VER="${TAG#v}"
+          VER="${VER//./}"
+          NOTES="docs/release-notes-${VER}.md"
           [ -f "$NOTES" ] || NOTES="docs/RELEASE.md"
           gh release create "$TAG" --repo "${{ github.repository }}" \
             --title "FlyingMouse Format $TAG" \
