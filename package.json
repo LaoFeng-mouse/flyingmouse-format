@@ -2,7 +2,7 @@
   "name": "flyingmouse-format",
   "version": "0.5.2",
   "private": true,
-  "author": "牢蜂 (LaoFeng) <douyin:3869421365>",
+  "author": "LaoFeng",
   "productName": "FlyingMouse Format",
   "engines": {
     "node": ">=18"

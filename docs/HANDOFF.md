@@ -63,7 +63,7 @@
 - **Agent 接入修复**（agent-skill-installer.js）：copyDirectorySafe 从 fsp.cp 改为 readdir+readFile/writeFile 逐文件复制——**根因：打包后 skill 源在 app.asar（Electron 只读虚拟文件系统），asar 补丁不覆盖 fs.cp，安装必抛 ENOENT**。Electron 实测从已装版 asar 完整装到 ~/.codex/skills 并端到端跑通 CLI；新增回归测试
 - **诊断格式改进**（diagnostics.js）：Convert 事件行不再整行抹成 [REDACTED_FILE]，只替换引号内文件名；文件头加 Author/License 行
 - **文件夹命名 PDF**（public/ 三件套 + server.js）：drop 支持 webkitGetAsEntry 递归收集文件夹，新增「选择文件夹转 PDF」按钮（webkitdirectory input）；state.folderName 从 webkitRelativePath 首段取，/api/convert-images-to-pdf 接收 folderName 输出 `<文件夹名>.pdf`
-- **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂 · 抖音 3869421365）+ 禁止商用
+- **著作权标注**：LICENSE 换非商用许可（中英双语）；README/AGENTS.md/UI author-line/cli.js help/diagnostics 全部标注作者（牢蜂）+ 禁止商用
 - **Office 误报修复**（office-engine.js）：classifyExecutionError 正则收窄，stderr 含 "profile" 字样不再误判为 PROFILE_FAILED（《博物志》docx 事故根因）；新增回归测试
 - **中文文件名乱码修复**（utils.js）：decodeUploadFileName 增加 GBK mojibake 解码（curl/命令行/微信传输场景，°×À¼µÄ → 白兰的）；UTF-8 mojibake 解码成功即返回不再二次转换；tests/utils.test.js 6 项
 - **图片合并 PDF 插入空白页**（public/server/image）：队列每项「□+」插入空白页 + ✕ 删除，可与 ↑/↓ 排序组合；blanks 参数从后往前插入；纯白 A4 页（595×842pt）；E2E 3图+2空白页=5页验证通过；批量文件数无硬上限（取决于本地配置），前端「2GB」文案更新
