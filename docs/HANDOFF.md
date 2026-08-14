@@ -1,17 +1,42 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-13（v0.5.0 已发布：KGMA + .mmp4 + PDF→Word/Excel + 视频编码 + 商店版隐藏解锁 + 云端发布；v0.5.x 待发：QQ 音乐登录教程弹窗）
+更新时间：2026-08-14（GitHub main 已回滚到 v0.5.1 内容；Word→PDF CRC 修复 + PDF 加密/解密/分组拆分 + 扫描件竖线阈值修复均已完成，待同步本地 + 用户确认统一发版）
 
-## 待办（下一窗口，2026-08-13 晚更新）
+## 待办（下一窗口，2026-08-14）
 
-- ① v0.5.1 发版进行中：bump 0.5.0→0.5.1 已完成，本地测试 336 全过；推送 main + 打 tag v0.5.1 触发 CI 云端发布（release.yml 三构建 job + publish job，约 1 小时）；发完后回读 Release 四平台资产 + 设 Latest 确认
-- ② 酷我 KWM：算法调研到（kwm mask），待真实样本验证
-- ③ 真实 RAW 样本验收（无真实相机样张）
-- ④ 真实 Win7/Mac 物理设备验收
-- ⑤ Partner Center 现场回读 v0.5.0 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
-- ⑥ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
-- ⑦ 123 云盘上传：已交 Codex 接手，本窗口不处理
-- ⑧ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ① **Word→PDF CRC 修复**（已完成）：office-convert.js 新增 `repairZipCrcIfNeeded`，检测微信/生成工具 docx 的 media 图片 CRC=0 损坏并重打包修复。《博物志》docx 实测转 PDF 成功。**待同步本地两处安装目录**（AppData\\Local\\Programs + C:\\Users\\34615\\飞鼠格式），打包/发版等用户明确说。
+- ② **PDF 加密/解密/拆分**（已完成，本次窗口收尾）：加密走 qpdf `--encrypt`（AES-256），解密走 qpdf `--password=... --decrypt`（qpdf 缺失回退 pdf-lib），拆分走 qpdf `--split-pages`（逐页 / 每 N 页一组，qpdf 缺失回退 pdf-lib 逐页）。**待同步本地**。
+- ③ **扫描件竖线阈值修复**（已完成，本次窗口）：pdf-table-runtime.js 垂直线最小长度比例从 0.35 降到 0.20（上一窗口曾降到 0.05，误收字形竖笔导致 OCR 置信度掉到 56% 触发 LOW_QUALITY 门禁；0.20 收下真实 32% 表格竖线、滤掉 10% 字形竖笔）。**待同步本地**。
+- ④ 同步本地：打包 `--dir` 后同步两处安装目录（含 CRC 修复 + office 收窄正则 + PDF 加密/解密/拆分 + 竖线阈值 + qpdf 引擎）
+- ⑤ 酷我 KWM：算法已实现并实测（kwm mask），v0.5.2 内容已从 GitHub 回滚，本地 git 历史完整保留，等用户说上传再推
+- ⑥ 真实 RAW 样本验收（无真实相机样张）
+- ⑦ 真实 Win7/Mac 物理设备验收
+- ⑧ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
+- ⑨ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
+- ⑩ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+
+## 2026-08-14：PDF 加密/解密/分组拆分 + 扫描件竖线阈值修复（本次窗口收尾）
+
+- **PDF 加密（qpdf 实现，替换原「不可用」占位）**：
+  - 原 `convertPdf` 对 `pdfAction=encrypt` 直接抛 `PDF_ENCRYPT_UNAVAILABLE`（pdf-lib 无加密 API）。现改为 qpdf `--encrypt <pwd> <pwd> 256`（AES-256），空密码抛 `PDF_ENCRYPT_NO_PASSWORD`（422），qpdf 缺失仍抛 `PDF_ENCRYPT_UNAVAILABLE`。
+  - 引擎注册：config.js 新增 `QPDF_PATH`（`FLYINGMOUSE_QPDF_PATH` env → resources/qpdf/bin/qpdf.exe → bin/qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe → 裸 qpdf）；package.json extraResources 把 `bin/qpdf/extracted/qpdf-12.4.0-msvc64` 打进安装包 `qpdf` 目录（上一窗口已加但没进 ci-engines 分发链，见「风险」）。
+  - server.js `/api/convert`：PDF→PDF 加密/解密时输出单 `.pdf`（不走 .pdf.zip）；`PDF_ENCRYPT_NO_PASSWORD` 归入 422 客户端错误列表。
+- **PDF 解密改走 qpdf**：原 `convertPdfDecrypt` 用 pdf-lib `PDFDocument.load({password})`，**只支持 RC4/AES-128，解不开应用自己 qpdf 加密的 AES-256 输出**（往返断裂，实测 pdf-lib 抛「Input document is encrypted」）。现改为 qpdf `--password=<pwd> --decrypt`（注意 qpdf 要求 `--password=` 用等号，不能拆两个参数），qpdf 缺失回退 pdf-lib。
+- **PDF 拆分细化**：`splitPdfToZip` 支持 `splitMode=page`（逐页）/ `splitMode=group`（每 N 页一组，`--split-pages=N`），qpdf 可用走 qpdf（快），缺失回退 pdf-lib 逐页。qpdf 输出命名统一补零（`page-N.pdf`→`page-001.pdf`，`page-N-M.pdf`→`page-001-002.pdf`），与 pdf-lib 回退命名一致，断言不因引擎而异。
+- **前端 UI**：新增「拆分方式」下拉（逐页 / 每 N 页一组）+「每几页一组」输入框；密码框只在加密/解密显示，拆分方式只在拆分显示，分组输入框只在 group 显示；中英 i18n 齐全。
+- **扫描件竖线阈值修复**：见待办 ③。根因：0.05 太激进，把单个字形的竖笔（约占页高 10%）当表格竖线，碎片化网格 → OCR 置信度 56% 触发 `PDF_TABLE_OCR_LOW_QUALITY`。0.20 是实测裕量点（真实扫描件竖线 32% > 0.20 > 字形竖笔 10.5%）。
+- **测试**：conversion.test.js 新增加密成功（断言 /Encrypt 标记 + 无密码打不开）、空密码 422、解密往返（加密→解密→可读）；新增分组拆分（5 页 groupSize=2 → 3 组 page-001-002/003-004/005-005）；pdf-table-runtime.test.js 新增竖线阈值回归（32% 收、10% 滤）；ui-static.test.js 新增 pdfSplitMode/pdfGroupSize 双语断言。全量 344 = 342 过 + 2 skip + 0 fail。
+- **风险（待解决）**：qpdf 引擎只进了 package.json extraResources，**尚未进 ci-engines-v1.json / scripts/restore-ci-engines.ps1 的目录列表**。CI 打包时 bin/qpdf 不会被恢复，extraResources 会引用不存在的路径 → 标准版安装包缺 qpdf，加密/解密/分组拆分在 CI 产物上会退化成 UNAVAILABLE 或 pdf-lib 逐页回退。发版前必须补：ci-engines-v1.json requiredFiles 加 qpdf、restore-ci-engines.ps1 目录列表加 "qpdf"、重新 tar.zst 打包并更新 sha256。
+
+## 2026-08-14：GitHub 回滚 + Word→PDF CRC 修复
+
+- **GitHub 回滚**：main 从 4520e21（含 v0.5.2 新内容）回滚到 0774349（= v0.5.1 发布内容 + 著作权标注 + release.yml notes 文件名修复）。v0.5.2 新功能（KWM 解密/空白页/文件夹命名 PDF/批量上限/中文文件名乱码修复/Agent 接入/诊断格式改进/Office 误报修复，共 16 个 v0.5.2 独有文件）已从 GitHub 移除；本地 git 历史完整保留全部 v0.5.2 代码，等用户说上传再推。
+- **Word→PDF CRC 修复**（本次窗口，根因定位 + 实现 + 验证）：
+  - 根因：用户《博物志》docx（微信传输，7.2MB）的 `word/media/` 图片用 store + data descriptor 打包，但 central directory 与 data descriptor 的 CRC 字段全写 0（生成工具未计算）。LibreOffice 严格校验 zip CRC 会整体拒绝加载（stderr `Error: source file could not be loaded`，exit 1），MS Word 容错所以能正常打开。此前被 `classifyExecutionError` 误判为 OFFICE_ENGINE_PROFILE_FAILED。
+  - 修复：office-convert.js 新增 `findCrcBrokenZipEntries`（扫描 central directory，找 CRC=0 且 compSize>0 的 entry）+ `repairZipCrcIfNeeded`（读所有 entry + yazl 重打包重算 CRC，store/deflate 均保留原压缩方式），`convertWithLibreOffice` 转换前先调用（对所有 zip-based office 输入生效，非 zip 自动跳过）。
+  - 验证：tests/office-crc-repair.test.js 3 项；全量 339 = 337 过 + 2 skip + 0 fail；《博物志》docx→pdf 端到端实测 40 页成功（原报 PROFILE_FAILED）。
+  - 关联：office-engine.js 的 `classifyExecutionError` 正则收窄（上一窗口已做，工作树未提交）——把 soffice 正常噪音 `Could not find platform independent libraries` 里的 "profile" 字样误判 PROFILE_FAILED 的问题已收窄。
+
 
 ## 2026-08-13 晚：QQ 音乐登录教程弹窗 + psrf cookie 兼容（v0.5.1 发布中）
 
