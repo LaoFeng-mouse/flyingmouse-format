@@ -1,19 +1,35 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-14（GitHub main 已回滚到 v0.5.1 内容；Word→PDF CRC 修复 + PDF 加密/解密/分组拆分 + 扫描件竖线阈值修复均已完成，待同步本地 + 用户确认统一发版）
+更新时间：2026-08-14（GitHub main 已回滚 v0.5.1；OCR 精准度 + KGG 密钥库剪枝 + 真实 RAW 验收 + 同步本地均已收尾；待 push/发版 + 外部验收）
 
 ## 待办（下一窗口，2026-08-14）
 
-- ① **Word→PDF CRC 修复**（已完成）：office-convert.js 新增 `repairZipCrcIfNeeded`，检测微信/生成工具 docx 的 media 图片 CRC=0 损坏并重打包修复。《博物志》docx 实测转 PDF 成功。**待同步本地两处安装目录**（AppData\\Local\\Programs + C:\\Users\\34615\\飞鼠格式），打包/发版等用户明确说。
-- ② **PDF 加密/解密/拆分**（已完成，本次窗口收尾）：加密走 qpdf `--encrypt`（AES-256），解密走 qpdf `--password=... --decrypt`（qpdf 缺失回退 pdf-lib），拆分走 qpdf `--split-pages`（逐页 / 每 N 页一组，qpdf 缺失回退 pdf-lib 逐页）。**待同步本地**。
-- ③ **扫描件竖线阈值修复**（已完成，本次窗口）：pdf-table-runtime.js 垂直线最小长度比例从 0.35 降到 0.20（上一窗口曾降到 0.05，误收字形竖笔导致 OCR 置信度掉到 56% 触发 LOW_QUALITY 门禁；0.20 收下真实 32% 表格竖线、滤掉 10% 字形竖笔）。**待同步本地**。
-- ④ 同步本地：打包 `--dir` 后同步两处安装目录（含 CRC 修复 + office 收窄正则 + PDF 加密/解密/拆分 + 竖线阈值 + qpdf 引擎）
-- ⑤ 酷我 KWM：算法已实现并实测（kwm mask），v0.5.2 内容已从 GitHub 回滚，本地 git 历史完整保留，等用户说上传再推
-- ⑥ 真实 RAW 样本验收（无真实相机样张）
-- ⑦ 真实 Win7/Mac 物理设备验收
-- ⑧ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
-- ⑨ 清理临时产物：output/.trash-*、scripts/.trash-tmp/、scripts/tmp-*（会话临时脚本，用户确认后删）
-- ⑩ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ① **push 到 GitHub**：本地领先 origin/main 十几个提交（OCR 精准度 3 个 + PDF→Word 粘连降级 + KGG 自动搜索/剪枝/教程 + PDF 加密/解密/拆分 + 竖线阈值 + Office CRC + 合规 c6c6b04）。push 走代理 `HTTPS_PROXY=http://127.0.0.1:7897`
+- ② **打包 + 打 tag + 发版**（等用户明确说）：发版前须补 qpdf 进 ci-engines-v1.json / restore-ci-engines.ps1 分发链（当前只进 package.json extraResources，CI 产物会缺 qpdf，加密/解密/拆分退化）
+- ③ 酷我 KWM：算法已实现并实测，v0.5.2 内容已从 GitHub 回滚、本地 git 历史完整保留，等用户说上传再推
+- ④ 真实 Win7 / Mac 物理设备验收
+- ⑤ Partner Center 现场回读 v0.5.1 认证/发布状态 + Store listing 图标素材为鼠鼠（用户本人）
+- ⑥ PyMuPDF AGPL 合规说明（docengine 引擎含 PyMuPDF，许可页附文本 + 源码链接）
+- ⑦ 用户重启软件后实测：扫描全能王 PDF→DOCX（标题「购货合同」+ 正文正常）、KGG 本机下载歌解密
+
+## 2026-08-14：OCR 精准度 + KGG 密钥库剪枝 + RAW 验收（本次窗口收尾）
+
+### OCR 精准度（4 个 commit：7db69f6 / ad97770 / e09ef21 / f490c35）
+- 根因链：泰文模型抢认中文 → 乱码；缩放 1600px 偏低 → 小字漏识别；渲染 DPI 300 上采样 → 大标题伪影误判。
+- 修复：语言集 eng+chi_sim+tha → eng+chi_sim；缩放目标 1600→2480（≈300 DPI）；扫描版 OCR 渲染 DPI 300→200（贴合手机扫描件原始分辨率，再由缩放放大补偿）；PDF→Word docengine 输出单词粘连时自动降级 OCR（含测试）。
+- 实测：扫描全能王合同首页 OCR 字符 1836→2220（+21%），标题「购货合同」+ 12 个产品名 + 材质列全对；全量 349 = 347 过 + 2 skip + 0 fail。
+
+### KGG 密钥库（3 个 commit：cf98db8 / 716f301 / 641ef97）
+- 自动搜索（跨平台递归定位 KGMusicV3.db）→ 剪枝（只深入 kugou/kgmusic/酷狗 与 macOS 沙盒通用层，MAX_VISITED 5000，避开全盘扫）→ 详细 4 步排查报错 + README 补 KGG 功能/密钥说明 + 新增 docs/酷狗KGG密钥库手动指定教程.md。
+- styles.css .status-box 加 white-space:pre-line 让多行报错换行。
+
+### 同步本地 + RAW 验收 + 清理
+- 同步：两处安装目录（%LOCALAPPDATA%\Programs\FlyingMouse Format + C:\Users\34615\飞鼠格式\FlyingMouse Format）与 dist/win-unpacked 的 app.asar md5 一致（fbc07ee...），OCR + KGG 改动均已进包，无需重打。
+- RAW：raw.pixls.us 下载真实 Nikon D750 NEF（6032×4032）走 convertImage 真实路径 NEF→JPG/PNG 成功，补齐待办「真实 RAW 样本验收」。
+- 清理：50 个 scripts/tmp-*.js + .tmp-ocr-probe/ + .raw-samples/ + tmp-docx-dump.py + verify-*.js 全部删除，工作区干净。
+
+### 并行会话冲突（合规任务，已处理）
+- 另一窗口做「法律风险合规 5 项」（c6c6b04），期间误重写 package.json（删 scripts/devDependencies/build，已 git checkout 恢复）、把 index.html 写到根目录、留 scripts/pdf_text_check.js（后两个已删）。多窗口并行操作同一仓库易冲突，注意。
 
 ## 2026-08-14：PDF 加密/解密/分组拆分 + 扫描件竖线阈值修复（本次窗口收尾）
 
