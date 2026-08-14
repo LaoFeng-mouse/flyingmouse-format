@@ -46,6 +46,8 @@
 
 > KGG 密钥说明：KGG 解密密钥存在本机酷狗客户端数据目录，不跨设备/系统同步。若提示「找不到酷狗密钥库」，按 [酷狗 KGG 密钥库手动指定教程](docs/酷狗KGG密钥库手动指定教程.md) 排查。
 
+> **合规声明 Compliance Notice：本软件的音频解锁（NCM / mflac / mgg / kgma / kgg / kwm / mmp4）仅支持你已购买或自行拥有的本地音乐文件，用于个人备份与跨设备播放。请勿用于下载或解锁未经授权的音乐内容，支持正版，尊重创作者。音频文件版权归原作者/唱片公司所有，本工具与各音乐平台无任何关联。**
+
 ### 快速开始
 
 1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.5.0 对应系统的安装包。
@@ -123,6 +125,8 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 > NCM scope: compatibility is guaranteed only for files downloaded by the NetEase Cloud Music client associated with `music.163.com`. Files from other sites may use a different internal format despite sharing the `.ncm` extension.
 
 > KGG key note: the KGG decryption key lives in the local Kugou client's data directory and does not sync across devices or operating systems. If you see "Kugou key database not found", see the [manual key-database guide](docs/酷狗KGG密钥库手动指定教程.md).
+
+> **Compliance Notice: the audio unlock features (NCM / mflac / mgg / kgma / kgg / kwm / mmp4) support only music files you have legally purchased or own locally, for personal backup and cross-device playback. Do not use them to download or unlock unauthorized content. Please support the artists and respect copyright. Audio file copyrights belong to the respective artists/labels; this tool is not affiliated with any music platform.**
 
 ### Quick start
 
