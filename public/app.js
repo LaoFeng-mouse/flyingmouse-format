@@ -524,6 +524,10 @@ function renderFormatTable() {
 }
 
 async function loadTargets(file) {
+  // 空白页占位条目：不调后端，直接返回图片→PDF 能力（仅用于图片合并 PDF）
+  if (file?.isBlankPage) {
+    return { extension: "", category: "image", targets: ["pdf"], experimental: false };
+  }
   const extension = extensionOf(file.name);
   const response = await fetch("/api/targets", {
     method: "POST",
@@ -577,7 +581,7 @@ function renderBatchList() {
     const main = document.createElement("div");
     main.className = "batch-main";
     main.append(
-      createTextElement("p", "batch-name", file.name),
+      createTextElement("p", "batch-name", file.isBlankPage ? (i18n.language === "en-US" ? "Blank page" : "空白页") : file.name),
       createTextElement("p", "batch-detail", result.detail || batchStatusLabel(result.status))
     );
 
@@ -597,6 +601,20 @@ function renderBatchList() {
       downButton.disabled = index === state.files.length - 1;
       downButton.title = i18n.language === "en-US" ? "Move down (later in PDF)" : "下移（在 PDF 中更靠后）";
       actions.append(upButton, downButton);
+      // 插入空白页：在该条目后面插入一页纯白 A4 页（图片合并 PDF 专用）
+      const blankButton = createTextElement("button", "mini-button", i18n.language === "en-US" ? "□+" : "□+");
+      blankButton.type = "button";
+      blankButton.dataset.insertBlank = String(index);
+      blankButton.title = i18n.language === "en-US" ? "Insert blank page after this item" : "在此项后插入空白页";
+      actions.append(blankButton);
+      // 空白页条目支持删除
+      if (file.isBlankPage) {
+        const removeBlank = createTextElement("button", "mini-button", "✕");
+        removeBlank.type = "button";
+        removeBlank.dataset.removeBlank = String(index);
+        removeBlank.title = i18n.language === "en-US" ? "Remove blank page" : "删除空白页";
+        actions.append(removeBlank);
+      }
     }
     actions.append(createTextElement("span", "batch-status", batchStatusLabel(result.status)));
     if (result.status === "success" && result.result) {
@@ -686,8 +704,8 @@ async function acceptFiles(fileList) {
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   if (!Number.isSafeInteger(totalBytes) || totalBytes > maxBatchBytes) {
     setStatus(i18n.language === "en-US"
-      ? "This batch exceeds the 2 GB limit. Convert the files in smaller batches."
-      : "本批文件总大小超过 2GB，请分批转换。", "error");
+      ? "This batch is too large for this computer. Convert the files in smaller batches."
+      : "本批文件总大小超出当前电脑可处理范围，请分批转换。", "error");
     setMouseState("error");
     fileInput.value = "";
     return;
@@ -851,10 +869,22 @@ function isMergedImagePdfConversion(targetFormat) {
 
 async function convertImagesToPdf(files) {
   const form = new FormData();
-  for (const file of files) {
+  // blanks 语义：空白页在「排除空白页后的上传文件流」中的绝对位置。
+  // 前端队列可能含空白页占位，这里按队列顺序把真实文件依次编号，
+  // 空白页记录它前面已出现的真实文件个数（即插入到该序号之后）。
+  const blankAfter = [];
+  let realCount = 0;
+  files.forEach((file, index) => {
+    if (file?.isBlankPage) {
+      blankAfter.push(realCount);
+      return;
+    }
     form.append("files", file);
-  }
+    realCount += 1;
+  });
   if (state.folderName) form.append("folderName", state.folderName);
+  // blanks=0,3 表示：在上传文件流的第 0 个（最前）和第 3 个文件之后插入空白页
+  if (blankAfter.length) form.append("blanks", blankAfter.join(","));
 
   const response = await fetch("/api/convert-images-to-pdf", {
     method: "POST",
@@ -1305,6 +1335,16 @@ batchList.addEventListener("click", async (event) => {
     moveFileInQueue(Number(moveButton.dataset.move), moveButton.dataset.direction);
     return;
   }
+  const blankInsert = event.target.closest("[data-insert-blank]");
+  if (blankInsert) {
+    insertBlankPage(Number(blankInsert.dataset.insertBlank));
+    return;
+  }
+  const blankRemove = event.target.closest("[data-remove-blank]");
+  if (blankRemove) {
+    removeBlankPage(Number(blankRemove.dataset.removeBlank));
+    return;
+  }
   const previewAction = event.target.closest("[data-preview-index]");
   if (previewAction) {
     const result = state.batchResults[Number(previewAction.dataset.previewIndex)]?.result;
@@ -1321,6 +1361,26 @@ batchList.addEventListener("click", async (event) => {
     setStatus(`保存失败：${error.message || "未知错误"}`, "error");
   }
 });
+
+// 在队列 index 之后插入一页空白页（仅图片合并 PDF 时可用）
+function insertBlankPage(index) {
+  if (!canReorderImages()) return;
+  const blankPage = { isBlankPage: true, name: "空白页", size: 0 };
+  const at = Math.min(index + 1, state.files.length);
+  state.files.splice(at, 0, blankPage);
+  state.fileInfos.splice(at, 0, { extension: "", category: "image", targets: ["pdf"], experimental: false });
+  state.batchResults.splice(at, 0, { status: "pending", detail: "等待转换" });
+  renderBatchList();
+}
+
+function removeBlankPage(index) {
+  if (!canReorderImages()) return;
+  if (!state.files[index]?.isBlankPage) return;
+  state.files.splice(index, 1);
+  state.fileInfos.splice(index, 1);
+  state.batchResults.splice(index, 1);
+  renderBatchList();
+}
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);

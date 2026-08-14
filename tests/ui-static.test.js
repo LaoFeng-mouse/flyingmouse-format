@@ -237,6 +237,18 @@ test("folder-to-PDF entry is exposed bilingually with webkitdirectory input", ()
   assert.match(css, /\.drop-folder-line/);
 });
 
+test("blank page insertion is exposed in the image merge queue", () => {
+  const app = readPublic("app.js");
+  assert.match(app, /insertBlankPage\(index\)/);
+  assert.match(app, /removeBlankPage\(index\)/);
+  assert.match(app, /isBlankPage/);
+  assert.match(app, /data-insert-blank/);
+  assert.match(app, /data-remove-blank/);
+  assert.match(app, /form\.append\("blanks"/);
+  assert.match(app, /Blank page/);
+  assert.doesNotMatch(app, /\.innerHTML\s*=/);
+});
+
 test("author attribution and non-commercial notice are present in UI and styles", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");

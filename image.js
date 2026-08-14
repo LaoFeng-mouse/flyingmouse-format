@@ -321,11 +321,29 @@ async function convertImagesToPdf(imageFiles, outputPath) {
   }
 
   const metadataList = [];
-  for (const file of imageFiles) metadataList.push(await inspectImageMetadata(file.inputPath));
+  for (const file of imageFiles) {
+    if (file?.blank) {
+      metadataList.push({ width: 595, height: 842, pages: 1, pageHeight: 842 });
+      continue;
+    }
+    metadataList.push(await inspectImageMetadata(file.inputPath));
+  }
   assertImagePdfBudget(metadataList);
 
   const images = [];
   for (const file of imageFiles) {
+    if (file?.blank) {
+      // 空白页：A4 竖版比例（595×842pt），纯白 RGB 图像，deflate 压缩
+      const blankWidth = 595;
+      const blankHeight = 842;
+      const rgb = Buffer.alloc(blankWidth * blankHeight * 3, 0xff);
+      images.push({
+        width: blankWidth,
+        height: blankHeight,
+        data: zlib.deflateSync(rgb)
+      });
+      continue;
+    }
     images.push(await readImageForPdf(file.inputPath));
   }
 
