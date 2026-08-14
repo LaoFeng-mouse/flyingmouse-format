@@ -168,7 +168,7 @@ test("Thai OCR is locked and packaged across standard, Win7, and macOS builds", 
   const ocr = fs.readFileSync(path.join(root, "ocr.js"), "utf8");
   assert.equal(packageJson.dependencies["@tesseract.js-data/tha"], "1.0.0");
   assert.match(JSON.stringify(packageJson.build.win.extraResources), /tha\.traineddata\.gz/);
-  assert.match(ocr, /createWorker\("eng\+chi_sim\+tha"/);
+  assert.match(ocr, /createWorker\("eng\+chi_sim",/);
   assert.match(ocr, /tha\.traineddata\.gz/);
 
   const win7Lock = require("../win7-package-lock.json");

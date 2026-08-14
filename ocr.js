@@ -85,7 +85,7 @@ async function createOcrWorker() {
 
   const { createWorker } = loadTesseract();
   const paths = ocrRuntimePaths();
-  const worker = await createWorker("eng+chi_sim+tha", 1, {
+  const worker = await createWorker("eng+chi_sim", 1, {
     langPath: paths.langPath,
     corePath: paths.corePath,
     workerPath: paths.workerPath,
