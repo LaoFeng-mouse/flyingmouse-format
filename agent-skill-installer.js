@@ -53,17 +53,26 @@ async function validateSourceTree(sourceDir) {
   return realSource;
 }
 
+// 复制 skill 源到目标目录。逐文件 readdir + readFile/writeFile，不用 fsp.cp：
+// 打包后源在 app.asar（Electron 只读虚拟文件系统）里，Electron 的 asar 补丁
+// 覆盖 stat/readFile/readdir/lstat，但 fs.cp 未被打补丁，fsp.cp 会抛
+// "ENOENT, ... not found in ...app.asar"（2026-08-14 接入 Agent 失败根因）。
 async function copyDirectorySafe(source, destination) {
-  await fsp.cp(source, destination, {
-    recursive: true,
-    force: false,
-    errorOnExist: true,
-    filter(item) {
-      const stat = fs.lstatSync(item);
-      if (stat.isSymbolicLink()) throw new Error(`Skill source contains a symbolic link: ${item}`);
-      return true;
+  const entries = await fsp.readdir(source, { recursive: true });
+  for (const entry of entries) {
+    const item = path.join(source, entry);
+    const stat = fs.lstatSync(item);
+    if (stat.isSymbolicLink()) throw new Error(`Skill source contains a symbolic link: ${item}`);
+    const destPath = path.join(destination, entry);
+    if (stat.isDirectory()) {
+      await fsp.mkdir(destPath, { recursive: true });
+    } else if (stat.isFile()) {
+      await fsp.mkdir(path.dirname(destPath), { recursive: true });
+      await fsp.writeFile(destPath, await fsp.readFile(item), { flag: "wx" });
+    } else {
+      throw new Error(`Skill source contains an unsupported entry: ${item}`);
     }
-  });
+  }
 }
 
 async function installOne({ sourceDir, root, launcher, skillName }) {
