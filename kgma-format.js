@@ -1,10 +1,11 @@
-// kgma-format.js — 酷狗会员加密音频 .kgma (crypto_version=3) 离线解密。
+// kgma-format.js — 酷狗系加密音频 .kgma / .vpr（crypto_version=3）离线解密。
 //
-// 与 KGG v5（QMC2，密钥在 KGMusicV3.db）不同，KGMA 的 16 字节 crypto_key 内嵌在文件头
-// offset 0x2c-0x3b，slot 固定为 1，完全离线可解，无需酷狗客户端/密钥库。
+// 与 KGG v5（QMC2，密钥在 KGMusicV3.db）不同，KGMA/VPR 的 16 字节 crypto_key 内嵌在文件头
+// offset 0x2c-0x3b，slot 固定为 1，完全离线可解，无需客户端/密钥库。
 //
 // 算法移植自 arcana6264/unlock-music 的 decoder/src/algo/kgm/kgm_v3.rs
-// （crypto_version=3 / crypto_slot=1 分支）。
+// （crypto_version=3 / crypto_slot=1 分支）。.vpr 是 VIPER HiFi（海贝音乐）同源容器，
+// 仅魔数不同（vprHeader），unlock-music 将其与 .kgm/.kgma/.kgm.flac/.vpr.flac 注册到同一解码器。
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
@@ -14,6 +15,10 @@ const crypto = require("crypto");
 const KGM_HEADER = Buffer.from([
   0x7c, 0xd5, 0x32, 0xeb, 0x86, 0x02, 0x7f, 0x4b,
   0xa8, 0xaf, 0xa6, 0x8e, 0x0f, 0xff, 0x99, 0x14
+]);
+const VPR_HEADER = Buffer.from([
+  0x05, 0x28, 0xbc, 0x96, 0xe9, 0xe4, 0x5a, 0x43,
+  0x91, 0xaa, 0xbd, 0xd0, 0x7a, 0xf5, 0x36, 0x31
 ]);
 const KGM_V3_SLOT2_KEY = Buffer.from([0x6c, 0x2c, 0x2f, 0x27]);
 const KGM_V3_FILE_BOX_SUFFIX = 0x6b;
@@ -37,6 +42,7 @@ function xorCollapseU32(i) {
 
 function detectAudioFormat(buf) {
   if (buf.length > 3 && buf.subarray(0, 4).toString("latin1") === "fLaC") return "flac";
+  if (buf.length > 11 && buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WAVE") return "wav";
   if (buf.length > 2 && buf.subarray(0, 3).toString("latin1") === "ID3") return "mp3";
   if (buf.length > 3 && buf.subarray(0, 4).toString("latin1") === "OggS") return "ogg";
   if (buf.length > 1 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return "mp3";
@@ -46,16 +52,16 @@ function detectAudioFormat(buf) {
 async function convertKgma(inputPath) {
   const buf = await fsp.readFile(inputPath);
   if (buf.length < 0x3c) {
-    throw new Error("KGMA 文件不完整。");
+    throw new Error("KGM/KGMA/VPR 文件不完整。");
   }
-  if (!buf.subarray(0, 16).equals(KGM_HEADER)) {
-    throw new Error("不是合法的 KGM/KGMA 加密音频文件。");
+  if (!buf.subarray(0, 16).equals(KGM_HEADER) && !buf.subarray(0, 16).equals(VPR_HEADER)) {
+    throw new Error("不是合法的 KGM/KGMA/VPR 加密音频文件。");
   }
   const audioOffset = buf.readUInt32LE(0x10);
   const cryptoVersion = buf.readUInt32LE(0x14);
   const cryptoSlot = buf.readUInt32LE(0x18);
   if (cryptoVersion !== 3) {
-    throw new Error(`暂不支持这个 KGM 版本（version=${cryptoVersion}，仅支持 KGMA/v3）。`);
+    throw new Error(`暂不支持这个 KGM 版本（version=${cryptoVersion}，仅支持 KGMA/VPR v3）。`);
   }
   if (cryptoSlot !== 1) {
     throw new Error(`不支持的加密槽位（slot=${cryptoSlot}，仅支持 1）。`);
@@ -85,4 +91,4 @@ async function convertKgma(inputPath) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertKgma, kugoMd5, xorCollapseU32, detectAudioFormat };
+module.exports = { convertKgma, kugoMd5, xorCollapseU32, detectAudioFormat, KGM_HEADER, VPR_HEADER };

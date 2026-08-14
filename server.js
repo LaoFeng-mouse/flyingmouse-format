@@ -582,7 +582,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         let decrypted;
         if (inputExt === "ncm") decrypted = await convertNcm(file.path);
         else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
-        else if (inputExt === "kgma") decrypted = await convertKgma(file.path);
+        else if (inputExt === "kgma" || inputExt === "vpr") decrypted = await convertKgma(file.path);
         else if (inputExt === "kwm") decrypted = await convertKwm(file.path);
         else decrypted = await convertMflac(file.path);
         try {

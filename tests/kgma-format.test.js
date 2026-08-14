@@ -53,7 +53,7 @@ test("convertKgma 拒绝非 v3 版本（如 KGG v5）", async () => {
   const tmp = path.join(require("node:os").tmpdir(), `kgma-v5-${process.pid}.kgma`);
   fs.writeFileSync(tmp, buf);
   try {
-    await assert.rejects(() => convertKgma(tmp), /仅支持 KGMA\/v3/);
+    await assert.rejects(() => convertKgma(tmp), /仅支持 KGMA\/VPR v3/);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
