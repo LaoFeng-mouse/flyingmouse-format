@@ -25,6 +25,7 @@
 - NCM 解密与转码：支持来自 `music.163.com` 对应网易云音乐客户端的常规 NCM，以及 Audio Vivid（AV3A）NCM。
 - mflac/mgg 解密：支持 QQ 音乐官方客户端下载的 mflac/mgg（新版 musicex 需 QQ 音乐登录凭据在线换密钥；原档无权限时自动降档下载同一首歌的可用音质档位）。
 - KGMA 解密：支持酷狗会员下载的 kgma 加密音频，密钥内嵌文件头，完全离线可解（无需酷狗客户端）。
+- KGG 解密：支持酷狗客户端下载的 kgg 加密音频，密钥存在本机酷狗客户端数据目录（需本机客户端下载过这首歌，跨设备/系统下载的密钥不通用）。
 - .mmp4 解密：支持 QQ 音乐 musicex 变体（D0M1 档位），走现有 musicex 在线换密钥链路。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
@@ -42,6 +43,8 @@
 - 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 不限页数（1:1 转换，长文档加载较慢）、OCR 不限页数。
 
 > NCM 说明：仅保证支持 `music.163.com` 对应客户端下载的音乐文件。其他网站或来源虽然扩展名也可能是 `.ncm`，但内部格式不同，不属于本项目的兼容范围。
+
+> KGG 密钥说明：KGG 解密密钥存在本机酷狗客户端数据目录，不跨设备/系统同步。若提示「找不到酷狗密钥库」，按 [酷狗 KGG 密钥库手动指定教程](docs/酷狗KGG密钥库手动指定教程.md) 排查。
 
 ### 快速开始
 
@@ -100,6 +103,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Decrypts and converts standard NCM plus Audio Vivid (AV3A) NCM from the NetEase Cloud Music client associated with `music.163.com`.
 - Decrypts mflac/mgg from the official QQ Music client (newer musicex variants require a QQ Music login cookie for online key exchange; when the original quality tier is unauthorized, the app automatically downloads an available tier of the same song).
 - Decrypts KGMA from the Kugou Music client offline (the key is embedded in the file header; no Kugou client needed).
+- Decrypts KGG from the Kugou Music client. The key lives in the local Kugou client's data directory, so the song must have been downloaded by the client on this machine (keys don't sync across devices or operating systems).
 - Decrypts .mmp4, a QQ Music musicex variant (D0M1 tier), through the existing musicex online key exchange.
 - Video codec selection: H.264 / H.265 / AV1 for video conversion (shown when targeting mp4/mov/mkv).
 - Remembers the chosen target separately for each source extension. Changing it replaces that extension's default.
@@ -117,6 +121,8 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
 
 > NCM scope: compatibility is guaranteed only for files downloaded by the NetEase Cloud Music client associated with `music.163.com`. Files from other sites may use a different internal format despite sharing the `.ncm` extension.
+
+> KGG key note: the KGG decryption key lives in the local Kugou client's data directory and does not sync across devices or operating systems. If you see "Kugou key database not found", see the [manual key-database guide](docs/酷狗KGG密钥库手动指定教程.md).
 
 ### Quick start
 
