@@ -485,8 +485,13 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   }
 
   const outputExt = outputExtFor(category, requestedTarget);
-  const outputPath = outputPathFor(originalName, requestedTarget, outputExt);
-  const downloadName = outputNameFor(originalName, requestedTarget, outputExt);
+  const pdfAction = String(req.body?.pdfAction || "");
+  // PDF→PDF 的加密/解密输出单个 .pdf，拆分输出 .pdf.zip（打包多页）
+  const effectiveOutputExt = (category === "pdf" && requestedTarget === "pdf" && (pdfAction === "encrypt" || pdfAction === "decrypt"))
+    ? "pdf"
+    : outputExt;
+  const outputPath = outputPathFor(originalName, requestedTarget, effectiveOutputExt);
+  const downloadName = outputNameFor(originalName, requestedTarget, effectiveOutputExt);
   let conversionResult = { warnings: [] };
 
   try {
@@ -506,8 +511,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       }
     } else if (category === "pdf") {
       await convertPdf(file.path, outputPath, requestedTarget, {
-        pdfAction: String(req.body?.pdfAction || ""),
-        password: String(req.body?.password || "")
+        pdfAction,
+        password: String(req.body?.password || ""),
+        splitMode: String(req.body?.splitMode || "page"),
+        groupSize: String(req.body?.groupSize || "1")
       });
     } else if (category === "zip") {
       await convertZipImagesToPdf(file.path, outputPath);
@@ -609,6 +616,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "MFLAC_EKEY_REQUIRED",
       "MFLAC_EKEY_NETWORK",
       "PDF_ENCRYPT_UNAVAILABLE",
+      "PDF_ENCRYPT_NO_PASSWORD",
       "PRESENTATION_HTML_EMPTY",
       "BMP_UNSUPPORTED_VARIANT",
       "JSON_CSV_PATH_COLLISION",

@@ -10,7 +10,7 @@ const path = require("path");
 const yazl = require("yazl");
 const sanitize = require("sanitize-filename");
 const { PDFDocument } = require("pdf-lib");
-const { PDFTOPPM_PATH, DOCENGINE_PATH, pdfImageTargets } = require("./config");
+const { PDFTOPPM_PATH, DOCENGINE_PATH, QPDF_PATH, pdfImageTargets } = require("./config");
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
 const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
@@ -25,9 +25,42 @@ const { assertPdfPages } = require("./resource-policy");
 const { OfficeQualityError } = require("./office-quality");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
+  const pwd = String(password || "");
+  // 优先用 qpdf（支持 RC4/AES-128/AES-256，含本应用 qpdf 加密的 AES-256 输出）；
+  // qpdf 缺失时回退 pdf-lib（仅支持 RC4/AES-128，兜底）。
+  if (await commandExists(QPDF_PATH, ["--version"])) {
+    const args = pwd
+      ? [`--password=${pwd}`, "--decrypt", "--", inputPath, outputPath]
+      : ["--decrypt", "--", inputPath, outputPath];
+    await run(QPDF_PATH, args, { timeout: 1000 * 60 * 5 });
+    return;
+  }
   const data = await fsp.readFile(inputPath);
-  const pdf = await PDFDocument.load(data, { password, ignoreEncryption: false });
+  const pdf = await PDFDocument.load(data, { password: pwd, ignoreEncryption: false });
   await fsp.writeFile(outputPath, await pdf.save());
+}
+
+async function convertPdfEncrypt(inputPath, outputPath, password) {
+  const pwd = String(password || "").trim();
+  if (!pwd) {
+    const error = new Error("加密 PDF 需要先设置密码。");
+    error.code = "PDF_ENCRYPT_NO_PASSWORD";
+    error.messages = {
+      zhCN: "加密 PDF 需要先设置密码。",
+      enUS: "A password is required to encrypt the PDF."
+    };
+    throw error;
+  }
+  if (!(await commandExists(QPDF_PATH, ["--version"]))) {
+    const error = new Error("PDF 加密引擎（qpdf）不可用，请确认安装包完整。");
+    error.code = "PDF_ENCRYPT_UNAVAILABLE";
+    error.messages = {
+      zhCN: "PDF 加密引擎（qpdf）不可用，请确认安装包完整。",
+      enUS: "PDF encryption engine (qpdf) is unavailable. Verify the installation bundle is complete."
+    };
+    throw error;
+  }
+  await run(QPDF_PATH, ["--encrypt", pwd, pwd, "256", "--", inputPath, outputPath], { timeout: 1000 * 60 * 5 });
 }
 
 const OCR_QUALITY_THRESHOLD = 0.65;
@@ -52,18 +85,11 @@ function assertPdfTableOcrQuality(model) {
 async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (target === "pdf") {
     if (options.pdfAction === "encrypt") {
-      const error = new Error("PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。");
-      error.code = "PDF_ENCRYPT_UNAVAILABLE";
-      error.messages = {
-        zhCN: "PDF 加密功能暂不可用：当前版本缺少加密引擎，请使用系统自带或其他专业工具为 PDF 设置密码。",
-        enUS: "PDF encryption is not available in this build. Use another tool to password-protect the PDF."
-      };
-      throw error;
-    }
-    if (options.pdfAction === "decrypt") {
+      await convertPdfEncrypt(inputPath, outputPath, options.password);
+    } else if (options.pdfAction === "decrypt") {
       await convertPdfDecrypt(inputPath, outputPath, options.password || "");
     } else {
-      await splitPdfToZip(inputPath, outputPath);
+      await splitPdfToZip(inputPath, outputPath, options);
     }
     return;
   }
@@ -226,7 +252,47 @@ ${body.join("\n")}
   ]);
 }
 
-async function splitPdfToZip(inputPath, outputPath) {
+async function splitPdfToZip(inputPath, outputPath, options = {}) {
+  const mode = String(options.splitMode || "page");
+  const groupSize = Math.max(1, Math.floor(Number(options.groupSize) || 1));
+  const splitPages = mode === "group" ? groupSize : 1;
+
+  // qpdf 可用时用 --split-pages（支持逐页 / 每 N 页一组，速度快）；否则回退 pdf-lib 逐页拆分。
+  if (await commandExists(QPDF_PATH, ["--version"])) {
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
+    try {
+      const prefix = path.join(tempDir, "page-%d.pdf");
+      await run(QPDF_PATH, [`--split-pages=${splitPages}`, inputPath, prefix], { timeout: 1000 * 60 * 5 });
+      const entries = (await fsp.readdir(tempDir))
+        .filter((name) => name.endsWith(".pdf"))
+        .sort()
+        .map((name) => {
+          // qpdf 命名：逐页 = page-N.pdf，分组 = page-N-M.pdf（末组单页也是 page-N-N.pdf）。
+          // 统一补零为 page-001.pdf / page-001-002.pdf，与 pdf-lib 回退路径命名一致，
+          // 保证排序稳定、断言不因引擎而异。保留原始形态：单页不加范围后缀，分组保留 -M。
+          const single = /^page-(\d+)\.pdf$/.exec(name);
+          const ranged = /^page-(\d+)-(\d+)\.pdf$/.exec(name);
+          let archiveName;
+          if (single) {
+            archiveName = `page-${String(Number(single[1])).padStart(3, "0")}.pdf`;
+          } else if (ranged) {
+            archiveName = `page-${String(Number(ranged[1])).padStart(3, "0")}-${String(Number(ranged[2])).padStart(3, "0")}.pdf`;
+          } else {
+            archiveName = name;
+          }
+          return { inputPath: path.join(tempDir, name), archiveName };
+        });
+      if (!entries.length) {
+        throw new Error("PDF 拆分失败，未生成任何页面。");
+      }
+      await zipFiles(entries, outputPath);
+    } finally {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    return;
+  }
+
+  // 回退：pdf-lib 逐页拆分（不依赖 qpdf）
   const src = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
   assertPdfPages(src.getPageCount());
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));

@@ -19,6 +19,7 @@
                 <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
                 <p class="feedback-line"><span data-i18n="feedback.label">问题反馈</span>：<span class="feedback-email">3465177342@qq.com</span></p>
               </div>
+              <p class="author-line">作者：牢蜂（LaoFeng）· 仅供个人免费使用，禁止商业售卖/转卖/套壳</p>
             </div>
           </div>
           <div class="topbar-actions">
@@ -103,6 +104,17 @@
                 <option value="encrypt" data-i18n="pdfAction.encrypt">加密 PDF</option>
                 <option value="decrypt" data-i18n="pdfAction.decrypt">解密 PDF</option>
               </select>
+            </label>
+            <label class="field" id="pdfSplitModeField" hidden>
+              <span data-i18n="pdfSplitMode.label">拆分方式</span>
+              <select id="pdfSplitMode">
+                <option value="page" data-i18n="pdfSplitMode.page">逐页拆分（每页一个 PDF）</option>
+                <option value="group" data-i18n="pdfSplitMode.group">每 N 页一组</option>
+              </select>
+            </label>
+            <label class="field" id="pdfGroupSizeField" hidden>
+              <span data-i18n="pdfGroupSize.label">每几页一组</span>
+              <input id="pdfGroupSize" type="number" min="2" max="999" value="2" inputmode="numeric">
             </label>
 
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>

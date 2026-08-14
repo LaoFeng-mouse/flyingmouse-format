@@ -92,12 +92,26 @@ function bundledDocenginePath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
+function bundledQpdfPath() {
+  const resourcesPath = process.resourcesPath || "";
+  const candidates = [
+    process.env.FLYINGMOUSE_QPDF_PATH,
+    resourcesPath && path.join(resourcesPath, "qpdf", "bin", "qpdf.exe"),
+    path.join(ROOT, "bin", "qpdf", "extracted", "qpdf-12.4.0-msvc64", "bin", "qpdf.exe"),
+    path.join(process.cwd(), "bin", "qpdf", "extracted", "qpdf-12.4.0-msvc64", "bin", "qpdf.exe"),
+    "qpdf"
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => candidate === "qpdf" || fs.existsSync(candidate)) || "qpdf";
+}
+
 const FFMPEG_PATH = bundledFfmpegPath();
 const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
 const DOCENGINE_PATH = bundledDocenginePath();
+const QPDF_PATH = bundledQpdfPath();
 
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
@@ -161,6 +175,7 @@ module.exports = {
   TESSDATA_PATH,
   DCRAW_PATH,
   DOCENGINE_PATH,
+  QPDF_PATH,
   imageInput,
   rawInput,
   imageFormatTargets,

@@ -51,6 +51,10 @@ const pdfPasswordField = document.querySelector("#pdfPasswordField");
 const pdfPassword = document.querySelector("#pdfPassword");
 const pdfActionField = document.querySelector("#pdfActionField");
 const pdfAction = document.querySelector("#pdfAction");
+const pdfSplitModeField = document.querySelector("#pdfSplitModeField");
+const pdfSplitMode = document.querySelector("#pdfSplitMode");
+const pdfGroupSizeField = document.querySelector("#pdfGroupSizeField");
+const pdfGroupSize = document.querySelector("#pdfGroupSize");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
@@ -103,6 +107,8 @@ const messages = {
     "videoCodec.h265": "H.265（体积更小）", "videoCodec.av1": "AV1（压缩率最高）",
     "pdfPassword.label": "PDF 密码（加密/解密）", "pdfAction.label": "PDF 操作",
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
+    "pdfSplitMode.label": "拆分方式", "pdfSplitMode.page": "逐页拆分（每页一个 PDF）", "pdfSplitMode.group": "每 N 页一组",
+    "pdfGroupSize.label": "每几页一组",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。",
@@ -168,6 +174,8 @@ const messages = {
     "videoCodec.h265": "H.265 (smaller size)", "videoCodec.av1": "AV1 (highest compression)",
     "pdfPassword.label": "PDF password (encrypt/decrypt)", "pdfAction.label": "PDF action",
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
+    "pdfSplitMode.label": "Split mode", "pdfSplitMode.page": "Split into single pages", "pdfSplitMode.group": "Group every N pages",
+    "pdfGroupSize.label": "Pages per group",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
     "formats.description": "Document conversion preserves layout where possible. PDF pages can be exported as images, and images or scanned PDFs can be OCR'd to TXT.",
@@ -573,8 +581,16 @@ function syncPdfActionFields() {
   const isPdfToPdf = targetSelect.value === "pdf"
     && state.fileInfos.length === state.files.length
     && state.fileInfos.every((info) => info.category === "pdf");
-  pdfPasswordField.hidden = !isPdfToPdf;
+  const action = pdfAction ? pdfAction.value : "";
   pdfActionField.hidden = !isPdfToPdf;
+  // 密码框：仅加密/解密时显示
+  pdfPasswordField.hidden = !(isPdfToPdf && (action === "encrypt" || action === "decrypt"));
+  // 拆分方式：仅拆分时显示
+  const isSplit = isPdfToPdf && !action;
+  if (pdfSplitModeField) pdfSplitModeField.hidden = !isSplit;
+  // 每 N 页：拆分 + group 时显示
+  const isGroup = isSplit && pdfSplitMode && pdfSplitMode.value === "group";
+  if (pdfGroupSizeField) pdfGroupSizeField.hidden = !isGroup;
 }
 
 function syncPdfExcelHint() {
@@ -725,6 +741,8 @@ async function convertOneFile(file, targetFormat) {
   if (targetFormat === "pdf" && state.fileInfos.every((info) => info.category === "pdf")) {
     form.append("pdfAction", pdfAction?.value || "");
     if (pdfPassword?.value) form.append("password", pdfPassword.value);
+    if (pdfSplitMode?.value) form.append("splitMode", pdfSplitMode.value);
+    if (pdfGroupSize?.value) form.append("groupSize", pdfGroupSize.value);
   }
 
   const response = await fetch("/api/convert", {
@@ -1096,6 +1114,8 @@ targetSelect.addEventListener("change", async () => {
 });
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
+if (pdfAction) pdfAction.addEventListener("change", syncPdfActionFields);
+if (pdfSplitMode) pdfSplitMode.addEventListener("change", syncPdfActionFields);
 diagnosticsButton.addEventListener("click", async () => {
   if (typeof logBridge.exportDiagnostics !== "function") return;
   diagnosticsButton.disabled = true;
