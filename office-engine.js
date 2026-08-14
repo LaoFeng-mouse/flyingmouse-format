@@ -62,7 +62,7 @@ function classifyExecutionError(error, operation) {
   // independent libraries 等），转换真正失败时会被误判成 PROFILE_FAILED
   // （2026-08-14《博物志》docx→pdf 实锤：roundtrip 失败报的是「无法创建独立
   // 用户配置」，实际是转换失败）。必须匹配明确的配置创建失败短语。
-  else if (/user installation (could not|cannot|failed to) (be completed|be created|be initiali[sz]ed)|unable to (create|initiali[sz]e) (the )?user profile|cannot (create|initiali[sz]e) (the )?user profile|no access to the user profile|access rights? to (the )?profile|access (is )?denied/i.test(detail)) code = "OFFICE_ENGINE_PROFILE_FAILED";
+  else if (/user installation (could not|cannot|failed to) (be completed|be created|be initiali[sz]ed)|unable to (create|initiali[sz]e) (the )?user profile|cannot (create|initiali[sz]e) (the )?user profile|no access to the user profile|access rights? to (the )?profile|access (is )?denied|permission denied/i.test(detail)) code = "OFFICE_ENGINE_PROFILE_FAILED";
   else if (/not a valid win32|incompatible|unsupported operating system|requires windows/i.test(detail)) code = "OFFICE_ENGINE_INCOMPATIBLE";
   return new OfficeEngineError(code, {
     exitCode: typeof error?.code === "number" ? error.code : null,
