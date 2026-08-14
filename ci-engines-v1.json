@@ -3,7 +3,7 @@
   "repository": "LaoFeng-mouse/flyingmouse-format",
   "releaseTag": "ci-engines-v1",
   "assetName": "ci-engines-v1.tar.zst",
-  "sha256": "f7e575d4339dfc8e8e45779c8253887c507faf3f15a6f2557e1f9659ed5869fd",
+  "sha256": "130f43b32af799372ba9fc125bbe28244ff32e6090ec1f97a9eb2dd73230e1f3",
   "requiredFiles": [
     "ffmpeg/ffmpeg.exe",
     "poppler/Library/bin/pdftoppm.exe",
@@ -11,13 +11,16 @@
     "tessdata/eng.traineddata.gz",
     "tessdata/chi_sim.traineddata.gz",
     "dcraw/dcraw.exe",
-    "docengine/docengine.exe"
+    "docengine/docengine.exe",
+    "docstructure/docstructure-engine.exe",
+    "docstructure/models/layout_detection/inference.pdiparams",
+    "docstructure/models/text_recognition/inference.pdiparams"
   ],
   "assets": {
     "win32-x64": {
       "available": true,
       "assetName": "ci-engines-v1.tar.zst",
-      "sha256": "f7e575d4339dfc8e8e45779c8253887c507faf3f15a6f2557e1f9659ed5869fd",
+      "sha256": "130f43b32af799372ba9fc125bbe28244ff32e6090ec1f97a9eb2dd73230e1f3",
       "requiredFiles": [
         "ffmpeg/ffmpeg.exe",
         "poppler/Library/bin/pdftoppm.exe",
@@ -25,7 +28,10 @@
         "tessdata/eng.traineddata.gz",
         "tessdata/chi_sim.traineddata.gz",
         "dcraw/dcraw.exe",
-        "docengine/docengine.exe"
+        "docengine/docengine.exe",
+        "docstructure/docstructure-engine.exe",
+        "docstructure/models/layout_detection/inference.pdiparams",
+        "docstructure/models/text_recognition/inference.pdiparams"
       ]
     },
     "darwin-arm64": {

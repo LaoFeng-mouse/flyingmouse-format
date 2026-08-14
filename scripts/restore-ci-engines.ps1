@@ -54,9 +54,20 @@ try {
       throw "Engine bundle is missing $relativePath."
     }
   }
+  $docstructureRoot = Join-Path $stage "docstructure"
+  if (Test-Path -LiteralPath $docstructureRoot -PathType Container) {
+    $docstructureLock = Join-Path $projectRoot "docstructure-engine-lock.json"
+    if (-not (Test-Path -LiteralPath $docstructureLock -PathType Leaf)) {
+      throw "docstructure-engine-lock.json is required for the bundled document engine."
+    }
+    & node (Join-Path $projectRoot "scripts\lock-docstructure-engine.js") --verify --root $docstructureRoot --lock $docstructureLock
+    if ($LASTEXITCODE -ne 0) { throw "Document structure engine lock verification failed." }
+  }
   $binRoot = Join-Path $projectRoot "bin"
   New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
-  foreach ($directory in @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw", "docengine")) {
+  $directories = @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw", "docengine")
+  if (Test-Path -LiteralPath $docstructureRoot -PathType Container) { $directories += "docstructure" }
+  foreach ($directory in $directories) {
     $destination = Join-Path $binRoot $directory
     if (Test-Path -LiteralPath $destination) {
       throw "Engine destination already exists: $destination"

@@ -19,6 +19,9 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH
   || path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
+const structuredEnginePresent = fs.existsSync(
+  path.join(__dirname, "..", "bin", "docstructure", "docstructure-engine.exe")
+);
 let server;
 let baseUrl;
 
@@ -608,7 +611,9 @@ test("cropped PDF table keeps PDF.js and Poppler coordinates aligned", async () 
   ], [["Name", "Value"], ["Mouse", "7"]]);
 });
 
-test("scanned PDF to XLSX fails closed when the structured engine is unavailable", async () => {
+test("scanned PDF to XLSX fails closed when the structured engine is unavailable",
+  { skip: structuredEnginePresent ? "structured engine is present in this environment" : false },
+  async () => {
   const imagePath = path.join(scratchRoot, "scanned-table.png");
   await createScannedTableImage(imagePath);
   const imageToPdf = await uploadConvert(imagePath, "scanned-table.png", "pdf", "image/png");

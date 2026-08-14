@@ -39,6 +39,35 @@ test("diagnostics report contains bounded platform and engine facts without full
   assert.doesNotMatch(report, /Alice|Downloads|D:\\apps/);
 });
 
+test("structured engine diagnostics expose only bounded status and versions", () => {
+  const report = buildDiagnosticsReport({
+    generatedAt: "2026-08-10T08:00:00.000Z",
+    appVersion: "0.5.0",
+    platform: "win32",
+    release: "10.0.26100",
+    arch: "x64",
+    packageType: "github-nsis",
+    engines: {
+      docstructure: {
+        available: false,
+        engineVersion: "3.7.0",
+        modelLockVersion: "docstructure-engine-v1",
+        errorCode: "PDF_STRUCTURE_ENGINE_UNAVAILABLE",
+        executable: "C:\\Users\\Alice\\private\\docstructure-engine.exe",
+        arguments: ["C:\\Users\\Alice\\secret.pdf"],
+        url: "https://example.test/model",
+        content: "customer invoice text"
+      }
+    },
+    logText: ""
+  });
+
+  assert.match(report, /docstructure: unavailable; engineVersion=3\.7\.0; modelLockVersion=docstructure-engine-v1; errorCode=PDF_STRUCTURE_ENGINE_UNAVAILABLE/);
+  for (const secret of ["Alice", "secret.pdf", "example.test", "customer invoice text", "arguments", "executable"]) {
+    assert.doesNotMatch(report, new RegExp(secret, "i"));
+  }
+});
+
 test("diagnostics redacts credentials, home paths, URLs, and source filenames", () => {
   const source = [
     "Input C:\\Users\\Alice\\Documents\\客户名单.xlsx failed",

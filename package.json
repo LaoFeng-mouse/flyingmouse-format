@@ -152,6 +152,10 @@
           "to": "docengine"
         },
         {
+          "from": "bin/docstructure",
+          "to": "docstructure"
+        },
+        {
           "from": "node_modules/@tesseract.js-data/tha/4.0.0_best_int/tha.traineddata.gz",
           "to": "tessdata/tha.traineddata.gz"
         },
