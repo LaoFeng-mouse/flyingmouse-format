@@ -13,7 +13,7 @@ const sanitize = require("sanitize-filename");
 const { PDFDocument } = require("pdf-lib");
 const { PDFTOPPM_PATH, DOCENGINE_PATH, pdfImageTargets } = require("./config");
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
-const { zipFiles, openZipEntries, readZipEntryToFile } = require("./zip-util");
+const { zipFiles, openZipEntries, openZipEntriesFromBuffer, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
 const { ocrAvailable, createOcrWorker, recognizeImageTextWithWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
@@ -274,8 +274,11 @@ function writeDocxZip(outputPath, entries) {
   });
 }
 
-const MAX_NATIVE_DOCX_PACKAGE_BYTES = 512 * 1024 * 1024;
-const MAX_NATIVE_DOCX_XML_BYTES = 20 * 1024 * 1024;
+// 物理天花板（Node 单个 Buffer 上限约 2GB），不是业务限制：
+// 正常 DOCX 包与单个 XML part 远小于此值；此阈值仅用于在解压前拦截声明了超大量
+// uncompressedSize 的恶意 ZIP 炸弹条目，避免实际解压导致 OOM。任何正常文档都不会触及。
+const MAX_NATIVE_DOCX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_NATIVE_DOCX_XML_BYTES = 2 * 1024 * 1024 * 1024;
 const NATIVE_DOCX_PARTS = new Set([
   "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels"
 ]);
@@ -287,10 +290,25 @@ function safePackageEntry(name) {
 }
 
 async function inspectNativeDocxPackage(zipPath) {
-  const zipfile = await openZipEntries(zipPath);
+  // Read the whole package into memory and drive yauzl via fromBuffer: yauzl.open's
+  // fd_slicer path can silently stall on a valid deflate stream (see openZipEntriesFromBuffer).
+  let buffer;
+  try {
+    const stats = await fsp.stat(zipPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 1) {
+      throw new Error("unsafe DOCX package file");
+    }
+    if (stats.size > MAX_NATIVE_DOCX_PACKAGE_BYTES) {
+      throw new Error("DOCX package is too large");
+    }
+    buffer = await fsp.readFile(zipPath);
+  } catch (error) {
+    if (error?.message === "DOCX package is too large") throw error;
+    throw new Error("unsafe DOCX package file");
+  }
+  const zipfile = await openZipEntriesFromBuffer(buffer);
   return new Promise((resolve, reject) => {
     let settled = false;
-    let total = 0;
     const names = new Set();
     const buffers = new Map();
     const finish = (error, value) => {
@@ -305,10 +323,6 @@ async function inspectNativeDocxPackage(zipPath) {
         return finish(new Error("unsafe DOCX package entry"));
       }
       names.add(entry.fileName);
-      total += size;
-      if (!Number.isSafeInteger(total) || total > MAX_NATIVE_DOCX_PACKAGE_BYTES) {
-        return finish(new Error("DOCX package is too large"));
-      }
       if (!NATIVE_DOCX_PARTS.has(entry.fileName)) return zipfile.readEntry();
       if (size > MAX_NATIVE_DOCX_XML_BYTES) return finish(new Error("DOCX XML part is too large"));
       zipfile.openReadStream(entry, (error, stream) => {

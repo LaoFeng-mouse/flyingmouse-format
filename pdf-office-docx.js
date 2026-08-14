@@ -35,8 +35,10 @@ const REVIEW_CONFIDENCE = 0.85;
 const REVIEW_FILL = "FFF2CC";
 const REFERENCE_HEADING = "原件对照 / Original reference";
 const RECONSTRUCTED_IMAGE_TYPES = new Set(["seal", "signature", "figure"]);
-const MAX_XML_BYTES = 20 * 1024 * 1024;
-const MAX_PACKAGE_BYTES = 512 * 1024 * 1024;
+// 物理天花板（Node Buffer 上限约 2GB），不是业务限制：正常 DOCX 的 XML part 与包远小于此，
+// 仅用于拦截声明超大量的恶意 ZIP 条目，避免解压 OOM。
+const MAX_XML_BYTES = 2 * 1024 * 1024 * 1024;
+const MAX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_WORD_COLUMNS = 63;
 const MAX_WORD_ROWS = 10_000;
 const MAX_ASSET_BYTES = 64 * 1024 * 1024;
@@ -381,7 +383,6 @@ async function inspectPackage(docxPath) {
   return new Promise((resolve, reject) => {
     const names = new Set();
     const buffers = new Map();
-    let total = 0;
     let settled = false;
     const fail = () => {
       if (settled) return;
@@ -392,8 +393,6 @@ async function inspectPackage(docxPath) {
     zipfile.on("entry", (entry) => {
       if (!safeEntryName(entry.fileName) || names.has(entry.fileName)) return fail();
       names.add(entry.fileName);
-      total += Number(entry.uncompressedSize) || 0;
-      if (total > MAX_PACKAGE_BYTES) return fail();
       const wanted = entry.fileName === "word/document.xml" || entry.fileName === "word/_rels/document.xml.rels";
       if (!wanted) {
         zipfile.readEntry();
