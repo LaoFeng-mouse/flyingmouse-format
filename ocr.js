@@ -53,7 +53,6 @@ function ocrAvailable() {
     && fs.existsSync(paths.langPath)
     && fs.existsSync(path.join(paths.langPath, "eng.traineddata.gz"))
     && fs.existsSync(path.join(paths.langPath, "chi_sim.traineddata.gz"))
-    && fs.existsSync(path.join(paths.langPath, "tha.traineddata.gz"))
     && fs.existsSync(paths.corePath)
     && fs.existsSync(paths.workerPath)
   );
@@ -70,8 +69,10 @@ async function prepareImageForOcr(inputPath) {
     .normalize()
     .sharpen({ sigma: 1 });
 
-  if (metadata.width && metadata.width < 1600) {
-    pipeline.resize({ width: 1600, withoutEnlargement: false });
+  // 中文 OCR 在约 300 DPI 时识别最稳：A4 宽度 8.27in × 300 ≈ 2480px。
+  // 小于该宽度的图片放大到 2480，避免小字漏识别；更大的原图保持原分辨率。
+  if (metadata.width && metadata.width < 2480) {
+    pipeline.resize({ width: 2480, withoutEnlargement: false });
   }
 
   await pipeline.png().toFile(outputPath);
@@ -85,6 +86,7 @@ async function createOcrWorker() {
 
   const { createWorker } = loadTesseract();
   const paths = ocrRuntimePaths();
+  // 语言集固定中英文：牺牲泰文，避免泰文模型抢认中文、产出乱码；中文识别优先。
   const worker = await createWorker("eng+chi_sim", 1, {
     langPath: paths.langPath,
     corePath: paths.corePath,
