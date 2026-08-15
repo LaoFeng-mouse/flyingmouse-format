@@ -109,6 +109,20 @@ function extractBestFrame(buffer) {
   return { png: false, width: best.width, height: best.height, data: dibToBmp(best.data) };
 }
 
+// 提取全部帧（多尺寸 ICO 素材全集），按面积降序。
+// 返回 [{ png, width, height, data }]——与 extractBestFrame 同构。
+function extractAllFrames(buffer) {
+  const { entries } = parseIco(buffer);
+  return [...entries]
+    .sort((a, b) => (b.width * b.height) - (a.width * a.height))
+    .map((entry) => ({
+      png: entry.png,
+      width: entry.width,
+      height: entry.height,
+      data: entry.png ? Buffer.from(entry.data) : dibToBmp(entry.data)
+    }));
+}
+
 // 把多尺寸 PNG 帧组装成 ICO 容器。pngFrames: [{ size, data }]，size ∈ [1,256]。
 function encodeIco(pngFrames) {
   const frames = pngFrames.filter((f) => f && Buffer.isBuffer(f.data) && f.data.length > 0);
@@ -143,5 +157,6 @@ module.exports = {
   parseIco,
   selectBestEntry,
   extractBestFrame,
+  extractAllFrames,
   encodeIco
 };

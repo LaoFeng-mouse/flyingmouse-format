@@ -30,7 +30,12 @@ async function convertToIco(inputPath, outputPath) {
   const warnings = [];
   if (animated) warnings.push({ code: "ANIMATION_FLATTENED", messages: WARNING_MESSAGES.ANIMATION_FLATTENED });
 
-  const sizes = [16, 24, 32, 48, 64, 128, 256];
+  // 尺寸自适应：只生成不超过源图尺寸的帧（避免上采样放大产生模糊），
+  // 但小图标档（16/24/32）必须保留——即使源图是 48px 小图，Windows 图标
+  // 也需要 16/32 档（2026-08-15 增强：原固定 7 档对小源图会生成模糊的 128/256 帧）。
+  const src = Math.max(metadata.width || 0, metadata.height || 0);
+  const sizes = [16, 24, 32, 48, 64, 128, 256]
+    .filter((size) => size <= src || size <= 32);
   const frames = [];
   for (const size of sizes) {
     const png = await sharp(inputPath, { page: 0, pages: 1, limitInputPixels: LIMITS.maxImagePixels })

@@ -10,6 +10,7 @@ const {
   isIcoFileSync,
   parseIco,
   extractBestFrame,
+  extractAllFrames,
   encodeIco
 } = require("../ico-format");
 const { isBmpFileSync, decodeBmpToRaw } = require("../bmp-input");
@@ -170,4 +171,43 @@ test("encodeIco encodes 256 as byte 0 (Windows convention)", async () => {
   const ico = encodeIco([{ size: 256, data: await makePng(256, 256) }]);
   assert.equal(ico[6], 0, "256px entry width must be stored as 0");
   assert.equal(ico[7], 0, "256px entry height must be stored as 0");
+});
+
+test("extractAllFrames returns every frame sorted by area (multi-size ICO)", async () => {
+  const frames = [];
+  for (const size of [16, 48, 256]) {
+    frames.push({ size, data: await makePng(size, size) });
+  }
+  const ico = encodeIco(frames);
+
+  const all = extractAllFrames(ico);
+  assert.equal(all.length, 3);
+  // 按面积降序：256 最大在前
+  assert.deepEqual(all.map((f) => f.width), [256, 48, 16]);
+  assert.ok(all.every((f) => f.png));
+  assert.ok(all.every((f) => Buffer.isBuffer(f.data) && f.data.length > 0));
+});
+
+test("extractAllFrames decodes BMP DIB frames too", async () => {
+  const dibW = 16, dibH = 16;
+  const rowSize = Math.ceil((dibW * 24) / 8 / 4) * 4;
+  const dib = Buffer.alloc(40 + rowSize * dibH * 2);
+  dib.writeUInt32LE(40, 0);
+  dib.writeInt32LE(dibW, 4);
+  dib.writeInt32LE(dibH * 2, 8);
+  dib.writeUInt16LE(1, 12);
+  dib.writeUInt16LE(24, 14);
+  dib.writeUInt32LE(0, 16);
+
+  const dir = buildIcoDir(2);
+  const png16 = await makePng(16, 16);
+  writeIcoEntry(dir, 0, 16, png16.length, 6 + 2 * 16);
+  writeIcoEntry(dir, 1, 16, dib.length, 6 + 2 * 16 + png16.length, 24);
+  const ico = Buffer.concat([dir, png16, dib]);
+
+  const all = extractAllFrames(ico);
+  assert.equal(all.length, 2);
+  const bmpFrame = all.find((f) => !f.png);
+  assert.ok(bmpFrame, "BMP DIB frame must be included");
+  assert.equal(bmpFrame.data.toString("latin1", 0, 2), "BM");
 });
