@@ -355,7 +355,7 @@ test("store build hides encrypted-audio unlock entry and rejects decryption", ()
   const server = readRoot("server.js");
   // config 单独列出加密解锁格式（DRM 规避，商店版隐藏）
   assert.match(config, /unlockAudioInputs/);
-  assert.match(config, /"ncm", "kgg", "mflac", "mgg", "kgma", "mmp4"/);
+  assert.match(config, /"ncm", "kgg", "mflac", "mgg", "mgg2", "kgma", "mmp4"/);
   // capabilities 商店版过滤加密格式
   assert.match(server, /process\.windowsStore \|\| !unlockAudioInputs\.has/);
   // 解密分发商店版拒绝，稳定错误码

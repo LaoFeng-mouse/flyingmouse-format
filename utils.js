@@ -66,10 +66,12 @@ async function commandExists(command, versionArgs = ["-version"]) {
 }
 
 function extFromName(name = "") {
-  // 双后缀加密音频：VIPER HiFi / 酷狗客户端导出的 .vpr.flac / .kgm.flac
+  // 双后缀加密音频：VIPER HiFi / 酷狗客户端导出的 .vpr.flac / .kgm.flac、
+  // QQ 音乐新版 .mgg2.flac
   // 会被 path.extname 当成普通 .flac，这里先识别双后缀（unlock-music 同规则）。
   const lower = String(name || "").toLowerCase();
   if (lower.endsWith(".vpr.flac")) return "vpr";
+  if (lower.endsWith(".mgg2.flac")) return "mgg2";
   return path.extname(name).replace(".", "").toLowerCase();
 }
 

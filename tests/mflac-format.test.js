@@ -183,6 +183,7 @@ test("static: config exposes mgg input and server dispatches mgg to convertMflac
   const fs = require("node:fs");
   const configSource = fs.readFileSync(path.join(__dirname, "..", "config.js"), "utf8");
   assert.ok(configSource.includes('"mflac", "mgg"'), "audioInput 应包含 mgg");
+  assert.ok(configSource.includes('"mgg2"'), "audioInput 应包含 mgg2");
   const serverSource = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   assert.ok(
     serverSource.includes("unlockAudioInputs.has(inputExt)"),

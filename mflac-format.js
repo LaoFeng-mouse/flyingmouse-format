@@ -217,6 +217,11 @@ function parseMflacFooter(buffer) {
       return { type: "musicex", songId, mediaMid, filename, footerSize };
     }
   }
+  // QTag：尾部 ASCII 元数据（key,id）+ 4 字节大端 metaSize + 4 字节 "QTag"。
+  // 注意：STag（mgg2 新版）不带密钥，无法离线解锁，返回明确类型报错。
+  if (buffer.length >= 12 && buffer.subarray(buffer.length - 4).toString("latin1") === "STag") {
+    return { type: "stag" };
+  }
   if (buffer.length >= 12 && buffer.readUInt32LE(buffer.length - 4) === 0x67615451) {
     const metaSize = buffer.readUInt32BE(buffer.length - 8);
     const metaEnd = buffer.length - 8;
@@ -411,11 +416,16 @@ async function convertMflac(inputPath, options = {}) {
       // 旧版：key 区域是二进制 ekey（32 字节），base64 编码后走 ekeyDecrypt
       ekey = keyRegion.toString("base64");
     }
+  } else if (footer.type === "stag") {
+    throw qmcError(
+      "这个文件是 QQ 音乐新版加密（STag，如 .mgg2/.mflac2），文件中不包含解密密钥，无法离线转换。请降级 QQ 音乐 App 版本重新下载歌曲，或使用 QQ 音乐客户端内置的下载/导出功能。",
+      "MFLAC_STAG_NO_KEY"
+    );
   } else if (footer.type === "qtag") {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
   } else if (footer.type === "musicex") {
-    const apiFilename = /\.(mgg|mflac|mgg0|mgg1|mggl|mflac0|mflach)$/i.test(footer.filename)
+    const apiFilename = /\.(mgg|mflac|mgg0|mgg1|mgg2|mggl|mflac0|mflach)$/i.test(footer.filename)
       ? footer.filename
       : `${footer.filename}${path.extname(inputPath) || ".mflac"}`;
     const creds = await loadQqMusicCredentials(options.cookiePath);
