@@ -38,8 +38,18 @@ function classifyDocument(pages = []) {
     return { ...metrics, kind: classifyPageMetrics(metrics) };
   });
   const kinds = new Set(normalized.map((page) => page.kind));
+  if (kinds.size > 1) {
+    // 多数派原则：只有极少数扫描页（封面/插图/二维码页，如单词书封面 1/58）
+    // 时按 native 处理，让文字页走 docengine——否则整本走 docstructure 结构化
+    // 引擎，对以文字为主的文档反而失败（2026-08-15「单词之间：低频词.pdf」事故）。
+    const scannedRatio = normalized.filter((page) => page.kind === "scanned").length / normalized.length;
+    if (scannedRatio < 0.2) {
+      return { kind: "native", pages: normalized };
+    }
+    return { kind: "mixed", pages: normalized };
+  }
   return {
-    kind: kinds.size > 1 ? "mixed" : normalized[0]?.kind || "scanned",
+    kind: normalized[0]?.kind || "scanned",
     pages: normalized
   };
 }

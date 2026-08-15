@@ -116,6 +116,17 @@ test("classifies documents with native and scanned pages as mixed", () => {
   ]);
 });
 
+test("treats documents with only a few scanned pages (cover/illustration) as native", () => {
+  // 单词书封面二维码页被判 scanned，其余 9 页文字 native（scanned 占比 10% < 20%）
+  const pages = [
+    { characterCount: 60, printableRatio: 1, imageCoverage: 1 },
+    ...Array.from({ length: 9 }, () => ({ characterCount: 500, printableRatio: 1, imageCoverage: 0 }))
+  ];
+  const classification = classifyDocument(pages);
+
+  assert.equal(classification.kind, "native");
+});
+
 test("classifies an empty document as scanned", () => {
   assert.deepEqual(classifyDocument([]), { kind: "scanned", pages: [] });
 });
