@@ -218,10 +218,6 @@ function parseMflacFooter(buffer) {
     }
   }
   // QTag：尾部 ASCII 元数据（key,id）+ 4 字节大端 metaSize + 4 字节 "QTag"。
-  // 注意：STag（mgg2 新版）不带密钥，无法离线解锁，返回明确类型报错。
-  if (buffer.length >= 12 && buffer.subarray(buffer.length - 4).toString("latin1") === "STag") {
-    return { type: "stag" };
-  }
   if (buffer.length >= 12 && buffer.readUInt32LE(buffer.length - 4) === 0x67615451) {
     const metaSize = buffer.readUInt32BE(buffer.length - 8);
     const metaEnd = buffer.length - 8;
@@ -232,6 +228,19 @@ function parseMflacFooter(buffer) {
       if (parts.length >= 2) {
         return { type: "qtag", ekey: parts[0], songId: parts[1] };
       }
+    }
+  }
+  // STag（mgg2/mflac2 新版）：meta 为 "id,version,songmid"（如 9059719,2,003lBJt23btk3U），
+  // 文件本身不内嵌密钥；songmid 可用于 musicex 在线换 key 的降档下载（F0M/O4M/M500）。
+  if (buffer.length >= 12 && buffer.subarray(buffer.length - 4).toString("latin1") === "STag") {
+    const metaSize = buffer.readUInt32BE(buffer.length - 8);
+    const metaEnd = buffer.length - 8;
+    const metaStart = metaEnd - metaSize;
+    if (metaStart >= 0 && metaSize < 0x10000) {
+      const meta = buffer.subarray(metaStart, metaEnd).toString("utf8");
+      const parts = meta.split(",");
+      const songmid = parts.length >= 3 ? parts[2] : (parts.length === 2 ? parts[1] : "");
+      return { type: "stag", songmid, meta, footerSize: metaSize + 8 };
     }
   }
   const keySize = buffer.readUInt32LE(buffer.length - 4);
@@ -344,8 +353,10 @@ async function downloadMusicexFile(purl, sip) {
 // 臻品母带（AIM 等）原档 GetEVkey 可能返回「非空但错误」的 ekey（账号权限边界），
 // 直接解密会乱码；因此候选逐个尝试，第一个可识别格式者胜出，避免误报解密失败。
 async function collectMusicexCandidates(creds, footer, originalFilename, originalBuf) {
+  const mediaMid = footer.mediaMid || footer.songmid || "";
+  if (!mediaMid) throw qmcError("无法从文件 footer 读取歌曲 ID。", "MFLAC_EKEY_REQUIRED");
   const candidates = [];
-  const first = await fetchEkeyFromApi(creds, originalFilename, footer.mediaMid);
+  const first = await fetchEkeyFromApi(creds, originalFilename, mediaMid);
   if (first.ekey) {
     candidates.push({
       ekey: first.ekey,
@@ -354,8 +365,8 @@ async function collectMusicexCandidates(creds, footer, originalFilename, origina
       note: "原档"
     });
   }
-  for (const fb of musicexFallbackFilenames(footer.mediaMid)) {
-    const info = await fetchEkeyFromApi(creds, fb.filename, footer.mediaMid);
+  for (const fb of musicexFallbackFilenames(mediaMid)) {
+    const info = await fetchEkeyFromApi(creds, fb.filename, mediaMid);
     if (!info.ekey || !info.purl) continue;
     const fileBuf = await downloadMusicexFile(info.purl, info.sip);
     // 下载档位的文件可能带 musicex footer，也可能是无 footer 的裸 QMC2 加密体
@@ -417,10 +428,28 @@ async function convertMflac(inputPath, options = {}) {
       ekey = keyRegion.toString("base64");
     }
   } else if (footer.type === "stag") {
-    throw qmcError(
-      "这个文件是 QQ 音乐新版加密（STag，如 .mgg2/.mflac2），文件中不包含解密密钥，无法离线转换。请降级 QQ 音乐 App 版本重新下载歌曲，或使用 QQ 音乐客户端内置的下载/导出功能。",
-      "MFLAC_STAG_NO_KEY"
-    );
+    // STag（mgg2/mflac2 新版）：文件不内嵌密钥，但 meta 含 songmid，
+    // 用 QQ 音乐登录凭据走 musicex 降档下载（F0M/O4M/M500 档位有 key）换取可解密的音频。
+    const creds = await loadQqMusicCredentials(options.cookiePath);
+    if (!creds) {
+      throw qmcError(
+        "这个文件是 QQ 音乐新版加密（STag/mgg2），文件中不包含密钥；需要 QQ 音乐登录凭据在线换取密钥。请把 QQ 音乐的登录 cookie 文件放到桌面（QQ音乐_登录cookie.txt）后重试。",
+        "MFLAC_EKEY_REQUIRED"
+      );
+    }
+    // 原档（本文件）无 ekey，直接走降档候选（FLAC/OGG/MP3）
+    const candidates = await collectMusicexCandidates(creds, footer, "", buf);
+    const decrypted = tryDecryptCandidates(candidates);
+    if (!decrypted) {
+      throw qmcError(
+        "这首歌的所有音质档位（含 FLAC/OGG/MP3 降级）都无在线密钥权限，可能已下架或需单独购买；请确认账号权限后重试。",
+        "MFLAC_EKEY_NETWORK"
+      );
+    }
+    const musicexTempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-mflac-"));
+    const musicexNativePath = path.join(musicexTempDir, `native.${decrypted.format}`);
+    await fsp.writeFile(musicexNativePath, decrypted.audio);
+    return { nativePath: musicexNativePath, format: decrypted.format, tempDir: musicexTempDir };
   } else if (footer.type === "qtag") {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
