@@ -22,3 +22,7 @@ scripts/tmp-*.js
 # Python 字节码缓存（docstructure 引擎构建产物，不入库）
 __pycache__/
 *.pyc
+scripts/.raw-samples/
+
+# AppX 打包证书/密钥（绝不入库）
+cert/

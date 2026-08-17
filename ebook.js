@@ -2,6 +2,7 @@
 // 零新依赖：EPUB 用 yazl/yauzl（项目已有），MOBI 文本记录走 zlib（Node 内置）。
 const fs = require("fs");
 const fsp = require("fs/promises");
+const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
 const yauzl = require("yauzl");
@@ -279,6 +280,49 @@ async function convertEpubToMarkdown(inputPath, outputPath) {
   await fsp.writeFile(outputPath, `${markdown.trim()}\n`, "utf8");
 }
 
+// 合并 spine xhtml → 干净单页 html（供直接输出或交给 LibreOffice 转 pdf/docx）。
+// 清洗 EPUB 命名空间/样式/链接等 LO 不认的属性；第一版不提取内嵌图片。
+function mergeEpubHtml(xhtmls) {
+  const bodies = xhtmls.map((html) => {
+    const match = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+    return match ? match[1] : html;
+  }).join("\n");
+  const cleaned = bodies
+    .replace(/\sepub:[a-zA-Z-]+="[^"]*"/g, "")
+    .replace(/\sxmlns:[a-zA-Z]+="[^"]*"/g, "")
+    .replace(/<link\b[^>]*>/g, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, "")
+    .replace(/<svg\b[\s\S]*?<\/svg>/g, "")
+    .replace(/<script\b[\s\S]*?<\/script>/g, "")
+    .replace(/<img[^>]*>/g, ""); // 第一版不保留内嵌图（src 路径复杂），避免 LO 解析失败
+  return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>book</title></head>\n<body>\n${cleaned}\n</body></html>`;
+}
+
+async function convertEpubToHtml(inputPath, outputPath) {
+  const entries = readZipEntriesSync(inputPath);
+  const xhtmls = await epubSpineXhtml(entries);
+  const html = mergeEpubHtml(xhtmls);
+  if (!/<body[\s\S]*<\/body>/i.test(html)) throw new Error("EPUB 解析失败：未提取到任何内容。");
+  await fsp.writeFile(outputPath, html, "utf8");
+}
+
+// epub → pdf/docx：合并 html 后交给 LibreOffice（html→pdf/docx 管线实测可靠）。
+// 惰性 require office-convert 避免模块循环。
+async function convertEpubViaLibreOffice(inputPath, outputPath, target) {
+  const { convertWithLibreOffice } = require("./office-convert");
+  const entries = readZipEntriesSync(inputPath);
+  const xhtmls = await epubSpineXhtml(entries);
+  const html = mergeEpubHtml(xhtmls);
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-epub-"));
+  const htmlPath = path.join(tempDir, "book.html");
+  try {
+    await fsp.writeFile(htmlPath, html, "utf8");
+    await convertWithLibreOffice(htmlPath, outputPath, "book.html", target);
+  } finally {
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 // ---- MOBI 解析（实验性：PalmDOC + zlib 文本记录） ----
 
 function parseMobiText(buffer) {
@@ -365,7 +409,15 @@ async function convertEbook(inputPath, outputPath, inputExt, target, originalNam
       await convertEpubToMarkdown(inputPath, outputPath);
       return;
     }
-    throw new Error("EPUB 暂只支持转换为 TXT 或 Markdown。");
+    if (target === "html") {
+      await convertEpubToHtml(inputPath, outputPath);
+      return;
+    }
+    if (target === "pdf" || target === "docx") {
+      await convertEpubViaLibreOffice(inputPath, outputPath, target);
+      return;
+    }
+    throw new Error("EPUB 暂只支持转换为 TXT、Markdown、HTML、PDF 或 DOCX。");
   }
   if (inputExt === "mobi") {
     if (target === "epub") {
@@ -390,6 +442,8 @@ module.exports = {
   convertTextToEpub,
   convertEpubToText,
   convertEpubToMarkdown,
+  convertEpubToHtml,
+  convertEpubViaLibreOffice,
   convertMobiToText,
   convertMobiToEpub,
   convertEbook,
