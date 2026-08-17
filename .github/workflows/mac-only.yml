@@ -44,7 +44,7 @@ jobs:
           asset="$(node -p "require('./ci-engines-v1.json').assets['$key'].assetName")"
           root="$PWD/bin/engines/$key"
           mkdir -p output "$root"
-          gh release download ci-engines-v1 --repo "LaoFeng-mouse/flyingmouse-format" --pattern "$asset" --dir output
+          gh release download ci-engines-v1 --repo "${{ github.repository }}" --pattern "$asset" --dir output
           zstd -dc "output/$asset" | tar -xf - -C "$root"
           node scripts/validate-ci-engines.js --platform darwin --arch "${{ matrix.arch }}" --root "$root" --bundle "output/$asset"
           file "$root/runtime/bin/ffmpeg" "$root/runtime/bin/pdftoppm" "$root/libreoffice/LibreOffice.app/Contents/MacOS/soffice"

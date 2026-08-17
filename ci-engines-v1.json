@@ -37,7 +37,7 @@
     "darwin-arm64": {
       "available": true,
       "assetName": "ci-engines-v1-darwin-arm64.tar.zst",
-      "sha256": "d4947a2df4d3448d7020b52cf3ebb7d4bf5bd58527688d9703220f727920955c",
+      "sha256": "ffb5ae5d4131afae557eafc0b1dd6d2406cbdc4fd513c905a345371805e8e8b2",
       "requiredFiles": [
         "runtime/bin/ffmpeg",
         "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
@@ -50,7 +50,7 @@
     "darwin-x64": {
       "available": true,
       "assetName": "ci-engines-v1-darwin-x64.tar.zst",
-      "sha256": "7cc867c33b36ad0e649550469155e186ec7808891fb4efaf9e2e829be6d12690",
+      "sha256": "6932c576bdc64952e0e68e8e746420d84d634998fe40d9b7564ebd7423626998",
       "requiredFiles": [
         "runtime/bin/ffmpeg",
         "libreoffice/LibreOffice.app/Contents/MacOS/soffice",
