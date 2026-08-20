@@ -1,14 +1,17 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-20（v0.6.2 全平台发布完成——docx→MD 图片外置修复版，Windows 10/11 x64 + Windows 7 兼容版 + macOS arm64/x64 DMG）
+更新时间：2026-08-20（v0.6.4 发布——WPS 自动编号恢复版；旧版本已清理）
 
 ## 当前状态
 
-- **版本**：v0.6.3（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.3（Latest，6 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml；v0.6.1/v0.6.2 保留）。v0.6.3 = docx→MD 大纲恢复（自定义中文标题样式映射）+ CI 门禁修复
-- **main**：HEAD 15028c6（v0.6.3 bump，含 1cd50dd 大纲修复 + 6b63220 ci.yml 修复），已同步 origin/main；full-version 分支 = 满血版（含解锁模块，匿名，自留，桌面 zip d5908709 版已重打）
-- **CI**：v0.6.3 Release validation run 32344307946 全绿（mac arm64/x64 + validate-and-build），云端 publish 自动发布 v0.6.3；latest.yml 校验通过（0.6.3 / 连字符 URL / sha512 与 exe 一致）
+- **版本**：v0.6.4（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.4（Latest，6 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml；**v0.6.1/v0.6.2/v0.6.3 已删除**）。v0.6.4 = docx→MD WPS 自动编号恢复（第 X 章 / 1.1 / 1.1.1）
+- **main**：HEAD e11a6c4（39cb807 自动编号 cherry-pick + ea69e16 bump 0.6.4 + e11a6c4 lockfile 修复），已同步 origin/main；full-version 分支 = 满血版（含解锁模块，匿名，自留，桌面 zip e05398f5 版已重打，asar c938317a）
+- **CI**：v0.6.4 Release validation run 32371415753 全绿（mac arm64/x64 + validate-and-build + Publish 4 jobs）；门禁 ci.yml run 32363687947 全绿（3m30s）
+- **★lockfile 坑（v0.6.4 CI 卡住根因，已修 e11a6c4）**：package-lock/win7-package-lock 里 negotiator-0.6.4 integrity 记录错误（+EUsqGPLsM...，实测 tarball 为 myRT3...）→ npm ci EINTEGRITY。已修正 + 主 lockfile 486 处 npmmirror→npmjs（lockfile 锁官方源，镜像勿写入）。本机 npm ci 全量通过。
+- **发布流程备忘**：release.yml 按 `v*` tag 触发——push main 只跑 ci.yml 门禁，**打 tag + push 才触发 Release validation + 云端 Publish**。
+- **本机**：D1/D2/桌面便携为满血版 asar `c938317af63f1e99a8d77c8effd510b7`（含图片外置 + 大纲恢复 + WPS 自动编号 + 解锁模块 + 自动更新禁用）；桌面满血版匿名 zip md5 `e05398f513901bc463dcd23fe99a9267` / sha256 `b61126924edc397e50385db0ff6d911a0dad22c80a5daa820ac6c09cc76a5536`；旧版本清理：GitHub v0.6.1-0.6.3 全删、本机 dist NSIS 0.5.2 删、测试样本全清
 - **CI 门禁修复（2026-08-20）**：ci.yml Windows test job 原无引擎恢复（跑 test:ci），conversion.test.js 的 video→GIF/XLSX→XLS/PDF→DOCX 等真实转换测试无引擎缺失保护 → ffmpeg/libreoffice ENOENT 假失败，每次 main push 发失败邮件。已升级为与 release.yml 一致的引擎恢复序列（restore-ci-engines.ps1 + docstructure 校验/探针 + Thai OCR 暂存）+ npm test 全量（commit 6b63220）；验证 run 32338579299 三 job 全绿（Windows test 16 步、mac×2 11 步）。
-- **本机**：D1/D2 已升级为满血版 d59087091e13a34d090b0bb18cbc23c6（= 本地 dist/win-unpacked 拷贝，2026-08-20 三次装，含 docx→MD 图片外置 + 大纲恢复 + 解锁模块 + 自动更新禁用，UI 版本号显示满血线 0.5.2）；桌面满血版匿名 zip 最终版 md5 6311546552728f84ae3c135d6d2dbf6f / sha256 26d12c33cf70289ddb0d8bf4c39fc03fede2ea0b8a7ca2bea6989ea3aeec8e32
+- **本机**：D1/D2 已升级为满血版 c938317a（2026-08-20 最新，含 WPS 自动编号修复，UI 版本号显示满血线 0.5.2）
 - **测试基线**：main 439 = 433 过 + 1 失败 + 5 跳过（唯一失败 = conversion.test.js「converts a PDF to DOCX」断言 `<w:tab/>` vs 引擎输出更优 `<w:tbl>`，v0.6.1 发布前已存在的本机 D1 引擎行为差异，与本次改动无关，CI 门禁不受影响）；full-version 497 = 493 过 + 0 失败 + 4 skip
 
 ## 最近完成的修复（v0.6.1 → v0.6.2）
