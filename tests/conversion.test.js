@@ -1072,6 +1072,27 @@ test("converts a DOCX to Markdown without changing the source", async () => {
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+// 生成带自定义中文标题样式的 docx（styles.xml 定义「一级标题/二级标题/半括号标题（五级）」，
+// 验证 mammoth 默认不识别时能按 style-name 映射回 h1-h6，md 不丢大纲）
+async function createDocxWithCustomHeadings(filePath, text) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`), "_rels/.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Cust1"><w:name w:val="一级标题"/></w:style><w:style w:type="paragraph" w:styleId="Cust2"><w:name w:val="二级标题"/></w:style><w:style w:type="paragraph" w:styleId="Cust5"><w:name w:val="半括号标题（五级）"/></w:style><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`), "word/styles.xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Cust1"/></w:pPr><w:r><w:t>第一章 概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Cust2"/></w:pPr><w:r><w:t>第一节 背景</w:t></w:r></w:p><w:p><w:r><w:t>正文内容 ${text}</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Cust5"/></w:pPr><w:r><w:t>附录细节</w:t></w:r></w:p></w:body></w:document>`), "word/document.xml");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(filePath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
 test("converts a DOCX with embedded images to Markdown with externalized asset files", async () => {
   const imagePath = path.join(scratchRoot, "docx-image.png");
   await createImage(imagePath, { r: 200, g: 40, b: 40, alpha: 1 }, 96, 64);
@@ -1099,6 +1120,24 @@ test("converts a DOCX with embedded images to Markdown with externalized asset f
   assert.strictEqual(assetBytes.readUInt32BE(0), 0x89504e47, "asset must be a PNG");
   assert.deepStrictEqual(assetBytes, await fsp.readFile(imagePath), "asset bytes must match the source image");
 
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts a DOCX with custom Chinese heading styles to Markdown headings", async () => {
+  const sourcePath = path.join(scratchRoot, "自定义标题.docx");
+  await createDocxWithCustomHeadings(sourcePath, "正文段落 body text");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "自定义标题.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "自定义标题.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  // 自定义中文样式名（一级标题/二级标题/半括号标题（五级））必须映射为 md 标题，大纲不丢
+  assert.match(markdown, /^# 第一章 概述$/m);
+  assert.match(markdown, /^## 第一节 背景$/m);
+  assert.match(markdown, /^##### 附录细节$/m);
+  assert.match(markdown, /正文内容 正文段落 body text/);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
