@@ -277,7 +277,13 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
     // 注意：mammoth 1.12.0 的 convertImage 选项实测失效（回调从不被调用，
     // 输出仍是 data URI），因此不传图片钩子，统一在下方 externalizeMarkdownImages
     // 对最终 md 里的 data:image base64 做外置（不依赖 mammoth 内部行为，各来源通用）。
-    const result = await mammoth.convertToHtml({ path: inputPath });
+    // 自定义中文标题样式（一级标题/二级标题…）mammoth 默认不识别会退化成普通段落，
+    // 导致 md 丢失大纲——按 styles.xml 动态生成 styleMap 映射回 h1-h6。
+    const styleMap = await mammothHeadingStyleMap(inputPath);
+    const result = await mammoth.convertToHtml(
+      { path: inputPath },
+      styleMap ? { styleMap } : undefined
+    );
     html = result.value || "";
   } else {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-docmd-"));
@@ -313,6 +319,48 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
     assetsDir: externalized.count ? assetsDir : null,
     assetsCount: externalized.count
   };
+}
+
+// 从样式名推断标题级别（1-6），不是标题返回 0。
+// 覆盖：Heading N / 标题 N / 一级标题…六级标题 / 标题一…标题六 /
+// 半括号标题（五级）/ 圆括号标题（六级标题） 等自定义中文命名。
+// 只有样式名含「标题」才参与映射，避免「参数列表一级子列表样式」这类
+// 含级数但不是标题的样式被误判。
+function headingLevelFromStyleName(name) {
+  if (!name || !/标题|Heading/i.test(name)) return 0;
+  const cn = "一二三四五六";
+  let m = name.match(/Heading\s*([1-6])/i);
+  if (m) return Number(m[1]);
+  m = name.match(/标题\s*([1-6])/);
+  if (m) return Number(m[1]);
+  m = name.match(/^([一二三四五六])级?标题/);
+  if (m) return cn.indexOf(m[1]) + 1;
+  m = name.match(/标题([一二三四五六])/);
+  if (m) return cn.indexOf(m[1]) + 1;
+  m = name.match(/[（(]([一二三四五六])级/);
+  if (m) return cn.indexOf(m[1]) + 1;
+  return 0;
+}
+
+// 读 docx 的 word/styles.xml，把自定义标题样式（mammoth 默认不识别）生成
+// styleMap：p[style-name='X'] => hN:fresh。mammoth 只认标准 Heading/标题 样式名，
+// 「一级标题」「半括号标题（五级）」等中文自定义名会退化成普通段落 → md 丢大纲。
+// ★ 注意必须用 style-name 形式：mammoth 1.12.0 实测 p[style-id='N'] 形式不生效
+// （与 convertImage 同类的选项处理问题），style-name 形式实测有效。
+async function mammothHeadingStyleMap(docxPath) {
+  const stylesXml = await readDocxEntryString(docxPath, "word/styles.xml");
+  if (!stylesXml) return undefined;
+  const styleMap = [];
+  const styleRe = /<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g;
+  let m;
+  while ((m = styleRe.exec(stylesXml)) !== null) {
+    const name = (m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "";
+    const level = headingLevelFromStyleName(name);
+    if (level && !name.includes("'")) {
+      styleMap.push(`p[style-name='${name}'] => h${level}:fresh`);
+    }
+  }
+  return styleMap.length ? styleMap : undefined;
 }
 
 // data:image URI → 文件扩展名（用于 md 图片外置）。
@@ -394,6 +442,8 @@ module.exports = {
   convertDocumentToMarkdown,
   convertDocumentToText,
   externalizeMarkdownImages,
+  mammothHeadingStyleMap,
+  headingLevelFromStyleName,
   readDocxEntryString,
   docxNeedsPdfRepair,
   repairDocxViaRoundtrip,
