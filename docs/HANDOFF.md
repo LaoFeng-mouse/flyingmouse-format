@@ -1,14 +1,28 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-15（v0.6.1 全平台发布完成——Windows 10/11 x64 + Windows 7 兼容版 + macOS arm64/x64 DMG）
+更新时间：2026-08-20（v0.6.2 全平台发布完成——docx→MD 图片外置修复版，Windows 10/11 x64 + Windows 7 兼容版 + macOS arm64/x64 DMG）
 
 ## 当前状态
 
-- **版本**：v0.6.1（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.1（7 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml）
-- **main**：HEAD c00fb42，已同步 origin/main；full-version 分支 = 满血版（含解锁模块，匿名，自留）
-- **CI 引擎基建已打通**：ci-engines-v1 Release（win32 双分卷 core+docstructure + darwin arm64/x64 四资产），release.yml 支持 workflow_dispatch 指定 tag 全平台自动构建发布；prepare-macos-engines 生成 darwin 引擎
-- **本机**：D1（%LOCALAPPDATA%\Programs\FlyingMouse Format）与 D2（C:\Users\34615\飞鼠格式\FlyingMouse Format）app.asar md5 一致（27ba6ce3，v0.6.1）；桌面满血版匿名 zip 已重打（含 ICO 增强）
-- **测试基线**：438 = 437 过 + 0 失败 + 1 跳过（main）；496 = 492 过 + 0 失败（full-version）
+- **版本**：v0.6.2（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.2（Latest，6 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml；win7 blockmap 未上传，win7 禁用自动更新无影响）
+- **main**：HEAD 1a23bfd（bbe6fcf 修复 + 1a23bfd bump 0.6.2），已同步 origin/main；full-version 分支 = 满血版（含解锁模块，匿名，自留，本次桌面 zip 已重打）
+- **CI**：Release validation run 32331084553 全绿（mac arm64/x64 + validate-and-build），云端 publish 自动发布 v0.6.2；latest.yml 校验通过（version 0.6.2 / url 连字符 / sha512 与 exe 一致）
+- **本机**：D1/D2 仍为 v0.6.1（27ba6ce3）——docx→MD 修复尚未装到本机运行版，待用户决定是否升级；桌面满血版匿名 zip 已重打（含 docx→MD 修复，md5 1f335ccc1c4f2e614dae2c82bece7f97）
+- **测试基线**：main 439 = 433 过 + 1 失败 + 5 跳过（唯一失败 = conversion.test.js「converts a PDF to DOCX」断言 `<w:tab/>` vs 引擎输出更优 `<w:tbl>`，v0.6.1 发布前已存在的本机 D1 引擎行为差异，与本次改动无关，CI 门禁不受影响）；full-version 497 = 493 过 + 0 失败 + 4 skip
+
+## 最近完成的修复（v0.6.1 → v0.6.2）
+
+- **docx→MD 图片外置**（本次核心）：Word 含大量截图转 MD 时图片 base64 内嵌成超长单行（实测 37 图 / 单行 263KB / md 3.3MB），Typora 报「文件过大」拒渲染。修复：对最终 md 统一 externalizeMarkdownImages（正则收集 data:image base64 → 解码写 `<下载名>.assets/image-N.ext` → md 引用改相对路径），mammoth 1.12.0 convertImage 选项实测失效已绕开；实测 FreeRTOS 样本 37 图全外置、md 3.3MB→89KB、最长行 263,960→1,092、Typora 正常打开
+- 配套接线：electron-security.js resolveTrustedDownloadUrl 放行 /downloads/<id>/asset/<name>（原正则拒绝 asset URL → sidecar 拷图静默失败）；server.js asset 路由防穿越；electron-main.js downloadAssetsToMdSidecar；保存流程 md+`.assets/` 文件夹一并保存
+- 已知限制：用户保存时若改文件名（≠downloadName），assets 目录名会错位（默认保存名一致时无影响）
+
+## 待办（下一窗口）
+
+- ① v0.6.1 Release 是否下架（Latest 已自动切到 v0.6.2，旧版保留可作降级通道）——用户决策
+- ② 本机 D1/D2 是否升级到 v0.6.2（docx→MD 修复装到本机运行版）
+- ③ 满血版桌面目录/zip 是否同步分发（zip md5 1f335ccc1c4f2e614dae2c82bece7f97）
+- ④ Partner Center 微软商店：v0.5.1 认证状态现场回读；商店是否跟进 v0.6.2
+- ⑤ 清理：scripts/tmp-verify-full-repack.py、scripts/tmp-verify-zip-final.py（未跟踪临时脚本）、%TEMP% 验证脚本、dist/win-unpacked.old-0817（若存在）
 
 ## 最近完成的修复（v0.6.0 → v0.6.1）
 
