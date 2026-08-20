@@ -663,7 +663,28 @@ test("writes byte-deterministic XLSX packages for identical structured input", a
   const second = path.join(root, "deterministic-b.xlsx");
   await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: first });
   await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath: second });
-  assert.deepEqual(await fs.readFile(first), await fs.readFile(second));
+  // ExcelJS 底层 jszip 的 ZIP 条目时间戳为当前时间（跨秒生成即不同）——完整文件字节
+  // 比较在慢速 runner 上偶发失败（mac x64 实证）。比较解压后的内容（真正确定性部分）。
+  const readEntries = async (p) => {
+    const zipfile = await openZipEntries(p);
+    return new Promise((resolve, reject) => {
+      const collected = [];
+      zipfile.on("entry", (entry) => {
+        if (entry.fileName.endsWith("/")) { zipfile.readEntry(); return; }
+        zipfile.openReadStream(entry, (error, stream) => {
+          if (error) return reject(error);
+          const chunks = [];
+          stream.on("data", (chunk) => chunks.push(chunk));
+          stream.on("error", reject);
+          stream.on("end", () => { collected.push({ name: entry.fileName, buffer: Buffer.concat(chunks) }); zipfile.readEntry(); });
+        });
+      });
+      zipfile.on("end", () => resolve(collected));
+      zipfile.on("error", reject);
+      zipfile.readEntry();
+    });
+  };
+  assert.deepEqual(await readEntries(first), await readEntries(second));
 });
 
 test("validator rejects raw text or images without meaningful editable table data", async (t) => {
