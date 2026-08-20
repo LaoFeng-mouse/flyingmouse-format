@@ -46,7 +46,7 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.6.3 对应系统的安装包。
+1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.6.4 对应系统的安装包。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -85,7 +85,7 @@ npm run dist
 - **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.5.2-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
 - **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.5.2-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.6.3 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.6.4 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
 
 ### macOS 版本选择
 
@@ -135,7 +135,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Quick start
 
-1. Download the v0.6.3 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+1. Download the v0.6.4 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -157,15 +157,15 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.6.3-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
-- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.6.3-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
+- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.6.4-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.6.4-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.3 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.4 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.6.3-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse.Format-Setup-0.6.3-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.6.4-mac-arm64.dmg`.
+- **Intel Mac:** use `FlyingMouse.Format-Setup-0.6.4-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 
