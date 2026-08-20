@@ -1127,7 +1127,8 @@ async function saveResult(result) {
     setStatus(i18n.language === "en-US" ? `Choose where to save ${result.fileName}...` : `请选择 ${result.fileName} 的保存位置...`);
     const saved = await window.flyingMouseFormat.saveConvertedFile({
       downloadUrl: result.downloadUrl,
-      fileName: result.fileName
+      fileName: result.fileName,
+      assets: Array.isArray(result.assets) ? result.assets : undefined
     });
     if (saved?.canceled) {
       setStatus(i18n.language === "en-US" ? `Converted: ${result.fileName}. Not saved yet.` : `转换完成：${result.fileName}。尚未保存。`, "success");

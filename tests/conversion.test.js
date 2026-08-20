@@ -1030,6 +1030,27 @@ async function createMinimalDocx(filePath, text) {
   });
 }
 
+// 生成带一张内嵌 PNG 的 docx（验证 docx→md 图片外置 .assets/）
+async function createDocxWithImage(filePath, text, imageBuffer) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`), "_rels/.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>`), "word/_rels/document.xml.rels");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="914400" cy="609600"/><wp:docPr id="1" name="Picture 1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="image1.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId5"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="609600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>`), "word/document.xml");
+  zip.addBuffer(imageBuffer, "word/media/image1.png");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(filePath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
 test("converts a DOCX to Markdown without changing the source", async () => {
   const sourcePath = path.join(scratchRoot, "报告.docx");
   await createMinimalDocx(sourcePath, "Hello Markdown 你好");
@@ -1043,6 +1064,36 @@ test("converts a DOCX to Markdown without changing the source", async () => {
   const markdown = await fsp.readFile(outputPath, "utf8");
   assert.match(markdown, /Hello Markdown/);
   assert.match(markdown, /你好/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("converts a DOCX with embedded images to Markdown with externalized asset files", async () => {
+  const imagePath = path.join(scratchRoot, "docx-image.png");
+  await createImage(imagePath, { r: 200, g: 40, b: 40, alpha: 1 }, 96, 64);
+  const sourcePath = path.join(scratchRoot, "带图报告.docx");
+  await createDocxWithImage(sourcePath, "图片外置测试 Image externalized", await fsp.readFile(imagePath));
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "带图报告.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "带图报告.md");
+  assert.ok(Array.isArray(body.assets), "payload must include assets list");
+  assert.strictEqual(body.assets.length, 1, "one embedded image expected");
+  assert.strictEqual(body.assets[0].name, "image-1.png");
+  assert.match(body.assets[0].url, /^\/downloads\/[^/]+\/asset\/image-1\.png$/);
+
+  const outputPath = await downloadResult(body, "带图报告.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  assert.doesNotMatch(markdown, /data:image\//, "md must not embed base64 images");
+  assert.match(markdown, /!\[[^\]]*\]\(带图报告\.assets\/image-1\.png\)/, "md must reference the external asset");
+
+  const assetResponse = await fetch(`${baseUrl}${body.assets[0].url}`);
+  assert.strictEqual(assetResponse.status, 200);
+  const assetBytes = Buffer.from(await assetResponse.arrayBuffer());
+  assert.strictEqual(assetBytes.readUInt32BE(0), 0x89504e47, "asset must be a PNG");
+  assert.deepStrictEqual(assetBytes, await fsp.readFile(imagePath), "asset bytes must match the source image");
+
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 

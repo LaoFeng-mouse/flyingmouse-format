@@ -1,6 +1,15 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-14（revert 0774349 已恢复 v0.5.2 内容——KWM 解密/批量上限/Agent 接入/文件夹命名 PDF/中文文件名乱码修复/Office 误报修复；OCR 精准度 + KGG 密钥库剪枝 + 真实 RAW 验收 + 同步本地均已收尾；待 push/发版 + 外部验收）
+更新时间：2026-08-20（docx→MD 图片外置方案 A 已完成并验证，工作树未提交）
+
+## 2026-08-20：docx→MD 图片 base64 内嵌修复（方案 A 完成，工作树未提交）
+
+- **现象**：含图 Word 转 MD 生成超长单行 base64（FreeRTOS 样本 37 图 / 单行 263KB / md 3.3MB），Typora 报「该文件过大」拒渲染；预览正常（Chromium 容忍超长行）。
+- **根因**：mammoth 默认把 docx 图片输出成 data URI，turndown 原样写进 md → 每图一个超长单行。Typora 对单行有 oversize 保护（`doEnterOversize`）。
+- **关键阻塞**：mammoth 1.12.0 的 `convertImage` 选项实测失效（对照实验输出完全相同，回调从不被调用）→ 绕开：不依赖任何图片钩子，对最终 md 统一跑 `externalizeMarkdownImages`（正则收集 data:image base64 → 解码写 `<下载名>.assets/image-N.ext` → md 引用改相对路径）。
+- **改动**（5 文件 + 测试）：office-convert.js（外置 + 兜底，导出函数）、utils.js（registerDownload 带 assetsDir）、server.js（资产清单 + /downloads/:id/asset/:name 路由防穿越）、electron-main.js（downloadAssetsToMdSidecar 保存时拷图）、electron-security.js（★resolveTrustedDownloadUrl 放行 asset 路径——原正则只允许 /downloads/<id>，asset URL 会静默拒绝导致图片拷不过去）、public/app.js（单文件保存传 assets）。
+- **验证**：FreeRTOS 实测 md 3.3MB→89.4KB、data:image 37→0、最长行 263,960→1092、37 图全外置且 PNG 魔数正确；本机 Typora 打开外置版 md 正常（typora.log 无 doEnterOversize）；新增 conversion 集成用例（带图 docx fixture 断言 md 无 data:image + 相对引用 + payload.assets + asset 字节与原图一致）与 electron-security 用例，全过。
+- **待办（下一窗口）**：① 提交（当前工作树 6 文件改动未 commit）；② 打包发版决策（版本号 bump + 是否随下版发布）；③ 客户机实测验收；④ 保存时用户改文件名 ≠ downloadName 时 assets 目录名错位的已知限制（默认名一致时无影响）。
 
 ## 待办（下一窗口，2026-08-14）
 

@@ -21,16 +21,29 @@ test("download URL must be an exact same-origin download resource", () => {
     resolveTrustedDownloadUrl("/downloads/abc-123", serverUrl),
     "http://127.0.0.1:5177/downloads/abc-123"
   );
+  // md 图片外置：/downloads/<id>/asset/<name> 允许（server 端仍校验 name 防穿越）
+  assert.strictEqual(
+    resolveTrustedDownloadUrl("/downloads/abc-123/asset/image-1.png", serverUrl),
+    "http://127.0.0.1:5177/downloads/abc-123/asset/image-1.png"
+  );
   for (const value of [
     "http://127.0.0.1:5178/downloads/abc",
     "https://example.com/downloads/abc",
     "/downloads/",
     "/downloads/abc/extra",
+    "/downloads/abc/asset/",
+    "/downloads/abc/asset/a/b",
     "/downloads/abc?next=https://example.com",
     "http://user:pass@127.0.0.1:5177/downloads/abc"
   ]) {
     assert.strictEqual(resolveTrustedDownloadUrl(value, serverUrl), null, value);
   }
+  // ../ 段会被 URL 归一化：asset/../../secret → /downloads/secret（普通下载形状，
+  // server 仍按 id 查表返回已注册文件，无越权），允许并保持原样。
+  assert.strictEqual(
+    resolveTrustedDownloadUrl("/downloads/abc/asset/../../secret", serverUrl),
+    "http://127.0.0.1:5177/downloads/secret"
+  );
 });
 
 test("external URL only allows credential-free HTTPS", () => {

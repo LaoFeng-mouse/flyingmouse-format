@@ -224,6 +224,37 @@ async function cleanupOldFiles() {
   }
 }
 
+// md 转换产物若带图片外置目录（<下载名>.assets/），返回该目录路径；否则 null。
+// 目录名基于 downloadName（与 office-convert 的 outputNameFor(originalName,"md") 一致），
+// 不能用 mdPath 前缀（outputPath 带时间戳-uuid，会找不到）。
+async function findMarkdownAssetsDir(mdPath, downloadName) {
+  const mdBasename = path.basename(downloadName, path.extname(downloadName));
+  const assetsDir = path.join(path.dirname(mdPath), `${mdBasename}.assets`);
+  try {
+    const stat = await fsp.stat(assetsDir);
+    if (stat.isDirectory()) return assetsDir;
+  } catch {
+    // no assets dir
+  }
+  return null;
+}
+
+// 列出 assets 目录内的文件，生成相对 md 下载 URL 的资产清单。
+async function listDownloadAssets(assetsDir, downloadUrl) {
+  const names = await fsp.readdir(assetsDir).catch(() => []);
+  const assets = [];
+  for (const name of names) {
+    const filePath = path.join(assetsDir, name);
+    const stat = await fsp.stat(filePath).catch(() => null);
+    if (!stat || !stat.isFile()) continue;
+    assets.push({
+      name,
+      url: `${downloadUrl}/asset/${encodeURIComponent(name)}`
+    });
+  }
+  return assets;
+}
+
 let cachedTools = null;
 let cachedToolDetails = {};
 
@@ -610,7 +641,14 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
 
     await fsp.rm(file.path, { force: true }).catch(() => {});
     const mimeType = mime.lookup(downloadName) || "application/octet-stream";
-    const registered = registerDownload(outputPath, downloadName, mimeType);
+    // md 转换产物若带图片外置目录（.assets/），随 downloads 一起注册，
+    // 保存时主进程按 assets 清单把图片拷到 md 同目录，保证相对引用可用。
+    let mdAssetsDir = null;
+    if (requestedTarget === "md" && category === "document") {
+      mdAssetsDir = await findMarkdownAssetsDir(outputPath, downloadName);
+    }
+    const registered = registerDownload(outputPath, downloadName, mimeType, { assetsDir: mdAssetsDir });
+    if (mdAssetsDir) registered.assets = await listDownloadAssets(mdAssetsDir, registered.downloadUrl);
     const previewSize = (await fsp.stat(outputPath)).size;
     const payload = {
       ok: true,
@@ -682,6 +720,38 @@ app.get("/downloads/:id", (req, res) => {
   }
 
   res.download(item.filePath, item.downloadName, (error) => {
+    if (!error) return;
+    if (!res.headersSent) res.status(500).send(error.message);
+  });
+});
+
+// md 转换产物的图片外置文件下载：/downloads/<id>/asset/<name>。
+// 只允许读取该 downloads 条目登记的 assets 目录内的文件，防止路径穿越。
+app.get("/downloads/:id/asset/:name", async (req, res) => {
+  const item = downloads.get(req.params.id);
+  if (!item || !/^[A-Za-z0-9-]+$/.test(req.params.id)) {
+    res.status(404).send("File expired or not found.");
+    return;
+  }
+  const assetsDir = item.assetsDir;
+  if (!assetsDir) {
+    res.status(404).send("No assets for this download.");
+    return;
+  }
+  const name = String(req.params.name || "");
+  if (!name || name.includes("\\") || name.includes("/") || name === "." || name === "..") {
+    res.status(400).send("Invalid asset name.");
+    return;
+  }
+  const filePath = path.join(assetsDir, name);
+  try {
+    const stat = await fsp.stat(filePath);
+    if (!stat.isFile()) throw new Error("not a file");
+  } catch {
+    res.status(404).send("Asset not found.");
+    return;
+  }
+  res.download(filePath, name, (error) => {
     if (!error) return;
     if (!res.headersSent) res.status(500).send(error.message);
   });
