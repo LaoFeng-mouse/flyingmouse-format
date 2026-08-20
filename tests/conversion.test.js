@@ -1141,6 +1141,51 @@ test("converts a DOCX with custom Chinese heading styles to Markdown headings", 
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+// 生成带 WPS/Word 自动编号的 docx：标题样式（一级标题/二级标题）挂 numPr
+// 引用 numbering.xml 的多级编号（第 %1 章 / %1.%2），标题文本本身不含编号。
+async function createDocxWithAutoNumbering(filePath, text) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`), "_rels/.rels");
+  // styles.xml：一级标题 → numId=1/ilvl=0（第 %1 章），二级标题 → numId=1/ilvl=1（%1.%2）
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="H1"><w:name w:val="一级标题"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="H2"><w:name w:val="二级标题"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`), "word/styles.xml");
+  // numbering.xml：abstractNum 1 = 多级编号（第 %1 章 / %1.%2）
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="第 %1 章"/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`), "word/numbering.xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>背景</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>现状</w:t></w:r></w:p><w:p><w:r><w:t>正文 ${text}</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>深入</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>细节</w:t></w:r></w:p></w:body></w:document>`), "word/document.xml");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(filePath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
+test("converts a DOCX with WPS auto-numbered headings to Markdown with number prefixes", async () => {
+  const sourcePath = path.join(scratchRoot, "自动编号.docx");
+  await createDocxWithAutoNumbering(sourcePath, "段落 body text");
+  const beforeHash = hashFile(sourcePath);
+
+  const { response, body } = await uploadConvert(sourcePath, "自动编号.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "自动编号.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  // 自动编号（第 X 章 / 1.1）不在标题文本里，必须从 numbering.xml 重算注入
+  assert.match(markdown, /^# 第 1 章 概述$/m);
+  assert.match(markdown, /^## 1\.1 背景$/m);
+  assert.match(markdown, /^## 1\.2 现状$/m);
+  assert.match(markdown, /^# 第 2 章 深入$/m);
+  assert.match(markdown, /^## 2\.1 细节$/m);
+  assert.match(markdown, /正文 段落 body text/);
+  assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
 test("converts Markdown to DOCX without changing the source", async () => {
   const sourcePath = path.join(scratchRoot, "文档.md");
   await fsp.writeFile(sourcePath, "# 标题\n\n正文内容 line one.", "utf8");
