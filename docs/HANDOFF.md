@@ -11,6 +11,7 @@
 - **验证**：FreeRTOS 实测 md 3.3MB→89.4KB、data:image 37→0、最长行 263,960→1092、37 图全外置且 PNG 魔数正确；本机 Typora 打开外置版 md 正常（typora.log 无 doEnterOversize）；新增 conversion 集成用例（带图 docx fixture 断言 md 无 data:image + 相对引用 + payload.assets + asset 字节与原图一致）与 electron-security 用例，全过。
 - **打包发布（2026-08-20 同日）**：满血版桌面目录 + zip 已重打（`FlyingMouse-Format-满血版匿名-Windows-x64.zip`，21153 条目 / 4.18GB→2.2GB / asar 四要素验证 ALL PASS / md5 `1f335ccc1c4f2e614dae2c82bece7f97`，sha256 `acebf331087146206447e7b400589f04f77875326287710ea29bc293824e8e12`）；合规版 v0.6.2 已发 GitHub（Latest，六件套，CI run 32331084553 全绿，latest.yml 校验通过）。修复提交：full-version 1664e64 / main bbe6fcf（cherry-pick，HANDOFF 除外）。
 - **本机安装（2026-08-20）**：D1/D2 已从合规版 v0.6.1（27ba6ce3）升级为满血版（fa9692961a471b7a1421a05a2656b0a1，与 dist/win-unpacked 一致）——robocopy 拷贝法，软件未运行，装完三处 asar md5 核对一致；桌面快捷方式指向的 D2 与 %LOCALAPPDATA% 的 D1 同步。
+- **★自动更新禁用（2026-08-20 二次打包）**：满血版原带 setupAutoUpdater + build.publish 指向公开合规版仓库——打开满血版会检查到合规版 v0.6.2 并 autoDownload+autoInstallOnAppQuit，退出时把满血版（含解锁模块）自动覆盖成合规版（危险！）。已修：setupAutoUpdater 直接 return（updater=null，check-for-updates IPC 返回 unavailable）+ package.json 移除 build.publish（打包不再生成 app-update.yml）+ D1/D2/桌面残留 app-update.yml 已删。二次打包 asar md5 06cd6467c0f8b01a806aa4024924d077，桌面 zip 重打。**最终 zip md5 59832dfcc1e8691d82c480ed62516018** / sha256 c9ca91bbde1364dab9702e203360e2ad8ff8679a1cafd17544c365f7ffd0ed48（覆盖先前 1f335ccc 版本）。提交：74c0480（禁用+publish 移除）、其后注释去仓库名提交。
 - **待办（下一窗口）**：① 提交（当前工作树 6 文件改动未 commit）；② 打包发版决策（版本号 bump + 是否随下版发布）；③ 客户机实测验收；④ 保存时用户改文件名 ≠ downloadName 时 assets 目录名错位的已知限制（默认名一致时无影响）。
 
 ## 待办（下一窗口，2026-08-14）
