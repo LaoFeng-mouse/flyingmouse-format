@@ -253,12 +253,13 @@ function previewKindFor(downloadName, mimeType) {
   return "unsupported";
 }
 
-function registerDownload(filePath, downloadName, mimeType) {
+function registerDownload(filePath, downloadName, mimeType, options = {}) {
   const id = randomUUID();
   downloads.set(id, {
     filePath,
     downloadName,
     mimeType,
+    assetsDir: options.assetsDir || null,
     createdAt: Date.now()
   });
   return {

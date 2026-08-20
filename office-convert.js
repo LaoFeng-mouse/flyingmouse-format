@@ -9,7 +9,7 @@ const zlib = require("zlib");
 const { randomUUID } = require("crypto");
 const mammoth = require("mammoth");
 const { RUNTIME_DIR, LIBREOFFICE_PATH } = require("./config");
-const { normalizeExt, extFromName } = require("./utils");
+const { normalizeExt, extFromName, outputNameFor } = require("./utils");
 const { createTurndownService } = require("./text-conversion");
 const { OfficeEngineError, runLibreOffice } = require("./office-engine");
 // 注意：htmlToText 从 text-docx.js 延迟 require（convertDocumentToText 内），
@@ -265,7 +265,18 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
 async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, originalName) {
   const ext = normalizeExt(inputExt);
   let html;
+  // 图片外置目录：md 同目录的 `<下载名>.assets/`，md 里用相对路径引用，
+  // 避免 mammoth 把 docx 图片 base64 内嵌成超长单行导致 Typora 拒渲染
+  // （实测 37 张图单行 263KB → doEnterOversize）。
+  // 注意：目录名必须基于 downloadName（outputNameFor(originalName, "md")）
+  // 而不是 outputPath（带时间戳-uuid 前缀），否则用户保存后相对引用断裂。
+  const mdBasename = path.basename(outputNameFor(originalName, "md"), ".md") || "document";
+  const assetsDir = path.join(path.dirname(outputPath), `${mdBasename}.assets`);
+
   if (ext === "docx") {
+    // 注意：mammoth 1.12.0 的 convertImage 选项实测失效（回调从不被调用，
+    // 输出仍是 data URI），因此不传图片钩子，统一在下方 externalizeMarkdownImages
+    // 对最终 md 里的 data:image base64 做外置（不依赖 mammoth 内部行为，各来源通用）。
     const result = await mammoth.convertToHtml({ path: inputPath });
     html = result.value || "";
   } else {
@@ -279,11 +290,76 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
     }
   }
   const turndown = createTurndownService();
-  const markdown = turndown.turndown(html).trim();
+  let markdown = turndown.turndown(html).trim();
+  // 图片外置：把 md 里所有 data:image base64 解码写入 <下载名>.assets/，
+  // md 引用改为相对路径 ./<下载名>.assets/image-N.ext。任何来源（mammoth /
+  // LibreOffice html 导出）产出的内嵌图都在这统一处理，保证不再出现超长单行。
+  const externalized = await externalizeMarkdownImages(markdown, assetsDir, `${mdBasename}.assets`);
+  markdown = externalized.markdown;
+  // 兜底：若仍有超长 base64 单行（如带 charset 参数的非常规 data URI 未被上面
+  // 正则捕获），整行替换为占位符，保证任何来源的 md 都不会再触发 Typora oversize。
+  markdown = markdown.split("\n").map((line) => {
+    if (line.length > 200 * 1024 && /data:image\/[a-z+]+;base64,/i.test(line)) {
+      const altMatch = line.match(/!\[([^\]]*)\]/);
+      return `![${altMatch ? altMatch[1] : "图片"}](已移除超大内嵌图片)`;
+    }
+    return line;
+  }).join("\n");
   if (!markdown) {
     throw new Error("文档转 Markdown 失败，未提取到任何内容。");
   }
   await fsp.writeFile(outputPath, `${markdown}\n`, "utf8");
+  return {
+    assetsDir: externalized.count ? assetsDir : null,
+    assetsCount: externalized.count
+  };
+}
+
+// data:image URI → 文件扩展名（用于 md 图片外置）。
+const MARKDOWN_IMAGE_EXT = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+  "image/tif": "tif",
+  "image/svg+xml": "svg",
+  "image/avif": "avif",
+  "image/x-icon": "ico",
+  "image/emf": "emf",
+  "image/x-emf": "emf",
+  "image/wmf": "wmf"
+};
+
+// 把 markdown 中所有 data:image/<type>;base64,<payload> 外置写入 assetsDir，
+// 引用替换为相对路径 <assetsBaseName>/image-N.ext；返回新 md 与替换数量。
+// 采用「先收集 → 并行写盘 → 从后往前替换」避免异步与索引错位。
+// 与 mammoth convertImage 钩子无关：直接解析最终产物，docx/LibreOffice 各来源通用。
+async function externalizeMarkdownImages(markdown, assetsDir, assetsBaseName) {
+  const regex = /data:image\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)/g;
+  const found = [];
+  let match;
+  while ((match = regex.exec(markdown)) !== null) {
+    const mimeSub = match[1].toLowerCase();
+    const ext = MARKDOWN_IMAGE_EXT[`image/${mimeSub}`] || mimeSub.replace(/[^a-z0-9]/g, "");
+    const safeExt = ext && /^[a-z0-9]{1,8}$/.test(ext) ? ext : "png";
+    found.push({ index: match.index, length: match[0].length, b64: match[2], safeExt });
+  }
+  if (!found.length) return { markdown, count: 0 };
+  await fsp.mkdir(assetsDir, { recursive: true });
+  await Promise.all(found.map((item, i) => {
+    const name = `image-${i + 1}.${item.safeExt}`;
+    return fsp.writeFile(path.join(assetsDir, name), Buffer.from(item.b64, "base64"));
+  }));
+  let out = markdown;
+  for (let i = found.length - 1; i >= 0; i--) {
+    const name = `image-${i + 1}.${found[i].safeExt}`;
+    const replacement = `${assetsBaseName}/${name}`;
+    out = out.slice(0, found[i].index) + replacement + out.slice(found[i].index + found[i].length);
+  }
+  return { markdown: out, count: found.length };
 }
 
 async function convertDocumentToText(inputPath, outputPath, inputExt, originalName) {
@@ -317,6 +393,7 @@ module.exports = {
   convertWithLibreOffice,
   convertDocumentToMarkdown,
   convertDocumentToText,
+  externalizeMarkdownImages,
   readDocxEntryString,
   docxNeedsPdfRepair,
   repairDocxViaRoundtrip,

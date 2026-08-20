@@ -20,7 +20,8 @@ function isTrustedRendererUrl(candidate, serverUrl) {
 function resolveTrustedDownloadUrl(candidate, serverUrl) {
   const parsed = parseUrl(candidate, serverUrl);
   if (!parsed || !isTrustedRendererUrl(parsed.toString(), serverUrl)) return null;
-  if (!/^\/downloads\/[^/]+$/.test(parsed.pathname)) return null;
+  if (!/^\/downloads\/[^/]+$/.test(parsed.pathname)
+      && !/^\/downloads\/[^/]+\/asset\/[^/]+$/.test(parsed.pathname)) return null;
   if (parsed.search || parsed.hash) return null;
   return parsed.toString();
 }

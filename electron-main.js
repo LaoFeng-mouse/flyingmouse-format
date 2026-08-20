@@ -187,6 +187,32 @@ function downloadToFile(url, destination) {
   });
 }
 
+// md 转换产物带图片外置目录时，把 assets 清单里的图片下载到
+// `<md所在目录>/<下载名basename>.assets/`，与 md 内相对引用（./xxx.assets/...）对应。
+async function downloadAssetsToMdSidecar(assets, mdDestination) {
+  if (!Array.isArray(assets) || !assets.length) return;
+  const mdDir = path.dirname(mdDestination);
+  const mdBasename = path.basename(mdDestination, path.extname(mdDestination)) || "document";
+  const assetsDir = path.join(mdDir, `${mdBasename}.assets`);
+  await fs.promises.mkdir(assetsDir, { recursive: true });
+  for (const asset of assets) {
+    const name = path.basename(String(asset?.name || ""));
+    if (!name) continue;
+    let absoluteUrl;
+    try {
+      absoluteUrl = trustedDownloadUrl(asset?.url);
+    } catch (error) {
+      log("Rejected md asset URL", error);
+      continue;
+    }
+    try {
+      await downloadToFile(absoluteUrl, path.join(assetsDir, name));
+    } catch (error) {
+      log(`Failed to download md asset: ${name}`, error);
+    }
+  }
+}
+
 function assertTrustedIpc(event) {
   if (!isTrustedRendererUrl(event.senderFrame?.url, serverUrl)) {
     throw new Error("拒绝来自非本地页面的保存请求。");
@@ -269,6 +295,7 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   assertTrustedIpc(event);
   const fileName = path.basename(String(payload?.fileName || "converted-file"));
   const absoluteUrl = trustedDownloadUrl(payload?.downloadUrl);
+  const assets = Array.isArray(payload?.assets) ? payload.assets : [];
   const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "保存转换后的文件",
@@ -281,6 +308,9 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   }
 
   await downloadToFile(absoluteUrl, result.filePath);
+  // md 转换产物带图片外置目录时，把图片下载到 md 同目录的 <下载名>.assets/，
+  // 保证 md 里的相对图片引用（./xxx.assets/...）可用。
+  await downloadAssetsToMdSidecar(assets, result.filePath);
   await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
     .catch((error) => log("Failed to remember save directory", error));
   return { canceled: false, filePath: result.filePath };
@@ -295,7 +325,8 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
 
   const trustedFiles = files.map((item) => ({
     fileName: path.basename(String(item?.fileName || "converted-file")),
-    downloadUrl: trustedDownloadUrl(item?.downloadUrl)
+    downloadUrl: trustedDownloadUrl(item?.downloadUrl),
+    assets: Array.isArray(item?.assets) ? item.assets : []
   }));
 
   const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
@@ -317,6 +348,7 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
   for (const item of trustedFiles) {
     const destination = uniqueDestination(directory, item.fileName);
     await downloadToFile(item.downloadUrl, destination);
+    await downloadAssetsToMdSidecar(item.assets, destination);
     saved.push(destination);
   }
 
