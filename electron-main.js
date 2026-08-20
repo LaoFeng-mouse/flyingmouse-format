@@ -85,6 +85,11 @@ function pushUpdateStatus(status) {
 }
 
 function setupAutoUpdater() {
+  // 满血版禁用自动更新（2026-08-20）：build.publish 指向公开合规版仓库
+  // （LaoFeng-mouse/flyingmouse-format），若启用会检查到合规版 v0.6.2 并
+  // autoDownload + autoInstallOnAppQuit，退出时自动把满血版（含解锁模块）
+  // 覆盖成合规版。updater 保持 null → check-for-updates IPC 返回 unavailable。
+  return;
   if (!app.isPackaged || process.windowsStore) return;
   // mac（github-dmg）：Release 没有 latest-mac.yml 资产，检查更新必 404；不启用
   if (process.platform === "darwin") return;

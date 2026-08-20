@@ -59,13 +59,6 @@
     "appId": "com.flyingmouse.format",
     "productName": "FlyingMouse Format",
     "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "LaoFeng-mouse",
-        "repo": "flyingmouse-format"
-      }
-    ],
     "directories": {
       "output": "dist"
     },
