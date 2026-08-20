@@ -7,7 +7,7 @@
 - **版本**：v0.6.2（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.2（Latest，6 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml；win7 blockmap 未上传，win7 禁用自动更新无影响）
 - **main**：HEAD 1a23bfd（bbe6fcf 修复 + 1a23bfd bump 0.6.2），已同步 origin/main；full-version 分支 = 满血版（含解锁模块，匿名，自留，本次桌面 zip 已重打）
 - **CI**：Release validation run 32331084553 全绿（mac arm64/x64 + validate-and-build），云端 publish 自动发布 v0.6.2；latest.yml 校验通过（version 0.6.2 / url 连字符 / sha512 与 exe 一致）
-- **本机**：D1/D2 已升级为满血版（fa9692961a471b7a1421a05a2656b0a1 = 本地 dist/win-unpacked 拷贝，2026-08-20 装，含 docx→MD 修复 + 解锁模块，UI 版本号显示满血线 0.5.2）；桌面满血版匿名 zip 已重打（含 docx→MD 修复，md5 1f335ccc1c4f2e614dae2c82bece7f97）
+- **本机**：D1/D2 已升级为满血版（06cd6467c0f8b01a806aa4024924d077 = 本地 dist/win-unpacked 拷贝，2026-08-20 二次装，含 docx→MD 修复 + 解锁模块 + 自动更新禁用，UI 版本号显示满血线 0.5.2）；桌面满血版匿名 zip 已重打（最终 md5 59832dfcc1e8691d82c480ed62516018 / sha256 c9ca91bbde1364dab9702e203360e2ad8ff8679a1cafd17544c365f7ffd0ed48；含自动更新禁用，无 app-update.yml）
 - **测试基线**：main 439 = 433 过 + 1 失败 + 5 跳过（唯一失败 = conversion.test.js「converts a PDF to DOCX」断言 `<w:tab/>` vs 引擎输出更优 `<w:tbl>`，v0.6.1 发布前已存在的本机 D1 引擎行为差异，与本次改动无关，CI 门禁不受影响）；full-version 497 = 493 过 + 0 失败 + 4 skip
 
 ## 最近完成的修复（v0.6.1 → v0.6.2）
