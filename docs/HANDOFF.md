@@ -1,18 +1,16 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-20（docx→MD 图片外置方案 A 已完成并验证，工作树未提交）
+更新时间：2026-08-20（docx→MD 自动编号修复 + 满血版重打完成）
 
-## 2026-08-20：docx→MD 图片 base64 内嵌修复（方案 A 完成，工作树未提交）
+## 2026-08-20：docx→MD 自动编号丢失修复（WPS 多级编号，commit 746e3fd）+ 满血版重打
 
-- **现象**：含图 Word 转 MD 生成超长单行 base64（FreeRTOS 样本 37 图 / 单行 263KB / md 3.3MB），Typora 报「该文件过大」拒渲染；预览正常（Chromium 容忍超长行）。
-- **根因**：mammoth 默认把 docx 图片输出成 data URI，turndown 原样写进 md → 每图一个超长单行。Typora 对单行有 oversize 保护（`doEnterOversize`）。
-- **关键阻塞**：mammoth 1.12.0 的 `convertImage` 选项实测失效（对照实验输出完全相同，回调从不被调用）→ 绕开：不依赖任何图片钩子，对最终 md 统一跑 `externalizeMarkdownImages`（正则收集 data:image base64 → 解码写 `<下载名>.assets/image-N.ext` → md 引用改相对路径）。
-- **改动**（5 文件 + 测试）：office-convert.js（外置 + 兜底，导出函数）、utils.js（registerDownload 带 assetsDir）、server.js（资产清单 + /downloads/:id/asset/:name 路由防穿越）、electron-main.js（downloadAssetsToMdSidecar 保存时拷图）、electron-security.js（★resolveTrustedDownloadUrl 放行 asset 路径——原正则只允许 /downloads/<id>，asset URL 会静默拒绝导致图片拷不过去）、public/app.js（单文件保存传 assets）。
-- **验证**：FreeRTOS 实测 md 3.3MB→89.4KB、data:image 37→0、最长行 263,960→1092、37 图全外置且 PNG 魔数正确；本机 Typora 打开外置版 md 正常（typora.log 无 doEnterOversize）；新增 conversion 集成用例（带图 docx fixture 断言 md 无 data:image + 相对引用 + payload.assets + asset 字节与原图一致）与 electron-security 用例，全过。
-- **打包发布（2026-08-20 同日）**：满血版桌面目录 + zip 已重打（`FlyingMouse-Format-满血版匿名-Windows-x64.zip`，21153 条目 / 4.18GB→2.2GB / asar 四要素验证 ALL PASS / md5 `1f335ccc1c4f2e614dae2c82bece7f97`，sha256 `acebf331087146206447e7b400589f04f77875326287710ea29bc293824e8e12`）；合规版 v0.6.2 已发 GitHub（Latest，六件套，CI run 32331084553 全绿，latest.yml 校验通过）。修复提交：full-version 1664e64 / main bbe6fcf（cherry-pick，HANDOFF 除外）。
-- **本机安装（2026-08-20）**：D1/D2 已从合规版 v0.6.1（27ba6ce3）升级为满血版（fa9692961a471b7a1421a05a2656b0a1，与 dist/win-unpacked 一致）——robocopy 拷贝法，软件未运行，装完三处 asar md5 核对一致；桌面快捷方式指向的 D2 与 %LOCALAPPDATA% 的 D1 同步。
-- **★自动更新禁用（2026-08-20 二次打包）**：满血版原带 setupAutoUpdater + build.publish 指向公开合规版仓库——打开满血版会检查到合规版 v0.6.2 并 autoDownload+autoInstallOnAppQuit，退出时把满血版（含解锁模块）自动覆盖成合规版（危险！）。已修：setupAutoUpdater 直接 return（updater=null，check-for-updates IPC 返回 unavailable）+ package.json 移除 build.publish（打包不再生成 app-update.yml）+ D1/D2/桌面残留 app-update.yml 已删。二次打包 asar md5 06cd6467c0f8b01a806aa4024924d077，桌面 zip 重打。**最终 zip md5 59832dfcc1e8691d82c480ed62516018** / sha256 c9ca91bbde1364dab9702e203360e2ad8ff8679a1cafd17544c365f7ffd0ed48（覆盖先前 1f335ccc 版本）。提交：74c0480（禁用+publish 移除）、其后注释去仓库名提交。
-- **待办（下一窗口）**：① 提交（当前工作树 6 文件改动未 commit）；② 打包发版决策（版本号 bump + 是否随下版发布）；③ 客户机实测验收；④ 保存时用户改文件名 ≠ downloadName 时 assets 目录名错位的已知限制（默认名一致时无影响）。
+- **现象（用户 08-20 报告）**：WPS 生成的 docx 转 md 后「几点几没了」——标题层级编号（第 X 章 / 1.1 / 1.1.1 / 1） / （1））全部消失。
+- **根因**：WPS/Word 标题编号是 numbering.xml 自动编号（numPr numId+ilvl → lvlText 模板渲染），不在标题文本里；mammoth 输出 hN 只保留文本 → 编号消失（标题样式修复 5a68b08 后暴露）。
+- **修复（office-convert.js）**：`computeDocxHeadingNumbers(docxPath)` 解析 numbering/styles/document，按文档顺序重算标题编号前缀注入 md 标题行。计数器按 numId 分组 + lvlOverride startOverride + 低级别清零（Word 语义）；支持 decimal/罗马/中文计数；样式表记录全部样式（含无 numPr 的标准 heading，保持与 mammoth 输出 188 行严格对齐）；手打编号标题不重复注入。已导出。
+- **验证**：FreeRTOS 样本 md 标题 188 行 vs 编号数组逐行对齐 188/188、0 失败；第 1 章…第 4 章 / 1.1 / 2.1.1 / 3.1.1.1 / 1） / （1） 全还原；图片外置不回归（0 data:image / 37 assets 引用）；conversion.test.js 全量 54 = 51 过 + 3 skip + 0 fail；新增回归用例「converts a DOCX with WPS auto-numbered headings to Markdown with number prefixes」。
+- **满血版重打（2026-08-20 16:30）**：npm run dist 构建（v0.5.2 满血线）→ asar 四要素 ALL PASS（解锁模块全在 ncm/kgg/mflac/kgma/vpr/av3a、setupAutoUpdater 禁用、无 app-update.yml）→ robocopy 同步 D1/D2/桌面便携目录（三处 asar md5 `c938317af63f1e99a8d77c8effd510b7` 一致）→ 桌面 zip 重打（21154 条目 / 1.95GB / zip 内 asar md5 与源一致 / 无 yml）。**zip md5 `e05398f513901bc463dcd23fe99a9267` / sha256 `b61126924edc397e50385db0ff6d911a0dad22c80a5daa820ac6c09cc76a5536`**（覆盖 63115465 版本）。
+- **★打包坑（electron-builder 43）**：即使 build.publish 已移除、`--publish never`，electron-builder 检测到 electron-updater 依赖仍会**自动生成** `resources/app-update.yml`（owner/repo 取自 GitHub 仓库信息）→ 满血版打包后必须删（本次已删，D1/D2/便携/zip 均无）。setupAutoUpdater return 已兜底（updater=null 不会检查），删 yml 是双保险。
+- **待办（下一窗口）**：① 本机现场验收（打开 D1/D2 或桌面便携版转 FreeRTOS docx，编号应完整）；② 合规版 main 同步此修复（cherry-pick office-convert.js + 测试，随下版发布）；③ 客户机实测验收。
 
 ## 待办（下一窗口，2026-08-14）
 
