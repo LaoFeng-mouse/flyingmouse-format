@@ -265,6 +265,8 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
 async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, originalName) {
   const ext = normalizeExt(inputExt);
   let html;
+  // WPS/Word 自动编号前缀（docx 分支填充，见 computeDocxHeadingNumbers）
+  let headingNumbers = [];
   // 图片外置目录：md 同目录的 `<下载名>.assets/`，md 里用相对路径引用，
   // 避免 mammoth 把 docx 图片 base64 内嵌成超长单行导致 Typora 拒渲染
   // （实测 37 张图单行 263KB → doEnterOversize）。
@@ -285,6 +287,10 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
       styleMap ? { styleMap } : undefined
     );
     html = result.value || "";
+    // WPS/Word 自动编号：标题的「第 X 章 / 1.1 / 1.1.1」是 numbering 渲染的，
+    // 不写在标题文本里，mammoth 输出 hN 时编号直接消失。按 numbering.xml 计算
+    // 各标题段落的编号前缀，稍后注入 md 标题行（computeDocxHeadingNumbers）。
+    headingNumbers = await computeDocxHeadingNumbers(inputPath);
   } else {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-docmd-"));
     const htmlPath = path.join(tempDir, "converted.html");
@@ -297,6 +303,24 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
   }
   const turndown = createTurndownService();
   let markdown = turndown.turndown(html).trim();
+  // WPS/Word 自动编号注入：把 computeDocxHeadingNumbers 算出的标题编号前缀
+  // （第 X 章 / 1.1 / 1.1.1 / 1） / （1））按顺序拼到 md 标题行前。
+  // 顺序对齐依据：mammoth 按文档顺序输出标题，与计算数组一一对应；
+  // 数量不一致时取较短的（宁可少编号也不错位）。
+  if (headingNumbers.length) {
+    let numberIndex = 0;
+    markdown = markdown.split("\n").map((line) => {
+      const m = line.match(/^(#{1,6})\s+(\S.*)$/);
+      if (!m || numberIndex >= headingNumbers.length) return line;
+      const prefix = headingNumbers[numberIndex++].prefix;
+      if (!prefix) return line;
+      // 标题文本已自带编号（手打「第一章/1.1/（1）」）则不重复注入
+      if (/^第[\d一二三四五六七八九十百千]+[章节]/.test(m[2])) return line;
+      if (/^[\d一二三四五六七八九十]+[.．、）)\-]/.test(m[2])) return line;
+      if (/^[（(]\s*[\d一二三四五六七八九十]+\s*[）)]/.test(m[2])) return line;
+      return `${m[1]} ${prefix} ${m[2]}`;
+    }).join("\n");
+  }
   // 图片外置：把 md 里所有 data:image base64 解码写入 <下载名>.assets/，
   // md 引用改为相对路径 ./<下载名>.assets/image-N.ext。任何来源（mammoth /
   // LibreOffice html 导出）产出的内嵌图都在这统一处理，保证不再出现超长单行。
@@ -361,6 +385,156 @@ async function mammothHeadingStyleMap(docxPath) {
     }
   }
   return styleMap.length ? styleMap : undefined;
+}
+
+// ============ WPS/Word 自动编号（多级标题编号 → md 标题前缀）============
+// WPS/Word 里标题的「第 X 章 / 1.1 / 1.1.1 / 1） / （1）」不是文本，而是
+// numbering.xml 定义的自动编号，由渲染器按 numPr（numId + ilvl）计算。
+// mammoth 输出 hN 时只保留文本，编号消失 → 这里按文档顺序重算前缀，
+// 与 mammoth 输出的标题行一一对应注入。
+
+// 从 XML 片段提取 numPr 引用（ilvl/numId 顺序不定，WPS 常把 ilvl 放前面）
+function numPrFromXml(xml) {
+  const numPr = (xml.match(/<w:numPr>([\s\S]*?)<\/w:numPr>/) || [])[1];
+  if (!numPr) return null;
+  const numId = (numPr.match(/<w:numId w:val="(\d+)"/) || [])[1];
+  if (!numId) return null;
+  const ilvl = (numPr.match(/<w:ilvl w:val="(\d+)"/) || [])[1];
+  return { numId, ilvl: ilvl ? parseInt(ilvl, 10) : 0 };
+}
+
+// numFmt 值 → 编号文本（decimal/罗马/字母/中文计数；bullet 等返回数字占位，
+// 由调用方按 lvlText 是否为纯符号判断是否无编号）。
+const ROMAN_NUMERALS = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii", "xiii", "xiv", "xv"];
+function numberingValueText(fmt, n) {
+  switch (fmt) {
+    case "decimal":
+    case "decimalZero":
+      return String(n);
+    case "lowerRoman":
+    case "upperRoman": {
+      const r = ROMAN_NUMERALS[((n - 1) % 15 + 15) % 15];
+      return fmt === "upperRoman" ? r.toUpperCase() : r;
+    }
+    case "lowerLetter":
+    case "upperLetter": {
+      const c = String.fromCharCode(97 + (((n - 1) % 26) + 26) % 26);
+      return fmt === "upperLetter" ? c.toUpperCase() : c;
+    }
+    case "chineseCounting":
+    case "chineseCountingThousand": {
+      const CN = "一二三四五六七八九十";
+      if (n >= 1 && n <= 10) return CN[n - 1];
+      if (n < 20) return `十${CN[(n % 10) - 1] || ""}`;
+      if (n < 100) {
+        const tens = Math.floor(n / 10);
+        const ones = n % 10;
+        return `${CN[tens - 1]}十${ones ? CN[ones - 1] : ""}`;
+      }
+      return String(n);
+    }
+    case "bullet":
+    default:
+      return String(n);
+  }
+}
+
+// 解析 numbering.xml：numId→abstractNumId、abstractNumId→各级 lvl 定义、
+// numId→lvlOverride 的 startOverride（WPS「重新开始编号」会生成）。
+function parseDocxNumbering(numberingXml) {
+  const numToAbstract = {};
+  const abstractDefs = {};
+  const numOverrides = {};
+  for (const m of numberingXml.matchAll(/<w:num w:numId="(\d+)"[^>]*>([\s\S]*?)<\/w:num>/g)) {
+    const numId = m[1];
+    const am = m[2].match(/<w:abstractNumId w:val="(\d+)"/);
+    if (am) numToAbstract[numId] = am[1];
+    const overrides = {};
+    for (const ov of m[2].matchAll(/<w:lvlOverride w:ilvl="(\d+)">([\s\S]*?)<\/w:lvlOverride>/g)) {
+      const so = ov[2].match(/<w:startOverride w:val="(\d+)"/);
+      if (so) overrides[parseInt(ov[1], 10)] = parseInt(so[1], 10);
+    }
+    if (Object.keys(overrides).length) numOverrides[numId] = overrides;
+  }
+  for (const m of numberingXml.matchAll(/<w:abstractNum w:abstractNumId="(\d+)"[^>]*>([\s\S]*?)<\/w:abstractNum>/g)) {
+    const defs = {};
+    for (const l of m[2].matchAll(/<w:lvl w:ilvl="(\d+)"[^>]*>([\s\S]*?)<\/w:lvl>/g)) {
+      const ilvl = parseInt(l[1], 10);
+      defs[ilvl] = {
+        fmt: (l[2].match(/<w:numFmt w:val="([^"]+)"/) || [])[1] || "decimal",
+        text: (l[2].match(/<w:lvlText w:val="([^"]*)"/) || [])[1] || "",
+        start: parseInt((l[2].match(/<w:start w:val="(\d+)"/) || [])[1] || "1", 10)
+      };
+    }
+    abstractDefs[m[1]] = defs;
+  }
+  return { numToAbstract, abstractDefs, numOverrides };
+}
+
+// 计算 docx 全部标题段落（含无编号的）的自动编号前缀，按文档顺序。
+// 返回 [{ level: 1-6, prefix: string }]；无编号的标题 prefix 为空串。
+// 与 mammoth 输出顺序对齐（mammoth 也按文档顺序输出 hN）。
+// ★ 计数器按 numId 分组（不同 numId 是独立编号实例；WPS「重新开始编号」
+//   会生成带 startOverride 的新 numId）；低级别出现时高级别清零（Word 语义）。
+async function computeDocxHeadingNumbers(docxPath) {
+  const [numberingXml, stylesXml, documentXml] = await Promise.all([
+    readDocxEntryString(docxPath, "word/numbering.xml"),
+    readDocxEntryString(docxPath, "word/styles.xml"),
+    readDocxEntryString(docxPath, "word/document.xml")
+  ]);
+  if (!documentXml) return [];
+  const numbering = numberingXml ? parseDocxNumbering(numberingXml) : null;
+
+  // 样式：styleId → { name, numId, ilvl }。记录所有样式（含无 numPr 的标准
+  // heading 样式——mammoth 内置识别它们也会输出 hN，必须进数组保持对齐），
+  // numId/ilvl 仅带 numPr 的样式才有。
+  const styleInfo = {};
+  if (stylesXml) {
+    for (const m of stylesXml.matchAll(/<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)) {
+      const name = (m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "";
+      const numPr = numPrFromXml(m[2]);
+      styleInfo[m[1]] = { name, numId: numPr ? numPr.numId : null, ilvl: numPr ? numPr.ilvl : 0 };
+    }
+  }
+
+  // 自闭合空段落（<w:p .../>）先剔除，避免正则吞内容
+  const docWithoutSelfClosing = documentXml.replace(/<w:p\b[^>]*\/>/g, "");
+  const counters = {}; // `${numId}:${ilvl}` -> 当前值
+  const results = [];
+  for (const m of docWithoutSelfClosing.matchAll(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g)) {
+    const body = m[1];
+    const styleId = (body.match(/<w:pStyle w:val="([^"]+)"/) || [])[1] || "";
+    const style = styleInfo[styleId];
+    const level = style ? headingLevelFromStyleName(style.name) : 0;
+    if (!level) continue; // 非标题段落（正文列表编号由 mammoth 转 ol/ul）
+    // 段落自身 numPr 优先于样式 numPr
+    const ownNumPr = numPrFromXml(body);
+    const numId = ownNumPr ? ownNumPr.numId : style?.numId;
+    const ilvl = ownNumPr ? ownNumPr.ilvl : style?.ilvl;
+    let prefix = "";
+    if (numId && numbering) {
+      const abstractId = numbering.numToAbstract[numId];
+      const defs = abstractId ? numbering.abstractDefs[abstractId] : undefined;
+      const def = defs && defs[ilvl];
+      if (def && def.text && !/^[\uf0d8\uf06e\uf075\uf06c\u2022\u00b7*\-]+$/.test(def.text)) {
+        const key = `${numId}:${ilvl}`;
+        // start：lvlOverride 的 startOverride 优先（WPS 重新开始编号）
+        const start = numbering.numOverrides?.[numId]?.[ilvl] ?? def.start;
+        counters[key] = (counters[key] ?? (start - 1)) + 1;
+        // Word 语义：更高级别（ilvl 更小）出现时，本级别以下的计数器清零；
+        // 本级别出现时，其下所有级别也清零
+        for (let l = ilvl + 1; l <= 9; l++) counters[`${numId}:${l}`] = 0;
+        // lvlText 模板 %1..%9 → 各级计数（%1=ilvl0, %2=ilvl1, ...）
+        prefix = def.text.replace(/%(\d)/g, (_, d) => {
+          const lvl = parseInt(d, 10) - 1;
+          const value = counters[`${numId}:${lvl}`] ?? 0;
+          return numberingValueText(def.fmt, value);
+        });
+      }
+    }
+    results.push({ level, prefix });
+  }
+  return results;
 }
 
 // data:image URI → 文件扩展名（用于 md 图片外置）。
@@ -444,6 +618,10 @@ module.exports = {
   externalizeMarkdownImages,
   mammothHeadingStyleMap,
   headingLevelFromStyleName,
+  computeDocxHeadingNumbers,
+  parseDocxNumbering,
+  numberingValueText,
+  numPrFromXml,
   readDocxEntryString,
   docxNeedsPdfRepair,
   repairDocxViaRoundtrip,
