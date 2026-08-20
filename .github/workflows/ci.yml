@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -16,8 +17,52 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Cache fixed conversion engines
+        uses: actions/cache@v4
+        with:
+          path: output/ci-engines-v1.tar.zst
+          key: ci-engines-v1-${{ hashFiles('ci-engines-v1.json') }}
+
       - name: Install dependencies
         run: npm ci
+
+      # conversion.test.js 等真实转换测试需要 bin/ 引擎（ffmpeg/poppler/tessdata/
+      # LibreOffice/docstructure），gitignore 不入库——与发布门禁（release.yml）一致，
+      # 从 ci-engines-v1 Release 恢复后再跑全量测试，否则引擎测试 ENOENT 假失败。
+      - name: Restore fixed conversion engines
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .\scripts\restore-ci-engines.ps1
+
+      - name: Validate locked document structure engine
+        shell: powershell
+        run: node scripts/lock-docstructure-engine.js --verify --root bin/docstructure --lock docstructure-engine-lock.json
+
+      - name: Probe document structure engine
+        shell: bash
+        run: |
+          # 引擎 MODEL_MISSING 启动探针退出码 20，JSON 写到 stderr。
+          # runner 的 bash 默认 -e（set -e）——引擎退出码非 0 会直接终止脚本，
+          # 需先 set +e 捕获退出码再判断（powershell/cmd 方式另有 stderr 问题，均弃用）。
+          set +e
+          output=$(./bin/docstructure/docstructure-engine.exe 2>&1)
+          code=$?
+          set -e
+          echo "engine probe exit=$code"
+          echo "$output" | grep -q '"code":"MODEL_MISSING"' || { echo "missing MODEL_MISSING marker: $output"; exit 1; }
+          test "$code" -eq 20 || { echo "unexpected exit code: $code"; exit 1; }
+
+      - name: Stage locked Thai OCR data for Windows tests
+        shell: powershell
+        run: |
+          $source = 'node_modules\@tesseract.js-data\tha\4.0.0_best_int\tha.traineddata.gz'
+          $destination = 'bin\tessdata\tha.traineddata.gz'
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Locked Thai OCR data is missing.' }
+          Copy-Item -LiteralPath $source -Destination $destination -Force
+          $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+          $destinationHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+          if ($sourceHash -ne $destinationHash) { throw 'Thai OCR data copy failed hash validation.' }
 
       - name: Syntax check
         run: |
@@ -28,9 +73,7 @@ jobs:
           node --check public/app.js
 
       - name: Run test suite
-        # conversion.test.js needs bin/ engines (ffmpeg/poppler/tessdata), which are gitignored;
-        # the full 25-test suite runs on the dev machine (npm test), CI runs the engine-free suite.
-        run: npm run test:ci
+        run: npm test
 
       - name: Production dependency audit
         run: npm audit --omit=dev
