@@ -58,11 +58,16 @@ Electron 保存对话框 → 用户选择的目录
 | 音视频 | FFmpeg |
 | AV3A / Audio Vivid | AVS3 解码器 + FFmpeg |
 | Office / WPS 文档 | LibreOffice |
+| OFD 版式文档 | @miconvert/ofd-to-pdf（纯 JS，随依赖打包，无外部二进制） |
 | PDF 渲染 | Poppler |
 | OCR | Tesseract |
 | 图片 | Sharp |
 
 这些大型二进制不提交到 Git 仓库；正式安装包通过 `extraResources` 打入应用。
+
+OFD（国标 GB/T 33190）输入注册在 document 类别，但 `targetsForExt` 对其提前返回只暴露 `pdf`/`zip`：
+`ofd-convert.js`（`@miconvert/ofd-to-pdf`，纯 JS）转出 PDF 后自动复用现有 PDF→图片/文字/Word 全链路。
+LibreOffice 无法打开 OFD，因此 OFD 分支在 server.js 的 document 分发最前拦截，不经 LO。
 
 ## 资源与文本质量策略
 

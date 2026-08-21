@@ -1,6 +1,16 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-21（编号注入加固：双轴代码审查 + 5 个回归测试）
+更新时间：2026-08-21（OFD→PDF 接入 + 编号注入加固）
+
+## 2026-08-21：OFD→PDF 接入（@miconvert/ofd-to-pdf，纯 JS 链路）
+
+- **背景**：OFD（国标 GB/T 33190 开放版式文档）国内政企/税务/发票场景常见，LibreOffice 打不开。
+- **选型**：`@miconvert/ofd-to-pdf`（Apache-2.0，纯 JS 无原生依赖，离线可用；依赖 jszip/pdf-lib/fast-xml-parser 与项目现有重叠）。用真实样本实测：89 页扫描件类 OFD（DLTech21/ofd.js public/2.ofd）1.7s 转出合法 PDF，第 45 页 vision 验证中文清晰布局完整；30KB 标准测试文档 206ms 转出。
+- **实现**：新模块 `ofd-convert.js`（`convertOfdToPdf(input, output, originalName?)`，4 层校验 + 产出校验）；config.js `documentInput` 加 `ofd`（归文档类）+ `ofdOnlyPdfTargets`；utils.js `targetsForExt` 对 ofd 提前返回（只暴露 pdf+zip，防 LibreOffice 目标外泄）；server.js document 分支最前插 ofd 分支（multer 临时文件无扩展名，用 originalName 校验）；package.json build.files 白名单 + test/test:ci 脚本已同步。
+- **转出 PDF 后自动复用现有 PDF→图片/文字/Word 全链路**（选 pdf 为目标的收益）。
+- **测试**：新增 tests/ofd-convert.test.js 11 例全过——注册/类别/目标收敛（含 LO 可用时不外泄）/ 3 类非法输入 / 损坏 OFD 友好报错 / 真实夹具转出合法 PDF（5 页 82KB，%PDF 魔数 + pdf-lib 页数）/ 确定性（两次 SHA256 一致）/ capabilities 数据驱动带出 / HTTP 上传→转换→下载全链路 / OFD→docx 被 400 白名单拒绝。夹具 tests/fixtures/sample.ofd（999.ofd，29KB，本地自备不入库，缺失时 skip）。
+- **安全取舍（重要）**：npm audit 现报 2 个 moderate——fast-xml-parser 4.5.7（XMLBuilder 注释/CDATA 注入，无 4.x 修复版）。**已接受**：该库只用 XMLParser 解析方向，advisory 针对 XMLBuilder 写入（本项目不构建 XML），OFD 为本地用户文件无外部不可信输入；发版门禁卡高危。尝试过 package.json overrides 升 5.7.0：npm 对已有 lockfile 不重应用（实测确认），强制重装需删 lockfile 代价高，已放弃并移除 overrides 保持一致性。将来若升级 lockfile（npm ci 重装）可再试 overrides。
+- **待办（下一窗口）**：① 合规版 main 同步（cherry-pick ofd 全套：ofd-convert.js/config.js/utils.js/server.js/package.json/tests/ofd-convert.test.js + 本 HANDOFF 节）；② 真实业务 OFD（税务发票等）实测；③ 若 overrides 可行再消 2 moderate。
 
 ## 2026-08-21：docx→MD 自动编号注入加固（code-review 双轴审查 + 修复，cherry-pick 94e2aa4）
 
