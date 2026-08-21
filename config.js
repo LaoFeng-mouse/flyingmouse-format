@@ -146,7 +146,9 @@ const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
 const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml", "epub", "mobi"]);
 const textTargets = ["txt", "md", "html", "json", "csv", "epub"];
-const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd"]);
+const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd", "ofd"]);
+// OFD（国标 GB/T 33190）走自有转换链路（ofd-convert.js），仅支持转 PDF，不经 LibreOffice。
+const ofdOnlyPdfTargets = ["pdf"];
 const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html", "md"];
 const spreadsheetInput = new Set(["xls", "xlsx", "xlsm", "ods", "csv", "tsv", "et", "ett"]);
 const spreadsheetTargets = ["pdf", "xlsx", "xls", "ods", "csv", "html"];
@@ -212,6 +214,7 @@ module.exports = {
   textTargets,
   documentInput,
   documentTargets,
+  ofdOnlyPdfTargets,
   spreadsheetInput,
   spreadsheetTargets,
   presentationInput,

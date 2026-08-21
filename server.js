@@ -37,6 +37,7 @@ const { convertKgg } = require("./kgg-format");
 const { convertMflac } = require("./mflac-format");
 const { convertKgma } = require("./kgma-format");
 const { convertKwm } = require("./kwm-format");
+const { convertOfdToPdf } = require("./ofd-convert");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
@@ -588,7 +589,12 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       else if (requestedTarget === "html") await fsp.writeFile(outputPath, csvToHtmlTable(tabular), "utf8");
       else await convertCsvToPdf(tabular, outputPath);
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
-      if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
+      if (inputExt === "ofd") {
+        // OFD（国标 GB/T 33190）走自有链路（ofd-convert.js → PDF），LibreOffice 打不开。
+        // targetsForExt 已把 ofd 的目标限定为 pdf/zip，zip 在顶部分支处理，此处必为 pdf。
+        // originalName 用于扩展名校验（multer 临时文件无扩展名）。
+        await convertOfdToPdf(file.path, outputPath, originalName);
+      } else if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
         await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
       } else if (category === "presentation" && requestedTarget === "html") {
         await convertPresentationToHtml(file.path, outputPath, originalName);

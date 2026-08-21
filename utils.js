@@ -18,6 +18,7 @@ const {
   textTargets,
   documentInput,
   documentTargets,
+  ofdOnlyPdfTargets,
   spreadsheetInput,
   spreadsheetTargets,
   presentationInput,
@@ -166,6 +167,13 @@ function targetsForExt(rawExt, tools) {
       pdfImageTargets.forEach((target) => targets.add(target));
       targets.add("pdf");
     }
+  }
+
+  // OFD 只走自有转换链路（ofd-convert.js → PDF），LibreOffice 打不开 OFD，
+  // 提前返回避免 document 分支把 docx/odt/txt 等无效目标加进来。
+  if (normalizeExt(rawExt) === "ofd") {
+    ofdOnlyPdfTargets.forEach((target) => targets.add(target));
+    return [...targets];
   }
 
   if (category === "document" && tools.libreoffice) {
