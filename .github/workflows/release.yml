@@ -208,11 +208,24 @@ jobs:
           kill "$pid"
           wait "$pid" || true
 
+      - name: Stage macOS update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          # electron-builder writes dist/latest-mac.yml for every mac build.
+          # Stage it under an arch suffix so the two matrix jobs do not
+          # overwrite each other in the merged release assets directory.
+          test -f dist/latest-mac.yml
+          cp dist/latest-mac.yml "dist/latest-mac-${{ matrix.arch }}.yml"
+          grep -q "url:.*mac-${{ matrix.arch }}.dmg" "dist/latest-mac-${{ matrix.arch }}.yml"
+
       - name: Upload validated DMG
         uses: actions/upload-artifact@v4
         with:
           name: flyingmouse-format-${{ github.ref_name }}-mac-${{ matrix.arch }}
-          path: dist/FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg
+          path: |
+            dist/FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg
+            dist/latest-mac-${{ matrix.arch }}.yml
           if-no-files-found: error
 
   publish:
@@ -230,6 +243,17 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: Merge per-architecture macOS update metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The macOS matrix builds separately for arm64 and x64; each
+          # produced latest-mac-<arch>.yml containing a single artifact
+          # entry.  electron-updater expects one latest-mac.yml listing both
+          # (mirroring a single multi-arch electron-builder run), otherwise
+          # update checks 404 or resolve only one architecture.
+          node scripts/merge-mac-update-yml.js release-assets
 
       - name: Create release and upload assets
         env:
