@@ -14,6 +14,11 @@
 - **测试**：conversion.test.js 新增 5 例（通用 docx 构造器 `createNumberedDocx` 共用，取代逐用例 yazl 复制）：① 引号样式名一致性（管线）② 混排 numFmt + 未激活级别「零」（管线）③ 手打编号防重复注入（管线）④ injectHeadingPrefixes 围栏跳过 + 对齐保持（单测，```/```lang 双形态）⑤ 手打守卫 + 前缀耗尽（单测）。full-version 全量 504 = 500 过 + 4 skip + 0 fail；main 全量见下方「当前状态·测试基线」。
 - **待办（下一窗口）**：① 本机现场验收（转 FreeRTOS docx 编号完整）② 客户机实测验收（main 同步已随本次完成）。
 
+## 2026-08-21（补充）：新格式接入核查 + PyMuPDF AGPL 合规（合规版文档同步）
+
+- **PyMuPDF AGPL-3.0**：docs/privacy-policy.html §3 第三方组件 + README License 段附许可说明与源码链接（docengine 含 PyMuPDF，按 AGPL 提供源码获取途径）。
+- **新格式接入核查（满血版，结果已记录在 full-version HANDOFF）**：mmp4 修复（musicex apiFilename 白名单补 mmp4/mflac2，抽 normalizeApiFilename 纯函数 + 6 断言单测）；KWM/mmp4/mgg2 部署验证（三处 asar md5 c938317a 均含 kwm-format×3/mmp4×2）。合规版按设计不含解锁格式，不受影响。
+
 ## 当前状态
 
 - **版本**：v0.6.4（合规版，部分格式已下架）。GitHub Release 已发布：https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.6.4（Latest，6 资产：win x64 标准版 + win7 兼容版 + mac arm64/x64 DMG + blockmap + latest.yml；**v0.6.1/v0.6.2/v0.6.3 已删除**）。v0.6.4 = docx→MD WPS 自动编号恢复（第 X 章 / 1.1 / 1.1.1）
