@@ -433,7 +433,7 @@ async function convertMflac(inputPath, options = {}) {
     const creds = await loadQqMusicCredentials(options.cookiePath);
     if (!creds) {
       throw qmcError(
-        "这个文件是 QQ 音乐新版加密（STag/mgg2），文件中不包含密钥；需要 QQ 音乐登录凭据在线换取密钥。请把 QQ 音乐的登录 cookie 文件放到桌面（QQ音乐_登录cookie.txt）后重试。",
+        "这个文件是 QQ 音乐新版加密（STag/mgg2/mmp4），文件中不包含密钥；需要 QQ 音乐登录凭据在线换取密钥。请把 QQ 音乐的登录 cookie 文件放到桌面（QQ音乐_登录cookie.txt）后重试。",
         "MFLAC_EKEY_REQUIRED"
       );
     }
@@ -454,9 +454,8 @@ async function convertMflac(inputPath, options = {}) {
     ekey = footer.ekey;
     audioEnd = buf.length - 8 - (buf.readUInt32BE(buf.length - 8));
   } else if (footer.type === "musicex") {
-    const apiFilename = /\.(mgg|mflac|mgg0|mgg1|mgg2|mggl|mflac0|mflach)$/i.test(footer.filename)
-      ? footer.filename
-      : `${footer.filename}${path.extname(inputPath) || ".mflac"}`;
+    // musicex footer（STag 之外的变体）：原档 ekey 在线换取（可能非空但错误 → 自动降档）
+    const apiFilename = normalizeApiFilename(footer.filename, inputPath);
     const creds = await loadQqMusicCredentials(options.cookiePath);
     if (!creds) {
       throw qmcError(
@@ -502,4 +501,14 @@ async function convertMflac(inputPath, options = {}) {
   return { nativePath, format, tempDir };
 }
 
-module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames, tryDecryptCandidates };
+// QQ 音乐 musicex API 的文件名必须是真实档位名（xxx.mflac / xxx.mgg / xxx.mmp4 / xxx.mflac2 等）。
+// footer 里的 filename 已带受支持扩展名则原样使用；否则补上输入文件自身的扩展名（.mmp4 等）。
+// ★ 扩展名白名单必须覆盖全部 musicex 变体（含 mmp4/mflac2）：漏一个就会把已带扩展名的
+// 文件名再拼一次（xxx.mmp4.mmp4）→ 在线换 key 必然失败。
+function normalizeApiFilename(footerFilename, inputPath) {
+  return /\.(mgg|mflac|mgg0|mgg1|mgg2|mggl|mflac0|mflach|mmp4|mflac2)$/i.test(footerFilename)
+    ? footerFilename
+    : `${footerFilename}${path.extname(inputPath) || ".mflac"}`;
+}
+
+module.exports = { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, loadQqMusicCredentials, fetchEkeyFromApi, musicexFallbackFilenames, tryDecryptCandidates, normalizeApiFilename };

@@ -4,7 +4,7 @@ const os = require("node:os");
 const fsp = require("node:fs/promises");
 const { test } = require("node:test");
 
-const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, musicexFallbackFilenames, loadQqMusicCredentials, tryDecryptCandidates } = require("../mflac-format");
+const { convertMflac, parseMflacFooter, parseV1KeyRegion, deriveQmcKey, musicexFallbackFilenames, normalizeApiFilename, loadQqMusicCredentials, tryDecryptCandidates } = require("../mflac-format");
 const { QMC2MAP, QMC2RC4, createQMC2 } = require("../kgg-format");
 
 // 隔离真实桌面凭据：默认 cookie 路径指向不存在的文件，确保测试不读真实凭据、不发起网络请求。
@@ -202,6 +202,18 @@ test("static: config exposes mmp4 (musicex) input and server dispatches it to co
     serverSource.includes("unlockAudioInputs.has(inputExt)"),
     "server.js 应把 mmp4 分发给解密链路（musicex）"
   );
+});
+
+test("normalizeApiFilename 保留已带 musicex 扩展名的档位名（含 mmp4/mflac2，回归：曾漏掉导致 xxx.mmp4.mmp4）", () => {
+  // footer 已带受支持扩展名 → 原样使用，绝不重复拼接
+  assert.strictEqual(normalizeApiFilename("F0M00007VNd52q6aSX.mflac", "C:/tmp/歌.mmp4"), "F0M00007VNd52q6aSX.mflac");
+  assert.strictEqual(normalizeApiFilename("F0M00007VNd52q6aSX.mmp4", "C:/tmp/歌.mmp4"), "F0M00007VNd52q6aSX.mmp4");
+  assert.strictEqual(normalizeApiFilename("F0M00007VNd52q6aSX.mflac2", "C:/tmp/歌.mflac2"), "F0M00007VNd52q6aSX.mflac2");
+  assert.strictEqual(normalizeApiFilename("F0M00007VNd52q6aSX.mgg2", "C:/tmp/歌.mgg2"), "F0M00007VNd52q6aSX.mgg2");
+  // footer 无扩展名 → 补输入文件自身的扩展名（.mmp4 场景）
+  assert.strictEqual(normalizeApiFilename("00225ydR0y8KTj", "C:/tmp/歌.mmp4"), "00225ydR0y8KTj.mmp4");
+  // 输入文件无扩展名 → 兜底 .mflac
+  assert.strictEqual(normalizeApiFilename("00225ydR0y8KTj", "C:/tmp/歌"), "00225ydR0y8KTj.mflac");
 });
 
 test("musicexFallbackFilenames 按音质从高到低生成降档候选", () => {
