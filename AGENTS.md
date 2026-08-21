@@ -4,7 +4,7 @@
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、NCM/AV3A/KGMA/mflac/mgg/mmp4 加密音频解锁、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
+当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、NCM/AV3A/KGMA/mflac/mgg/mgg2/mmp4/KWM 加密音频解锁、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
