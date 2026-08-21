@@ -1186,6 +1186,141 @@ test("converts a DOCX with WPS auto-numbered headings to Markdown with number pr
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
+// —— 2026-08-21 编号注入加固的回归测试 ——
+// 通用 docx 构造器（带 numbering）：给定 styles/numbering/document 三个 XML 片段
+// 打包成最小 docx。新增编号/样式回归用例共用，避免每个用例复制一份 yazl 收尾。
+async function createNumberedDocx(filePath, stylesXml, numberingXml, documentXml) {
+  const yazl = require("yazl");
+  const zip = new yazl.ZipFile();
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`), "[Content_Types].xml");
+  zip.addBuffer(Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`), "_rels/.rels");
+  zip.addBuffer(Buffer.from(stylesXml), "word/styles.xml");
+  zip.addBuffer(Buffer.from(numberingXml), "word/numbering.xml");
+  zip.addBuffer(Buffer.from(documentXml), "word/document.xml");
+  await new Promise((resolve, reject) => {
+    const stream = zip.outputStream.pipe(fs.createWriteStream(filePath));
+    stream.on("finish", resolve);
+    stream.on("error", reject);
+    zip.end();
+  });
+}
+
+const DOCX_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+const AUTO_NUMBERING_XML = `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="第 %1 章"/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`;
+
+test("injectHeadingPrefixes skips fenced code blocks and keeps heading alignment (regression)", () => {
+  const { injectHeadingPrefixes } = require("../office-convert");
+  const prefixes = [
+    { prefix: "第 1 章" },
+    { prefix: "1.1" },
+    { prefix: "1.2" }
+  ];
+  // ``` 与 ```lang 两种围栏内都放 # 开头行；围栏后紧跟下一个标题
+  const md = [
+    "# 概述",
+    "",
+    "## 背景",
+    "",
+    "```js",
+    "# 代码行一",
+    "### 代码行二",
+    "```",
+    "",
+    "```",
+    "# 代码行三",
+    "```",
+    "",
+    "## 现状"
+  ].join("\n");
+  const out = injectHeadingPrefixes(md, prefixes);
+  // 围栏外标题按序注入
+  assert.match(out, /^# 第 1 章 概述$/m);
+  assert.match(out, /^## 1\.1 背景$/m);
+  // 围栏内的 # 行保持原样，不注入、不消耗索引
+  assert.match(out, /^```js$/m);
+  assert.match(out, /^# 代码行一$/m);
+  assert.match(out, /^### 代码行二$/m);
+  assert.match(out, /^# 代码行三$/m);
+  assert.doesNotMatch(out, /# 1\.[12] 代码行|### 1\.1 代码行二/);
+  // 围栏后的标题编号不受影响
+  assert.match(out, /^## 1\.2 现状$/m);
+});
+
+test("injectHeadingPrefixes respects hand-typed numbering guards and prefix exhaustion", () => {
+  const { injectHeadingPrefixes } = require("../office-convert");
+  const md = [
+    "# 第一章 概述",
+    "",
+    "# （1）要点",
+    "",
+    "# 深入",
+    "",
+    "# 超出数组的标题"
+  ].join("\n");
+  const out = injectHeadingPrefixes(md, [{ prefix: "第 1 章" }, { prefix: "第 2 章" }, { prefix: "第 3 章" }]);
+  // 手打编号不重复注入；纯文本标题正常注入；前缀数组耗尽后不再注入
+  assert.match(out, /^# 第一章 概述$/m);
+  assert.match(out, /^# （1）要点$/m);
+  assert.match(out, /^# 第 3 章 深入$/m);
+  assert.match(out, /^# 超出数组的标题$/m);
+  assert.doesNotMatch(out, /第 1 章 第一章|第 2 章 （1）|第 3 章 超出/);
+});
+
+test("skips heading styles with single quotes in styleMap and numbering consistently (regression: count mismatch shifted numbers)", async () => {
+  const sourcePath = path.join(scratchRoot, "引号样式名.docx");
+  const styles = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="H1Q"><w:name w:val="标题 1'"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="H1"><w:name w:val="一级标题"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="H2"><w:name w:val="二级标题"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+  const document = `<w:document ${DOCX_NS}><w:body><w:p><w:pPr><w:pStyle w:val="H1Q"/></w:pPr><w:r><w:t>引言</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>背景</w:t></w:r></w:p></w:body></w:document>`;
+  await createNumberedDocx(sourcePath, styles, AUTO_NUMBERING_XML, document);
+
+  const { response, body } = await uploadConvert(sourcePath, "引号样式名.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "引号样式名.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  // 含 ' 的样式名无法进 styleMap → mammoth 输出普通段落，不占编号位；
+  // 编号计算必须同样跳过，否则后续标题编号整体错位
+  assert.match(markdown, /^引言$/m);
+  assert.match(markdown, /^# 第 1 章 概述$/m);
+  assert.match(markdown, /^## 1\.1 背景$/m);
+  assert.doesNotMatch(markdown, /第 2 章/);
+});
+
+test("expands each %N with its own level numFmt and renders inactive levels as 零 (regression: mixed formats)", async () => {
+  const sourcePath = path.join(scratchRoot, "混排编号.docx");
+  const styles = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="H1"><w:name w:val="一级标题"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="H2"><w:name w:val="二级标题"/><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+  // ilvl0 用罗马数字（%1.），ilvl1 用 decimal（%1.%2.%3），%3 引用 chineseCounting 但文档从未出现 3 级标题 → 0 → 零
+  const numbering = `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1.%2.%3"/></w:lvl><w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="chineseCounting"/><w:lvlText w:val="%3"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`;
+  const document = `<w:document ${DOCX_NS}><w:body><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H2"/></w:pPr><w:r><w:t>背景</w:t></w:r></w:p></w:body></w:document>`;
+  await createNumberedDocx(sourcePath, styles, numbering, document);
+
+  const { response, body } = await uploadConvert(sourcePath, "混排编号.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "混排编号.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  // %1 用 ilvl0 的 upperRoman → I；%2 用 ilvl1 的 decimal → 1；%3 未激活 → 零
+  assert.match(markdown, /^# I\. 概述$/m);
+  assert.match(markdown, /^## I\.1\.零 背景$/m);
+});
+
+test("does not double-inject numbering into headings that already carry hand-typed numbers", async () => {
+  const sourcePath = path.join(scratchRoot, "手打编号.docx");
+  const styles = `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="H1"><w:name w:val="一级标题"/><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr></w:style><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+  const numbering = `<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="第 %1 章"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`;
+  const document = `<w:document ${DOCX_NS}><w:body><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>第一章 概述</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>（1）要点</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="H1"/></w:pPr><w:r><w:t>深入</w:t></w:r></w:p></w:body></w:document>`;
+  await createNumberedDocx(sourcePath, styles, numbering, document);
+
+  const { response, body } = await uploadConvert(sourcePath, "手打编号.docx", "md", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  assert.strictEqual(response.status, 200, body.error);
+  const outputPath = await downloadResult(body, "手打编号.md");
+  const markdown = await fsp.readFile(outputPath, "utf8");
+  // 手打「第一章」「（1）」的标题不重复注入；纯文本标题正常注入（计数器仍按文档序推进 → 第 3 章）
+  assert.match(markdown, /^# 第一章 概述$/m);
+  assert.match(markdown, /^# （1）要点$/m);
+  assert.match(markdown, /^# 第 3 章 深入$/m);
+  assert.doesNotMatch(markdown, /第 1 章 第一章|第 2 章 （1）/);
+});
+
 test("converts Markdown to DOCX without changing the source", async () => {
   const sourcePath = path.join(scratchRoot, "文档.md");
   await fsp.writeFile(sourcePath, "# 标题\n\n正文内容 line one.", "utf8");

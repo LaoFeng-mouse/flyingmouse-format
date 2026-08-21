@@ -1,6 +1,18 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-20（v0.6.4 发布——WPS 自动编号恢复版；旧版本已清理）
+更新时间：2026-08-21（编号注入加固：双轴代码审查 + 5 个回归测试）
+
+## 2026-08-21：docx→MD 自动编号注入加固（code-review 双轴审查 + 修复，cherry-pick 94e2aa4）
+
+- **背景**：对 746e3fd/5a68b08（范围 cd99b39..HEAD）做双轴代码审查（Standards + Spec 并行子代理），两轴独立收敛于同一结构弱点：编号注入用行级正则 `/^(#{1,6})\s+/` 在最终 md 上重认标题，对 fenced 代码块无感知。
+- **修复（office-convert.js）**：
+  1. 【硬伤】注入对 fenced 代码块无感知：围栏内 `#` 行被当标题注入并消耗对齐索引 → 围栏后编号整体错位。已抽纯函数 `injectHeadingPrefixes(markdown, prefixes)`（导出，可单测），加围栏状态机（``` 与 ```lang 均覆盖）。注：mammoth 1.12.0 实测无内置 pre 映射（"HTML Preformatted" 不产出 `<pre>`），当前管线产不出围栏——属防御性加固，单测锁定防将来任何 ``` 来源。
+  2. 【硬伤】含 `'` 样式名排除不一致：styleMap 生成排除（选择器语法限制）但编号计算不排除 → 两数组长度不一 → 编号整体错位。统一谓词 `isHeadingStyleName()`（两处共用）+ `parseDocxStyles()` 共享 styles.xml 解析（消除两份重复实现）。
+  3. 【硬伤】`%N` 展开统一用当前级 def.fmt → 混排格式错（如中文章号+decimal 节）。改为各级 %N 用各级自身 numFmt，引用未定义级别 decimal 兜底。
+  4. chineseCounting n=0（引用未激活级别）输出「十」→ 改「零」。
+  5. 死字段 `level` 移除（注入只消费 `.prefix`），`headingNumbers` 更名 `headingPrefixes`。
+- **测试**：conversion.test.js 新增 5 例（通用 docx 构造器 `createNumberedDocx` 共用，取代逐用例 yazl 复制）：① 引号样式名一致性（管线）② 混排 numFmt + 未激活级别「零」（管线）③ 手打编号防重复注入（管线）④ injectHeadingPrefixes 围栏跳过 + 对齐保持（单测，```/```lang 双形态）⑤ 手打守卫 + 前缀耗尽（单测）。full-version 全量 504 = 500 过 + 4 skip + 0 fail；main 全量见下方「当前状态·测试基线」。
+- **待办（下一窗口）**：① 本机现场验收（转 FreeRTOS docx 编号完整）② 客户机实测验收（main 同步已随本次完成）。
 
 ## 当前状态
 
@@ -12,7 +24,7 @@
 - **本机**：D1/D2/桌面便携为满血版 asar `c938317af63f1e99a8d77c8effd510b7`（含图片外置 + 大纲恢复 + WPS 自动编号 + 解锁模块 + 自动更新禁用）；桌面满血版匿名 zip md5 `e05398f513901bc463dcd23fe99a9267` / sha256 `b61126924edc397e50385db0ff6d911a0dad22c80a5daa820ac6c09cc76a5536`；旧版本清理：GitHub v0.6.1-0.6.3 全删、本机 dist NSIS 0.5.2 删、测试样本全清
 - **CI 门禁修复（2026-08-20）**：ci.yml Windows test job 原无引擎恢复（跑 test:ci），conversion.test.js 的 video→GIF/XLSX→XLS/PDF→DOCX 等真实转换测试无引擎缺失保护 → ffmpeg/libreoffice ENOENT 假失败，每次 main push 发失败邮件。已升级为与 release.yml 一致的引擎恢复序列（restore-ci-engines.ps1 + docstructure 校验/探针 + Thai OCR 暂存）+ npm test 全量（commit 6b63220）；验证 run 32338579299 三 job 全绿（Windows test 16 步、mac×2 11 步）。
 - **本机**：D1/D2 已升级为满血版 c938317a（2026-08-20 最新，含 WPS 自动编号修复，UI 版本号显示满血线 0.5.2）
-- **测试基线**：main 439 = 433 过 + 1 失败 + 5 跳过（唯一失败 = conversion.test.js「converts a PDF to DOCX」断言 `<w:tab/>` vs 引擎输出更优 `<w:tbl>`，v0.6.1 发布前已存在的本机 D1 引擎行为差异，与本次改动无关，CI 门禁不受影响）；full-version 497 = 493 过 + 0 失败 + 4 skip
+- **测试基线**：full-version 504 = 500 过 + 4 skip + 0 fail（含 08-21 新增 5 例）。main 948876d = 94e2aa4 内容一致（office-convert.js 逐字节相同，cherry-pick 干净落地；injectHeadingPrefixes 单测在 main 上实测通过）；⚠️ 本 worktree（C:\appx-build）bin/ 仅有 avs3，缺 libreoffice/poppler/ffmpeg/tessdata/docengine 等引擎 → 全量转换测试在此环境全部 400（环境问题非代码问题，CI 门禁不受影响）；完整门禁以 CI 或主 worktree 为准
 
 ## 最近完成的修复（v0.6.1 → v0.6.2）
 

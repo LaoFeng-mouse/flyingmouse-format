@@ -266,7 +266,7 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
   const ext = normalizeExt(inputExt);
   let html;
   // WPS/Word 自动编号前缀（docx 分支填充，见 computeDocxHeadingNumbers）
-  let headingNumbers = [];
+  let headingPrefixes = [];
   // 图片外置目录：md 同目录的 `<下载名>.assets/`，md 里用相对路径引用，
   // 避免 mammoth 把 docx 图片 base64 内嵌成超长单行导致 Typora 拒渲染
   // （实测 37 张图单行 263KB → doEnterOversize）。
@@ -290,7 +290,7 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
     // WPS/Word 自动编号：标题的「第 X 章 / 1.1 / 1.1.1」是 numbering 渲染的，
     // 不写在标题文本里，mammoth 输出 hN 时编号直接消失。按 numbering.xml 计算
     // 各标题段落的编号前缀，稍后注入 md 标题行（computeDocxHeadingNumbers）。
-    headingNumbers = await computeDocxHeadingNumbers(inputPath);
+    headingPrefixes = await computeDocxHeadingNumbers(inputPath);
   } else {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-docmd-"));
     const htmlPath = path.join(tempDir, "converted.html");
@@ -303,24 +303,8 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
   }
   const turndown = createTurndownService();
   let markdown = turndown.turndown(html).trim();
-  // WPS/Word 自动编号注入：把 computeDocxHeadingNumbers 算出的标题编号前缀
-  // （第 X 章 / 1.1 / 1.1.1 / 1） / （1））按顺序拼到 md 标题行前。
-  // 顺序对齐依据：mammoth 按文档顺序输出标题，与计算数组一一对应；
-  // 数量不一致时取较短的（宁可少编号也不错位）。
-  if (headingNumbers.length) {
-    let numberIndex = 0;
-    markdown = markdown.split("\n").map((line) => {
-      const m = line.match(/^(#{1,6})\s+(\S.*)$/);
-      if (!m || numberIndex >= headingNumbers.length) return line;
-      const prefix = headingNumbers[numberIndex++].prefix;
-      if (!prefix) return line;
-      // 标题文本已自带编号（手打「第一章/1.1/（1）」）则不重复注入
-      if (/^第[\d一二三四五六七八九十百千]+[章节]/.test(m[2])) return line;
-      if (/^[\d一二三四五六七八九十]+[.．、）)\-]/.test(m[2])) return line;
-      if (/^[（(]\s*[\d一二三四五六七八九十]+\s*[）)]/.test(m[2])) return line;
-      return `${m[1]} ${prefix} ${m[2]}`;
-    }).join("\n");
-  }
+  // WPS/Word 自动编号注入（纯函数，见 injectHeadingPrefixes）
+  markdown = injectHeadingPrefixes(markdown, headingPrefixes);
   // 图片外置：把 md 里所有 data:image base64 解码写入 <下载名>.assets/，
   // md 引用改为相对路径 ./<下载名>.assets/image-N.ext。任何来源（mammoth /
   // LibreOffice html 导出）产出的内嵌图都在这统一处理，保证不再出现超长单行。
@@ -366,6 +350,33 @@ function headingLevelFromStyleName(name) {
   return 0;
 }
 
+// 判断样式名是否会被「输出为 md 标题」。
+// ★ 两处必须用同一判定：mammoth 输出 hN（styleMap 生成 + 内置 Heading/标题 识别）
+// 与自动编号前缀计算（computeDocxHeadingNumbers）按文档顺序一一对应。含单引号的
+// 样式名无法写进 p[style-name='X'] 选择器，mammoth 不会输出 hN，编号计算也必须
+// 跳过，否则两个数组长度不一致 → 编号整体错位。
+function isHeadingStyleName(name) {
+  return !name.includes("'") && headingLevelFromStyleName(name) > 0;
+}
+
+// 解析 styles.xml：styleId → { name, numId, ilvl }（numId/ilvl 仅带 numPr 的样式有，
+// 其余为 null/0）。mammothHeadingStyleMap 与 computeDocxHeadingNumbers 共用同一
+// 解析，避免两份实现各自维护一份正则提取而判定漂移。
+function parseDocxStyles(stylesXml) {
+  const styles = {};
+  if (!stylesXml) return styles;
+  for (const m of stylesXml.matchAll(/<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)) {
+    const name = (m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "";
+    const numPr = numPrFromXml(m[2]);
+    styles[m[1]] = {
+      name,
+      numId: numPr ? numPr.numId : null,
+      ilvl: numPr ? numPr.ilvl : 0
+    };
+  }
+  return styles;
+}
+
 // 读 docx 的 word/styles.xml，把自定义标题样式（mammoth 默认不识别）生成
 // styleMap：p[style-name='X'] => hN:fresh。mammoth 只认标准 Heading/标题 样式名，
 // 「一级标题」「半括号标题（五级）」等中文自定义名会退化成普通段落 → md 丢大纲。
@@ -375,13 +386,9 @@ async function mammothHeadingStyleMap(docxPath) {
   const stylesXml = await readDocxEntryString(docxPath, "word/styles.xml");
   if (!stylesXml) return undefined;
   const styleMap = [];
-  const styleRe = /<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g;
-  let m;
-  while ((m = styleRe.exec(stylesXml)) !== null) {
-    const name = (m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "";
-    const level = headingLevelFromStyleName(name);
-    if (level && !name.includes("'")) {
-      styleMap.push(`p[style-name='${name}'] => h${level}:fresh`);
+  for (const [styleId, style] of Object.entries(parseDocxStyles(stylesXml))) {
+    if (isHeadingStyleName(style.name)) {
+      styleMap.push(`p[style-name='${style.name}'] => h${headingLevelFromStyleName(style.name)}:fresh`);
     }
   }
   return styleMap.length ? styleMap : undefined;
@@ -424,6 +431,9 @@ function numberingValueText(fmt, n) {
     case "chineseCounting":
     case "chineseCountingThousand": {
       const CN = "一二三四五六七八九十";
+      // 0 = 引用了未激活的级别（如 %1.%3 但从未出现 3 级标题），
+      // 必须输出「零」而不是误落入 n<20 分支变成「十」
+      if (n === 0) return "零";
       if (n >= 1 && n <= 10) return CN[n - 1];
       if (n < 20) return `十${CN[(n % 10) - 1] || ""}`;
       if (n < 100) {
@@ -472,7 +482,7 @@ function parseDocxNumbering(numberingXml) {
 }
 
 // 计算 docx 全部标题段落（含无编号的）的自动编号前缀，按文档顺序。
-// 返回 [{ level: 1-6, prefix: string }]；无编号的标题 prefix 为空串。
+// 返回 [{ prefix: string }]；无编号的标题 prefix 为空串。
 // 与 mammoth 输出顺序对齐（mammoth 也按文档顺序输出 hN）。
 // ★ 计数器按 numId 分组（不同 numId 是独立编号实例；WPS「重新开始编号」
 //   会生成带 startOverride 的新 numId）；低级别出现时高级别清零（Word 语义）。
@@ -486,16 +496,8 @@ async function computeDocxHeadingNumbers(docxPath) {
   const numbering = numberingXml ? parseDocxNumbering(numberingXml) : null;
 
   // 样式：styleId → { name, numId, ilvl }。记录所有样式（含无 numPr 的标准
-  // heading 样式——mammoth 内置识别它们也会输出 hN，必须进数组保持对齐），
-  // numId/ilvl 仅带 numPr 的样式才有。
-  const styleInfo = {};
-  if (stylesXml) {
-    for (const m of stylesXml.matchAll(/<w:style [^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)) {
-      const name = (m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "";
-      const numPr = numPrFromXml(m[2]);
-      styleInfo[m[1]] = { name, numId: numPr ? numPr.numId : null, ilvl: numPr ? numPr.ilvl : 0 };
-    }
-  }
+  // heading 样式——mammoth 内置识别它们也会输出 hN，必须进数组保持对齐）。
+  const styleInfo = parseDocxStyles(stylesXml);
 
   // 自闭合空段落（<w:p .../>）先剔除，避免正则吞内容
   const docWithoutSelfClosing = documentXml.replace(/<w:p\b[^>]*\/>/g, "");
@@ -505,8 +507,9 @@ async function computeDocxHeadingNumbers(docxPath) {
     const body = m[1];
     const styleId = (body.match(/<w:pStyle w:val="([^"]+)"/) || [])[1] || "";
     const style = styleInfo[styleId];
-    const level = style ? headingLevelFromStyleName(style.name) : 0;
-    if (!level) continue; // 非标题段落（正文列表编号由 mammoth 转 ol/ul）
+    // 与 mammoth 输出 hN 的判定必须一致（isHeadingStyleName）：
+    // 非标题段落跳过；含 ' 的样式名 mammoth 不输出 hN，也必须跳过，否则编号错位
+    if (!style || !isHeadingStyleName(style.name)) continue; // 非标题段落（正文列表编号由 mammoth 转 ol/ul）
     // 段落自身 numPr 优先于样式 numPr
     const ownNumPr = numPrFromXml(body);
     const numId = ownNumPr ? ownNumPr.numId : style?.numId;
@@ -525,16 +528,49 @@ async function computeDocxHeadingNumbers(docxPath) {
         // 本级别出现时，其下所有级别也清零
         for (let l = ilvl + 1; l <= 9; l++) counters[`${numId}:${l}`] = 0;
         // lvlText 模板 %1..%9 → 各级计数（%1=ilvl0, %2=ilvl1, ...）
-        prefix = def.text.replace(/%(\d)/g, (_, d) => {
+        prefix = def.text.replace(/%([0-9])/g, (_, d) => {
           const lvl = parseInt(d, 10) - 1;
           const value = counters[`${numId}:${lvl}`] ?? 0;
-          return numberingValueText(def.fmt, value);
+          // ★ 各级 %N 必须用各级自己的 numFmt（如「第%1章」是 chineseCounting、
+          // %1.%2 的 %2 是 decimal）；统一用当前级 def.fmt 会在混排时输出错误格式。
+          // 引用未定义级别时按 decimal 兜底。
+          const lvlDef = defs && defs[lvl];
+          return numberingValueText(lvlDef ? lvlDef.fmt : "decimal", value);
         });
       }
     }
-    results.push({ level, prefix });
+    results.push({ prefix });
   }
   return results;
+}
+
+// 把 computeDocxHeadingNumbers 算出的标题编号前缀（第 X 章 / 1.1 / 1.1.1 /
+// 1） / （1））按顺序拼到 md 标题行前。纯函数，便于单测。
+// 顺序对齐依据：mammoth 按文档顺序输出标题，与计算数组一一对应；
+// 数量不一致时取较短的（宁可少编号也不错位）。
+// ★ fenced 代码块（Turndown codeBlockStyle:"fenced" 输出 ``` 围栏）内的 # 行
+// 是代码不是标题：绝不能注入编号，也不能消耗对齐索引（否则围栏后所有标题
+// 编号整体错位）。mammoth 1.12.0 目前不产出 <pre>，但任何来源的 ``` 行都必须安全。
+function injectHeadingPrefixes(markdown, prefixes) {
+  if (!prefixes || !prefixes.length) return markdown;
+  let numberIndex = 0;
+  let inFence = false;
+  return markdown.split("\n").map((line) => {
+    if (/^```/.test(line)) {
+      inFence = !inFence;
+      return line;
+    }
+    if (inFence) return line;
+    const m = line.match(/^(#{1,6})\s+(\S.*)$/);
+    if (!m || numberIndex >= prefixes.length) return line;
+    const prefix = prefixes[numberIndex++].prefix;
+    if (!prefix) return line;
+    // 标题文本已自带编号（手打「第一章/1.1/（1）」）则不重复注入
+    if (/^第[\d一二三四五六七八九十百千]+[章节]/.test(m[2])) return line;
+    if (/^[\d一二三四五六七八九十]+[.．、）)\-]/.test(m[2])) return line;
+    if (/^[（(]\s*[\d一二三四五六七八九十]+\s*[）)]/.test(m[2])) return line;
+    return `${m[1]} ${prefix} ${m[2]}`;
+  }).join("\n");
 }
 
 // data:image URI → 文件扩展名（用于 md 图片外置）。
@@ -619,6 +655,7 @@ module.exports = {
   mammothHeadingStyleMap,
   headingLevelFromStyleName,
   computeDocxHeadingNumbers,
+  injectHeadingPrefixes,
   parseDocxNumbering,
   numberingValueText,
   numPrFromXml,
