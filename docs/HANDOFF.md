@@ -1,6 +1,18 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-20（docx→MD 自动编号修复 + 满血版重打完成）
+更新时间：2026-08-21（编号注入加固：双轴代码审查 + 5 个回归测试）
+
+## 2026-08-21：docx→MD 自动编号注入加固（code-review 双轴审查 + 修复）
+
+- **背景**：对 746e3fd/5a68b08（范围 cd99b39..HEAD）做双轴代码审查（Standards + Spec 并行子代理），两轴独立收敛于同一结构弱点：编号注入用行级正则 `/^(#{1,6})\s+/` 在最终 md 上重认标题，对 fenced 代码块无感知。
+- **修复（office-convert.js）**：
+  1. 【硬伤】注入对 fenced 代码块无感知：围栏内 `#` 行被当标题注入并消耗对齐索引 → 围栏后编号整体错位。已抽纯函数 `injectHeadingPrefixes(markdown, prefixes)`（导出，可单测），加围栏状态机（``` 与 ```lang 均覆盖）。注：mammoth 1.12.0 实测无内置 pre 映射（"HTML Preformatted" 不产出 `<pre>`），当前管线产不出围栏——属防御性加固，单测锁定防将来任何 ``` 来源。
+  2. 【硬伤】含 `'` 样式名排除不一致：styleMap 生成排除（选择器语法限制）但编号计算不排除 → 两数组长度不一 → 编号整体错位。统一谓词 `isHeadingStyleName()`（两处共用）+ `parseDocxStyles()` 共享 styles.xml 解析（消除两份重复实现）。
+  3. 【硬伤】`%N` 展开统一用当前级 def.fmt → 混排格式错（如中文章号+decimal 节）。改为各级 %N 用各级自身 numFmt，引用未定义级别 decimal 兜底。
+  4. chineseCounting n=0（引用未激活级别）输出「十」→ 改「零」。
+  5. 死字段 `level` 移除（注入只消费 `.prefix`），`headingNumbers` 更名 `headingPrefixes`。
+- **测试**：conversion.test.js 新增 5 例（通用 docx 构造器 `createNumberedDocx` 共用，取代逐用例 yazl 复制）：① 引号样式名一致性（管线）② 混排 numFmt + 未激活级别「零」（管线）③ 手打编号防重复注入（管线）④ injectHeadingPrefixes 围栏跳过 + 对齐保持（单测，```/```lang 双形态）⑤ 手打守卫 + 前缀耗尽（单测）。全量 504 = 500 过 + 4 skip + 0 fail。
+- **待办（下一窗口）**：同 08-20 待办（本机现场验收 / 合规版 main 同步此修复 / 客户机实测验收）。
 
 ## 2026-08-20：docx→MD 自动编号丢失修复（WPS 多级编号，commit 746e3fd）+ 满血版重打
 
