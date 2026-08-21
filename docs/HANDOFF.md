@@ -14,6 +14,12 @@
 - **测试**：conversion.test.js 新增 5 例（通用 docx 构造器 `createNumberedDocx` 共用，取代逐用例 yazl 复制）：① 引号样式名一致性（管线）② 混排 numFmt + 未激活级别「零」（管线）③ 手打编号防重复注入（管线）④ injectHeadingPrefixes 围栏跳过 + 对齐保持（单测，```/```lang 双形态）⑤ 手打守卫 + 前缀耗尽（单测）。全量 504 = 500 过 + 4 skip + 0 fail。
 - **待办（下一窗口）**：同 08-20 待办（本机现场验收 / 合规版 main 同步此修复 / 客户机实测验收）。
 
+## 2026-08-21（补充）：新格式接入核查——mmp4 修复 + KWM/mmp4 部署验证 + PyMuPDF AGPL
+
+- **mmp4 修复（mflac-format.js）**：musicex apiFilename 正则漏 mmp4/mflac2 → footer 已带 .mmp4 扩展名时会被再拼一次（xxx.mmp4.mmp4）→ 在线换 key 必失败。已抽纯函数 `normalizeApiFilename()`（导出）+ 扩展名白名单补全（mgg/mflac/mgg0/mgg1/mgg2/mggl/mflac0/mflach/mmp4/mflac2）+ 6 断言单测；STag 报错文案补 mmp4。
+- **KWM/mmp4/mgg2 接入核查（结论：无功能缺口）**：config 注册 ✓ server 分发 ✓ build.files 白名单 ✓（ncm/kgg/mflac/kgma/kwm/av3a 全在）UI 数据驱动自动带出 ✓ 测试覆盖 ✓（kwm-format/kgma/mflac/av3a-real/vpr/kgg-db-search 全有）三处满血版 asar（桌面便携 + 两处安装目录，md5 均 c938317a）实测含 kwm-format 引用×3 / mmp4×2 ✓。仅剩：AGENTS.md 主线格式列表漏 kwm（受保护文件，待用户在场时补）。
+- **PyMuPDF AGPL 合规**：docs/privacy-policy.html §3 第三方组件 + README License 段附 AGPL-3.0 许可文本与源码链接（按 AGPL 提供源码获取途径）。
+
 ## 2026-08-20：docx→MD 自动编号丢失修复（WPS 多级编号，commit 746e3fd）+ 满血版重打
 
 - **现象（用户 08-20 报告）**：WPS 生成的 docx 转 md 后「几点几没了」——标题层级编号（第 X 章 / 1.1 / 1.1.1 / 1） / （1））全部消失。

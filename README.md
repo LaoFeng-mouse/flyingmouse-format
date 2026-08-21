@@ -230,6 +230,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 - **禁止套壳换皮**：禁止对本软件改名、换肤、重新打包后冒充自有产品发布。
 - 二次开发公开发布须显著标注原作者，并遵守同样的非商用限制。
 - 内置第三方组件遵循各自许可证。
+- 内置 docengine 文档引擎含 **PyMuPDF**（AGPL-3.0）：许可文本与源码获取见 [PyMuPDF 官方仓库](https://github.com/pymupdf/PyMuPDF)，本软件的完整源码与许可证汇总见 [GitHub Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues)（按 AGPL 要求提供源码获取途径）。
 
 完整条款见 [LICENSE](LICENSE)。/ Full terms in [LICENSE](LICENSE).
 
