@@ -1,6 +1,14 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-21（OFD→PDF 接入 + 编号注入加固）
+更新时间：2026-08-25（扫描件表格重建 + docstructure 引擎重打修复 + 引擎修复推 main）
+
+## 2026-08-25：扫描件→docx 表格重建 + docstructure 引擎重打修复（本次窗口收尾）
+
+- **扫描件表格重建（新模块 pdf-scanned-table.js，commit 67aa6d3）**：扫描件（无文字层）PDF→docx 优先纯 JS 线条检测→逐格 OCR→重建 docx 表格，无表格线/失败回落纯文本。接入 `convertScannedPdfToOcrDocx`；注册 test/test:ci、build.files、win7-build-profile、AGENTS/ARCHITECTURE Source map。代码审核修复：移除「文本相等即跨行合并」误合并（逐格独立输出）；Otsu 真正用于二值化（原死代码固定128，并修「纯黑线图 Otsu 返0致严格<漏检」）；重建失败加 logger.warn；单元格/表格临时文件唯一化+finally 清理。测试：pdf-scanned-table 5 项 + 全量 622（617 过 / 0 败 / 5 skip）。
+- **docstructure 引擎重打（commit ad08718，lock 更新）**：冻结版 `bin/docstructure/docstructure-engine.exe` 对 iOS/Quartz 扫描件（如「批量零申报确认表(1)(1).pdf」）崩 exit21 PARSE_FAILED（→ PDF_STRUCTURE_PARSE_FAILED，无回退）。同一源码+模型+版本在 Python3.11 可跑通 → **PyInstaller 冻结缺陷**。已重打：新哈希 `8a8fd57e`（旧 `e3278174`，备份 bin/docstructure.bak-20260825）。失败文件现可转（exit0 / manifest+page-001），正常/1页/6页扫描无回归；lock 已更新匹配。
+- **同步 + 发布**：新引擎已同步进测试版打包 app（resources/docstructure，旧备份 .bak-20260825，实测通过）；引擎修复已 cherry-pick 进 main 并推 GitHub（`7a05978`）。
+- **范围内未做**：扫描件表格新功能（67aa6d3）仅留 full-version 满血版，**未进 main 公开版**（新功能需升版本号，待用户发布决策）。绝不 `git push full-version:main`（会带 DRM-unlock + 与 main 分叉内容）。
+- **待办（下一窗口）**：① 扫描件表格新功能是否进公开版（需版本号+重打包+发版）；② 删旧引擎备份（dev `bin/docstructure.bak-20260825` + 打包版 `resources/docstructure.bak-20260825`，共约 3.6G，确认新引擎稳定后删）；③ 清 %TEMP%/fmf-* 调试临时文件。
 
 ## 2026-08-21：OFD→PDF 接入（@miconvert/ofd-to-pdf，纯 JS 链路）
 
