@@ -19,6 +19,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `resource-policy.js`：统一图片、批量、PDF 与 OCR 资源上限和稳定错误码。
 - `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
 - `pdf-table-extractor.js` / `pdf-table-runtime.js`：复杂 PDF 表格几何识别、OCR 回退与工作簿模型。
+- `pdf-scanned-table.js`：扫描件（无文字层）PDF → 可编辑 docx 表格（纯 JS 表格线检测 + 逐格 OCR 重建），接入 `convertScannedPdfToOcrDocx` 的表格重建分支。
 - `ncm-format.js`、`av3a-format.js`、`kgg-format.js`、`kgma-format.js`、`mflac-format.js`、`kwm-format.js`：专有音频容器处理（mflac/mgg/mgg2/mmp4 解密含 musicex 在线降档）。
 - `ofd-convert.js`：OFD（国标 GB/T 33190）→ PDF，`@miconvert/ofd-to-pdf` 纯 JS 链路，仅支持转 PDF 不走 LibreOffice。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。

@@ -44,6 +44,7 @@ const REQUIRED_RUNTIME_FILES = [
   "zip-util.js",
   "image.js",
   "ocr.js",
+  "pdf-scanned-table.js",
   "pdfjs.js",
   "pdf-classifier.js",
   "pdf-table.js",

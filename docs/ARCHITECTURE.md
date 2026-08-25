@@ -25,6 +25,7 @@ Electron 保存对话框 → 用户选择的目录
 | `text-conversion.js` | HTML/Office Markdown 与严格 CSV 解析 |
 | `pdf-table-extractor.js` | 表格线、空白分隔、文字对齐、合并区域和跨页模型 |
 | `pdf-table-runtime.js` | PDF.js 文字坐标、OCR blocks、表格线检测和工作簿调度 |
+| `pdf-scanned-table.js` | 扫描件（无文字层）PDF → 可编辑 docx 表格：纯 JS 表格线检测 + 逐格 OCR + docx 表格重建 |
 | `ncm-format.js` | 常规 NCM 解密、元数据和封面处理 |
 | `av3a-format.js` | 从 NCM 中识别并准备 Audio Vivid（AV3A）音频 |
 | `kgg-format.js` | KGG 输入处理 |

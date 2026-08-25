@@ -32,6 +32,7 @@ const { structureError } = require("./pdf-structure-contract");
 const { writePdfOfficeDocx } = require("./pdf-office-docx");
 const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
 const { parseXmlToJson } = require("./xml-json");
+const logger = require("./logger");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const pwd = String(password || "");
@@ -728,12 +729,52 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
   await fsp.writeFile(outputPath, `${combined}\n`, "utf8");
 }
 
-// 扫描版 PDF -> Word：OCR 识别每页文字，生成可编辑 DOCX（纯文本段落）。
+// 扫描版 PDF -> Word：优先尝试扫描件表格重建（检测表格线→逐格OCR→docx表格），
+// 无表格线或异常时回落纯文本段落（原行为）。
 async function convertScannedPdfToOcrDocx(inputPath, outputPath) {
+  try {
+    const outPath = await tryBuildScannedTableDocx(inputPath);
+    if (outPath) {
+      await fsp.copyFile(outPath, outputPath);
+      await fsp.rm(outPath, { force: true }).catch(() => {});
+      return;
+    }
+  } catch (error) {
+    // 表格重建失败（OCR 异常、图片处理等）→ 回落纯文本，不阻断转换；但记录原因供排查
+    logger.warn(`扫描件表格重建失败，回落纯文本 OCR：${error?.message || error}`);
+  }
   const pages = await ocrScannedPdfPages(inputPath);
   const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n");
   const { convertTextToDocx } = require("./text-docx");
   await convertTextToDocx(combined, "txt", outputPath);
+}
+
+// 扫描件表格重建：渲染 PDF 页为高清图，检测表格线，有则逐格 OCR 重建 docx 表格。
+// 返回输出文件路径；无表格线/不可用返回 null。
+async function tryBuildScannedTableDocx(inputPath) {
+  const { detectTableGrid, buildDocxFromScannedPage } = require("./pdf-scanned-table");
+  const { createOcrWorker, ocrAvailable } = require("./ocr");
+  if (!ocrAvailable()) return null;
+  // 扫描件表格重建需要稍高 DPI（300）保证线条/文字清晰；单页扫描居多，先做首页主表。
+  const rendered = await renderPdfPages(inputPath, "png", 300, { ocr: true });
+  let worker = null;
+  try {
+    worker = await createOcrWorker();
+    // 逐页尝试：只要有表格线的那页就重建，目前聚焦首页主表（扫描件多为单页表格）
+    for (const pageFile of rendered.files) {
+      const grid = await detectTableGrid(pageFile);
+      if (grid) {
+        const tmpOut = path.join(os.tmpdir(), `fm-scanned-table-${crypto.randomUUID()}.docx`);
+        const buf = await buildDocxFromScannedPage(pageFile, worker, { title: "" });
+        await fsp.writeFile(tmpOut, buf);
+        return tmpOut;
+      }
+    }
+    return null;
+  } finally {
+    if (worker) await worker.terminate().catch(() => {});
+    await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // 扫描版 PDF -> HTML：OCR 识别每页文字，生成可读 HTML。
