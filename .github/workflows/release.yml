@@ -240,13 +240,10 @@ jobs:
           # 标准版 x64 exe/blockmap 重命名为连字符，匹配 latest.yml 的 url
           # （空格会被 GitHub 显示成点，electron-updater 按 url 下载会 404）
           cd release-assets
-          for f in *Setup-*-x64.exe; do
-            [ -e "$f" ] || continue
-            case "$(basename "$f")" in *win7*) continue;; esac
-            n="$(basename "$f" | tr ' ' '-')"
-            [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
-          done
-          for f in *.blockmap; do
+          # 把所有资产名里的空格统一换成连字符（exe/blockmap/dmg/win7），
+          # 否则 GitHub 资产上传会因文件名含空格返回 400（v0.6.5 发布事故根因），
+          # 且 electron-updater 按 latest.yml 的 url 下载也会 404。
+          for f in *; do
             [ -e "$f" ] || continue
             n="$(basename "$f" | tr ' ' '-')"
             [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
