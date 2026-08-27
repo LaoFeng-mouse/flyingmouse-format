@@ -236,7 +236,7 @@
     {
       "path": "_internal/aistudio_sdk-0.3.9.dist-info/RECORD",
       "size": 4352,
-      "sha256": "2466c2792fedd067fec6e5b5338ac3e83a55de5b0ffa38a73d05efaf86cad227"
+      "sha256": "c3e3fb524e54229fcacd6a295976d9de5665ff47e62e28179cc9490b7a767b3f"
     },
     {
       "path": "_internal/aistudio_sdk-0.3.9.dist-info/REQUESTED",
@@ -621,7 +621,7 @@
     {
       "path": "_internal/base_library.zip",
       "size": 1443565,
-      "sha256": "33ae360f42cd49e1ebefc5cd6f8fb19b9a15a103151f8e07e60c560d85ca7413"
+      "sha256": "9be388d6675eb6dc53e420fc6e06a6116799d366543613a2db7e7417cfb4b696"
     },
     {
       "path": "_internal/bce_python_sdk-0.9.76.dist-info/INSTALLER",
@@ -716,7 +716,7 @@
     {
       "path": "_internal/build-1.5.0.dist-info/RECORD",
       "size": 2329,
-      "sha256": "aedb93b3cd61a7a7f96cd0f84008105def1a021e19fc3c14bc8b833d145ae403"
+      "sha256": "3b4a098456551f9ca8fea3619b93e62f9ed9cae50225b8f2c6166a35325ca0cf"
     },
     {
       "path": "_internal/build-1.5.0.dist-info/REQUESTED",
@@ -831,7 +831,7 @@
     {
       "path": "_internal/chardet-7.5.1.dist-info/RECORD",
       "size": 7682,
-      "sha256": "f5ef01720d06d881309c9942b139ed9938d65a67dbec7f42093fb790463ad915"
+      "sha256": "61502febe050d1c72928d99614d415d4e17e1130ca6cf3e8aa919b959c92016a"
     },
     {
       "path": "_internal/chardet-7.5.1.dist-info/REQUESTED",
@@ -1016,7 +1016,7 @@
     {
       "path": "_internal/charset_normalizer-3.5.0.dist-info/RECORD",
       "size": 2868,
-      "sha256": "cafbac78c82ebf5fbb0b284e086baabe51ba0ad9010e565736f6826818af1f04"
+      "sha256": "06b95f73ea9b0484c686f2aef1ca7e988fb6406d53fff28fab365da0f36ffba7"
     },
     {
       "path": "_internal/charset_normalizer-3.5.0.dist-info/REQUESTED",
@@ -1176,7 +1176,7 @@
     {
       "path": "_internal/crc32c-2.8.dist-info/RECORD",
       "size": 2583,
-      "sha256": "05fd6abfd425bad988c56ea7205c55273360e7d966f59ed83533f39b2c0f057c"
+      "sha256": "57ba209281ae5e0a320aba1f7ea5dc9d3d4a412171e398af5f95d1c2aace881a"
     },
     {
       "path": "_internal/crc32c-2.8.dist-info/REQUESTED",
@@ -1466,7 +1466,7 @@
     {
       "path": "_internal/cssutils-2.15.0.dist-info/RECORD",
       "size": 7910,
-      "sha256": "b3acace5ae8ef702a8ae396d6d7e7061b45f60dcf3621bede247d432923bd40a"
+      "sha256": "20e0a39f1dd8181b9952714da19c0a0b0c85c9137eddd4f92e36aea5126937e4"
     },
     {
       "path": "_internal/cssutils-2.15.0.dist-info/REQUESTED",
@@ -1581,7 +1581,7 @@
     {
       "path": "_internal/distro-1.9.0.dist-info/RECORD",
       "size": 1172,
-      "sha256": "292c929788189d5373c7cc60019eb3fe37229e15be1a2d3f626b78f6ef7fd55c"
+      "sha256": "305d4a9469c16af33d7a6d48fbaf4bd61cc76946c69ba832e8f32cfb0ce4e05d"
     },
     {
       "path": "_internal/distro-1.9.0.dist-info/REQUESTED",
@@ -1826,7 +1826,7 @@
     {
       "path": "_internal/ftfy-6.3.1.dist-info/RECORD",
       "size": 1844,
-      "sha256": "53057c2d280d5245a86845b56dc80a101f01691eda156f9978461870c46c8fb6"
+      "sha256": "0f855a5a3ffb548e0339cdd2cfe3f487d571b219c632f1531415eddf3bca05a2"
     },
     {
       "path": "_internal/ftfy-6.3.1.dist-info/REQUESTED",
@@ -1861,7 +1861,7 @@
     {
       "path": "_internal/future-1.0.0.dist-info/RECORD",
       "size": 31654,
-      "sha256": "996f11a1a90fcd2db645791249514ec423088f4f484be79842339d61e1dab8ab"
+      "sha256": "db9bc314744a4c83446d0f0550be5d47de181e5df503b29a2c5362479a969702"
     },
     {
       "path": "_internal/future-1.0.0.dist-info/REQUESTED",
@@ -2041,7 +2041,7 @@
     {
       "path": "_internal/httpx-0.28.1.dist-info/RECORD",
       "size": 3617,
-      "sha256": "4c943f2eb98786ef7b3fd4f29036082bbc8caef56f0e4891f68565ce5bc47ba8"
+      "sha256": "b78d50f544af3e60a18a3d777d86a61ded40101dfe9397f8bca4aef40a7495ac"
     },
     {
       "path": "_internal/httpx-0.28.1.dist-info/REQUESTED",
@@ -2076,7 +2076,7 @@
     {
       "path": "_internal/httpx2-2.10.0.dist-info/RECORD",
       "size": 4630,
-      "sha256": "b9eab3fb2952b6e9da29c6ad56781c6785b9fa7316644421a32103c547fb0b10"
+      "sha256": "cc7c4911744442ae2ad14744e44acc8e7ba4a9001f7eacb6378f5efa1fb47b77"
     },
     {
       "path": "_internal/httpx2-2.10.0.dist-info/REQUESTED",
@@ -2111,7 +2111,7 @@
     {
       "path": "_internal/huggingface_hub-1.27.0.dist-info/RECORD",
       "size": 32312,
-      "sha256": "bdd88b381fbcefb492977b558eacfb9cf62564fa0f33180f630dfcc0bdbcccc7"
+      "sha256": "b34d8085cb858857371f89b8cf4c4f82e42cd751797809beb0a41db5004d2460"
     },
     {
       "path": "_internal/huggingface_hub-1.27.0.dist-info/REQUESTED",
@@ -2151,7 +2151,7 @@
     {
       "path": "_internal/idna-3.18.dist-info/RECORD",
       "size": 1877,
-      "sha256": "3fc898da0de20e91aca01d7b8e6c43155e82b8ae684fa94167584a38bb26b69f"
+      "sha256": "22cc7114d7c65be2b80773f0203b938f4775b1e161c6dfa715e5b244f80423a2"
     },
     {
       "path": "_internal/idna-3.18.dist-info/REQUESTED",
@@ -2401,7 +2401,7 @@
     {
       "path": "_internal/latex2mathml-3.81.0.dist-info/RECORD",
       "size": 1818,
-      "sha256": "1a9eef20f1aa2f6e059f463270288bba0da2a72f92e1d0c378d61b33e8118b68"
+      "sha256": "1e82f57a9903c44f9e9ec0e5b63b76ebc074e27542075318c6749f32b7e60eef"
     },
     {
       "path": "_internal/latex2mathml-3.81.0.dist-info/REQUESTED",
@@ -2611,7 +2611,7 @@
     {
       "path": "_internal/modelscope_hub-0.2.0.dist-info/RECORD",
       "size": 6912,
-      "sha256": "fcb9556bc91ad2e0bd88990c71f8350e03c0329eef4b7ec2f3c7e42532fd67ff"
+      "sha256": "4e807819bf6b2d33650fb764360472aa4542e0698f0c5a0631330f5ec25d288e"
     },
     {
       "path": "_internal/modelscope_hub-0.2.0.dist-info/REQUESTED",
@@ -2651,7 +2651,7 @@
     {
       "path": "_internal/modelscope-1.39.1.dist-info/RECORD",
       "size": 581375,
-      "sha256": "5bb83fce23fa9be3b288de0a6a7f5c36c3d9b9e61852ae6931b96a0124f203c0"
+      "sha256": "60faad0ec37b1dd8a1fbca5e34ede1a4fdc5c8b4a05b2fd15d5e795bc5191b3c"
     },
     {
       "path": "_internal/modelscope-1.39.1.dist-info/REQUESTED",
@@ -2841,7 +2841,7 @@
     {
       "path": "_internal/numpy-2.3.5.dist-info/RECORD",
       "size": 127670,
-      "sha256": "65ac0d1594a7f01ed5d527ec0fefbe165bcf3246da51d4dee325e676fd79e752"
+      "sha256": "ed86c5ab5198ebd4554b9919681ec2101a29fd047d3dfdcd699e808f34c1f9b9"
     },
     {
       "path": "_internal/numpy-2.3.5.dist-info/REQUESTED",
@@ -3201,7 +3201,7 @@
     {
       "path": "_internal/paddleocr-3.7.0.dist-info/RECORD",
       "size": 11829,
-      "sha256": "39ad508cb3bb737d56678bc1811ba99c2d195fc8ad9f73d5cc777b7d2d404403"
+      "sha256": "1ba1b8d43255058a45ce18b41ae4fe1f36c582be007a43720d843863e2bcb16a"
     },
     {
       "path": "_internal/paddleocr-3.7.0.dist-info/REQUESTED",
@@ -3241,7 +3241,7 @@
     {
       "path": "_internal/paddlepaddle-3.2.2.dist-info/RECORD",
       "size": 452071,
-      "sha256": "34af64a1a2d9852c6028b19b5e97a46cc690a622ca9bdb33c59e04059b836bfa"
+      "sha256": "da43c41f8a22aaf4f3bbfd5affe2610de57a00221afb2c825e69746e8e02bba5"
     },
     {
       "path": "_internal/paddlepaddle-3.2.2.dist-info/REQUESTED",
@@ -3281,7 +3281,7 @@
     {
       "path": "_internal/paddlex-3.7.2.dist-info/RECORD",
       "size": 239110,
-      "sha256": "617f9a8303683eea87930094d0d5e0cd2b15ec3ad73cda570ca30007c09ea7e5"
+      "sha256": "b91ce63703d423a2ad40753f5e50c8746286f4905b32fa7dc663105c8916d5ef"
     },
     {
       "path": "_internal/paddlex-3.7.2.dist-info/REQUESTED",
@@ -5496,7 +5496,7 @@
     {
       "path": "_internal/pip_tools-7.5.0.dist-info/RECORD",
       "size": 3886,
-      "sha256": "d7173eb92cf6f84c4d63a88bb2bdb57fb031a1cf6d5cdab0be54628f091b2946"
+      "sha256": "7480d0467f05df11116ec868e3a5771cfc24e6ff1c992654c4a30912835ec785"
     },
     {
       "path": "_internal/pip_tools-7.5.0.dist-info/REQUESTED",
@@ -5641,7 +5641,7 @@
     {
       "path": "_internal/pip-26.2.1.dist-info/RECORD",
       "size": 68999,
-      "sha256": "d873e46088103953f6bccbb1cf2bab0a57802f440bfd6df2b7e4df6fa5f70240"
+      "sha256": "c7881b962b4759bec2c2e34fdbc426af3bdefd3f54eb55870e77b7972d60b424"
     },
     {
       "path": "_internal/pip-26.2.1.dist-info/REQUESTED",
@@ -5856,7 +5856,7 @@
     {
       "path": "_internal/py_cpuinfo-9.0.0.dist-info/RECORD",
       "size": 1140,
-      "sha256": "3440e1d4244929434ee1ae5b35c1b100a186a487e6ea887a74ba681ebcee5d1e"
+      "sha256": "ad06501c4d0d37b15992f65dfeca6c026838f3a7a14db8ebcf192df2a9a9cb00"
     },
     {
       "path": "_internal/py_cpuinfo-9.0.0.dist-info/REQUESTED",
@@ -6091,7 +6091,7 @@
     {
       "path": "_internal/pyinstaller-6.15.0.dist-info/RECORD",
       "size": 97991,
-      "sha256": "e691141f6adc592000bae9acd6b581bd65238ac8ea5c5e796d8a4f22729700ec"
+      "sha256": "eb5eb0e94d5a357b17b641e885607e754b4348de14c97297603996a9c4b699a3"
     },
     {
       "path": "_internal/pyinstaller-6.15.0.dist-info/REQUESTED",
@@ -6136,7 +6136,7 @@
     {
       "path": "_internal/pymupdf-1.26.3.dist-info/RECORD",
       "size": 17024,
-      "sha256": "227ac8d4847a6cfc55d15bcb4860eda5dcd3c3d36bc9638d2d8db8e158dc86b2"
+      "sha256": "578e251455d19585cb2e36bafd8422ca2262c516f236f236c86ffd319c25eff5"
     },
     {
       "path": "_internal/pymupdf-1.26.3.dist-info/REQUESTED",
@@ -6286,7 +6286,7 @@
     {
       "path": "_internal/pypdfium2-5.13.0.dist-info/RECORD",
       "size": 9753,
-      "sha256": "cfb9cf167e7449f726c29bb011a189315834e42afcc8fbac7c1053456feeec84"
+      "sha256": "0643da944328bf67b2b4478c56ecc7975c8cb3ca89f1ad68703b811451292bca"
     },
     {
       "path": "_internal/pypdfium2-5.13.0.dist-info/REQUESTED",
@@ -6376,7 +6376,7 @@
     {
       "path": "_internal/python_bidi-0.6.11.dist-info/RECORD",
       "size": 1717,
-      "sha256": "d0d3344ff5d399562451b6d1d79fc7f95dd2e84045eb261419a1042215623a03"
+      "sha256": "60349eea9dcd93c2f8bc21218547cef8935e1137203115686535cdc5bc9395b8"
     },
     {
       "path": "_internal/python_bidi-0.6.11.dist-info/REQUESTED",
@@ -9626,7 +9626,7 @@
     {
       "path": "_internal/tqdm-4.70.0.dist-info/RECORD",
       "size": 4637,
-      "sha256": "9b771be989c672eada74d8703b56c8a73a857f1b4195858a8a64850f92c19cd7"
+      "sha256": "37dd77ef695f39b7425eebe87d0631aaab5b2b646d3712317442a528561c6819"
     },
     {
       "path": "_internal/tqdm-4.70.0.dist-info/REQUESTED",
@@ -12880,8 +12880,8 @@
     },
     {
       "path": "_internal/VCOMP140.DLL",
-      "size": 213064,
-      "sha256": "31af29c03643f8396a6f26bcd601c6369d26493d7d78b714827ab2801bd284c7"
+      "size": 193152,
+      "sha256": "55aba23cdcd6484fbb06f4155b8ca75adfce7a881f10afd0c49457165e677164"
     },
     {
       "path": "_internal/vcruntime140_1.dll",
@@ -12951,7 +12951,7 @@
     {
       "path": "_internal/wheel-0.48.0.dist-info/RECORD",
       "size": 2615,
-      "sha256": "8a3346fc3ea53f28a5d3acbb4f8dda761818c89b8610ca882c2d5c3340fecd7b"
+      "sha256": "d6b21147c1f441c320737c3fc72bd68a44c1566db292feb038420bb6b6525eb9"
     },
     {
       "path": "_internal/wheel-0.48.0.dist-info/REQUESTED",
@@ -12981,7 +12981,7 @@
     {
       "path": "_internal/xlsxwriter-3.2.9.dist-info/RECORD",
       "size": 6341,
-      "sha256": "57ed1e748915c0c1fc01bc993d014a3e7216263aae52d90d51c0a84495ffb4d6"
+      "sha256": "ca287b0044679e70cc40e90b79131cf3c3c54d25207db901b001920cb361fc13"
     },
     {
       "path": "_internal/xlsxwriter-3.2.9.dist-info/REQUESTED",
@@ -13051,7 +13051,7 @@
     {
       "path": "docstructure-engine.exe",
       "size": 54570832,
-      "sha256": "8a8fd57e274a3aac8ed907f4157d6d3483c0897c4fd27969e617f16494097ed4"
+      "sha256": "e3278174bd173d8778611fe8c0f8816b2dbde0024efa8fa833fd13470dd68168"
     },
     {
       "path": "models/doc_orientation_classification/.msc",
