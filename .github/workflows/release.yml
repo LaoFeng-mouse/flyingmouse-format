@@ -81,7 +81,7 @@ jobs:
         run: npm test
 
       - name: Production dependency audit
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build Windows 10 and 11 installer
         run: npm run dist
@@ -164,7 +164,7 @@ jobs:
           "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
 
       - name: Production dependency audit
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build unsigned macOS DMG
         run: npm run dist:mac:${{ matrix.arch }}
