@@ -99,6 +99,10 @@ npm audit --omit=dev --prefix output\win7-stage
 - `npm run dist` 当前生成 NSIS 安装包和 `dist/win-unpacked`；不要假设 APPX 已同步生成。
 - Microsoft Store 使用同一鼠鼠 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、鼠鼠图标和 SHA-256。
 - Partner Center 的“包验证通过”“认证通过”“公开发布”是不同状态；外部状态只能按现场回读结果和绝对日期记录，不能由本地构建或上传成功推断。
+- **商店 MSIX 两个代码级坑（2026-08-28 修复，commit 468d7db，勿回退）**：
+  - Settings 原子写：Store AppContainer 把 `%APPDATA%\Roaming` 重定向到 `AppData\Local\Packages`，`fs.rename` 跨此边界抛 `EXDEV`（装完即“用不了”）。`writeSettings` 必须对 `EXDEV` 降级为 `copyFile + rm`；同卷仍保留原子 `rename`。见 skill flyingmouse-format `references/settings-exdev-cross-device-rename.md`。
+  - LibreOffice 引擎：Store 装在只读 `WindowsApps`，LibreOfficePortable 无法在只读安装目录初始化（“安装无法完成”→ Word/Excel/PPT→PDF 失效）。`process.windowsStore` 为真时把引擎一次性复制到 `%LOCALAPPDATA%\FlyingMouseFormat\engines\libreoffice` 并改指 `FLYINGMOUSE_LIBREOFFICE_PATH`；非商店版零开销。见 `references/libreoffice-msix-readonly-install.md`。
+  - 改了 app 代码后**必须整体重建 win-unpacked**（electron-builder 把 `app.asar` 完整性哈希烧进 exe），不能只外科替换 asar；signed 包需重签名。见 `references/appx-rebuild-and-store-upload.md`。
 - 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
 - Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。

@@ -1,6 +1,24 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-21（OFD→PDF 接入 + 编号注入加固）
+更新时间：2026-08-28（商店 v0.6.5 appx 双修复重建 + main 已提交）
+
+## 2026-08-28：商店版 v0.6.5 appx 两处启动/转换崩溃修复
+
+- **背景**：商店版（Microsoft Store APPX，ID `9NJKN37CR6HJ`）用户反馈两个线上 bug——「装了=用不了」（启动即崩）与「微软商店下载的不能 word 转 pdf」。
+- **修复（main 分支，commit 468d7db，已提交未推送）**：
+  1. `settings-store.js`：Settings 原子写用 `fs.rename`，商店 AppContainer 把 `%APPDATA%\Roaming` 重定向进 `AppData\Local\Packages`，跨此边界抛 `EXDEV: cross-device link not permitted` → 启动即崩。改为 `EXDEV` 时降级 `copyFile + rm`，同卷仍原子 `rename`。
+  2. `electron-main.js`：Store 装在只读 `WindowsApps`，`LibreOfficePortable` 无法在只读安装目录初始化（“安装无法完成”）。`process.windowsStore` 为真时把引擎一次性复制到 `%LOCALAPPDATA%\FlyingMouseFormat\engines\libreoffice`，改指 `FLYINGMOUSE_LIBREOFFICE_PATH`；非商店版零开销。
+- **验证**：`node --check` 通过；`settings-store.test.js` 5/5；`electron-hardening-static.test.js` 24/24；PE 悬空证书 0（496 个）；包内 `app.asar` 与 win-unpacked 哈希一致（双修复进包）；zip 完整、未签名、版本 `0.6.5.0`、Identity `488B6338.354574AC174AD`。
+- **产物**：`C:\appx-build\dist\FlyingMouse Format-Setup-0.6.5-x64-final.appx`（≈1.99GB，**待上传本**）。
+- **遗留**：full-version（满血版，Documents\飞鼠格式）的 `settings-store.js` 仍是裸 `fsp.rename`（同样会触发 EXDEV）——待同步到满血版；该 worktree 正被并行编辑，勿动。
+
+## 待办（下一窗口，2026-08-28 更新）
+
+- ① 上传 `C:\appx-build\dist\FlyingMouse Format-Setup-0.6.5-x64-final.appx` 到 Partner Center（走直连绕代理，传完等“包验证通过”，此为本地构建与“公开发布”之间的中间状态）。成功后现场回读记录绝对日期。
+- ② 商店版实机验证：Word→PDF 不再弹“安装无法完成”、settings 不再 EXDEV 崩溃。
+- ③ EXDEV（+LibreOffice 只读）修复同步到 full-version（满血版）分支——该分支 settings-store.js 仍有裸 rename。
+- ④ main 未推送：`git push origin main`（468d7db）。
+- ⑤ `tools/zstd/`（zstd 1.5.5 win64 二进制）未跟踪：确认应入库还是忽略（CI 用 `zstd` 解压引擎，win64 为本地/Windows 用途）。
 
 ## 2026-08-21：OFD→PDF 接入（@miconvert/ofd-to-pdf，纯 JS 链路）
 
