@@ -149,11 +149,38 @@ ipcMain.handle("check-for-updates", async (event) => {
   }
 });
 
+// MSIX/Store installs (C:\Program Files\WindowsApps\...) are read-only to the app.
+// LibreOfficePortable cannot initialize from a read-only install dir and fails with
+// "installation could not be completed". Copy the engine bundle once to a writable
+// per-user location and run from there. Dev / non-Store installs already run from a
+// writable resources dir, so they skip this entirely.
+function ensureWritableLibreOfficeForStore(bundledSofficePath) {
+  try {
+    const bundledBundle = path.join(process.resourcesPath || "", "libreoffice");
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const destBundle = path.join(localAppData, "FlyingMouseFormat", "engines", "libreoffice");
+    const destSoffice = path.join(destBundle, "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com");
+    if (fs.existsSync(destSoffice)) return destSoffice;
+    fs.mkdirSync(path.dirname(destBundle), { recursive: true });
+    log(`Extracting LibreOffice engine to writable location: ${destBundle}`);
+    fs.cpSync(bundledBundle, destBundle, { recursive: true });
+    if (fs.existsSync(destSoffice)) return destSoffice;
+  } catch (error) {
+    log("LibreOffice writable-engine extraction failed; using bundled path", error);
+  }
+  return bundledSofficePath;
+}
+
 function configureRuntime() {
   process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
   const runtimePaths = resolveRuntimePaths({ resourcesPath: process.resourcesPath });
   process.env.FLYINGMOUSE_FFMPEG_PATH = runtimePaths.ffmpeg;
-  process.env.FLYINGMOUSE_LIBREOFFICE_PATH = runtimePaths.libreoffice;
+  if (process.windowsStore) {
+    // Store/MSIX install dir is read-only; LibreOfficePortable can't initialize there.
+    process.env.FLYINGMOUSE_LIBREOFFICE_PATH = ensureWritableLibreOfficeForStore(runtimePaths.libreoffice);
+  } else {
+    process.env.FLYINGMOUSE_LIBREOFFICE_PATH = runtimePaths.libreoffice;
+  }
   process.env.FLYINGMOUSE_PDFTOPPM_PATH = runtimePaths.pdftoppm;
   process.env.FLYINGMOUSE_TESSDATA_PATH = runtimePaths.tessdata;
   if (runtimePaths.docstructureEngine) process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH = runtimePaths.docstructureEngine;

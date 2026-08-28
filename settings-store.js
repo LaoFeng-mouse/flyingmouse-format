@@ -64,7 +64,17 @@ async function writeSettings(settingsPath, settings) {
   const temporaryPath = `${settingsPath}.tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     await fsp.writeFile(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
-    await fsp.rename(temporaryPath, settingsPath);
+    try {
+      await fsp.rename(temporaryPath, settingsPath);
+    } catch (err) {
+      if (err && err.code === "EXDEV") {
+        // Cross-device rename is not supported (Store AppContainer redirection / OneDrive KFM / junction).
+        // Fall back to a copy so the settings write still succeeds; the outer finally removes the temp file.
+        await fsp.copyFile(temporaryPath, settingsPath);
+      } else {
+        throw err;
+      }
+    }
   } finally {
     await fsp.rm(temporaryPath, { force: true }).catch(() => {});
   }
