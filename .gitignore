@@ -26,3 +26,6 @@ scripts/.raw-samples/
 
 # AppX 打包证书/密钥（绝不入库）
 cert/
+
+# 本地 zstd 二进制工具（本机/Windows 用，CI 侧各自安装，不入库）
+/tools/zstd/
