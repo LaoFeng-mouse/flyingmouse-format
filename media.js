@@ -1,8 +1,10 @@
 // media.js — 飞鼠格式媒体转换：音视频 → 目标格式（ffmpeg 封装）。
 // 第一批抽取自 server.js（零逻辑改动，纯搬移）。
 
+const path = require("node:path");
 const { FFMPEG_PATH } = require("./config");
 const { run } = require("./utils");
+const { maybeDecryptToTemp, ENCRYPTED_EXT } = require("./audio-decrypt");
 
 async function probeAudioTrack(inputPath) {
   try {
@@ -71,14 +73,29 @@ function videoEncoderArgs(codec) {
 }
 
 async function convertMedia(inputPath, outputPath, target, category, options = {}) {
-  const args = ["-hide_banner", "-y", "-i", inputPath];
+  // 加密音频格式（NCM/酷我系列等）先「去混淆」还原成原始音频，再走 FFmpeg 转码
+  // 关键：NCM/酷我等 FFmpeg 不识别，直接 probe 会失败；解密后格式已知，跳过 probe
+  let sourcePath = inputPath;
+  let _decryptCleanup = null;
+  const ext = (options.inputExt || path.extname(inputPath).slice(1) || "").toLowerCase();
+  const isEncrypted = ENCRYPTED_EXT.has(ext);
+  if (isEncrypted) {
+    const _pre = await maybeDecryptToTemp(inputPath, { ...options, inputExt: ext });
+    if (_pre) {
+      sourcePath = _pre.tempPath;
+      _decryptCleanup = _pre.cleanup;
+    }
+  }
+
+  try {
+  const args = ["-hide_banner", "-y", "-i", sourcePath];
   for (const extraInput of options.extraInputs || []) args.push("-i", extraInput);
 
   // 视频目标（mp4/mov/mkv/webm）输出 yuv 编码，带 alpha 的源（DXV3 rgba/RLE argb）
   // 透明区会变黑——先探测，命中则合成白底（filter_complex + 额外 color 输入）。
   let alphaComposite = null;
   if (target === "mp4" || target === "mov" || target === "mkv" || target === "webm") {
-    const info = await probeVideoInfo(inputPath);
+    const info = await probeVideoInfo(sourcePath);
     alphaComposite = alphaCompositeArgs(info, options.alphaBackground);
     if (alphaComposite) args.push(...alphaComposite.inputs);
   }
@@ -86,7 +103,8 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
     if (!(options.extraInputs || []).length) {
       args.push("-vn");
-      if (!(await probeAudioTrack(inputPath))) {
+      // 已知格式（NCM/酷我系列解密后）跳过 probe
+      if (!isEncrypted && !(await probeAudioTrack(sourcePath))) {
         const error = new Error("该视频没有音频轨道，无法转换为音频格式。");
         error.code = "MEDIA_NO_AUDIO_TRACK";
         error.messages = {
@@ -130,6 +148,9 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
 
   args.push(outputPath);
   await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 30 });
+  } finally {
+    if (_decryptCleanup) await _decryptCleanup();
+  }
 }
 
 module.exports = {

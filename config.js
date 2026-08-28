@@ -158,7 +158,9 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
+// 个人自用二次开发：重新接入音乐平台加密音频格式（NCM/酷我系列/KGG 等），
+// 仅处理合法拥有、本机已下载的音频，禁止传播/转卖/商用（逻辑见 audio-decrypt.js）。
+const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "mflac", "mgg", "kgma", "kwm", "kgg", "vpr", "mmp4"]);
 // 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
 // （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
 // DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。

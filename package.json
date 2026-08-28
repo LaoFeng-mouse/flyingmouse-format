@@ -38,6 +38,7 @@
     "marked": "9.1.6",
     "mime-types": "^2.1.35",
     "multer": "^2.0.2",
+    "ncmdump-js": "^0.0.3",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.2.108",
     "sanitize-filename": "^1.6.3",

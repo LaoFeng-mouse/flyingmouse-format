@@ -608,7 +608,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         : "h264";
       // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
       const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
-      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground, inputExt });
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }
