@@ -1,4 +1,4 @@
-// text-docx.js — 飞鼠格式文本转换域：txt/md/html/json/csv/tsv/xml/yaml 互转、文本→DOCX、CSV/TSV 真实现。
+// text-docx.js — Mahiro Format 文本转换域：txt/md/html/json/csv/tsv/xml/yaml 互转、文本→DOCX、CSV/TSV 真实现。
 // 第四批抽取自 server.js（零逻辑改动，纯搬移）。
 // 依赖 office-convert.js 的 convertWithLibreOffice（LO html->pdf 管线），单向 require 无循环。
 

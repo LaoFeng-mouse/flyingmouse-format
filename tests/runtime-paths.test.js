@@ -5,7 +5,7 @@ const { test } = require("node:test");
 const { resolveRuntimePaths } = require("../runtime-paths");
 
 test("Windows runtime paths preserve the packaged x64 engine layout", () => {
-  const resourcesPath = "C:\\Program Files\\FlyingMouse Format\\resources";
+  const resourcesPath = "C:\\Program Files\\Mahiro Format\\resources";
   const paths = resolveRuntimePaths({ platform: "win32", arch: "x64", resourcesPath, env: {} });
   assert.equal(paths.ffmpeg, path.join(resourcesPath, "ffmpeg", "ffmpeg.exe"));
   assert.equal(paths.avs3Decoder, path.join(resourcesPath, "avs3", "avs3RM0Decoder.exe"));
@@ -32,7 +32,7 @@ test("Windows structured document paths honor explicit environment overrides", (
 
 for (const arch of ["arm64", "x64"]) {
   test(`macOS ${arch} runtime paths select only the matching native bundle`, () => {
-    const resourcesPath = "/Applications/FlyingMouse Format.app/Contents/Resources";
+    const resourcesPath = "/Applications/Mahiro Format.app/Contents/Resources";
     const paths = resolveRuntimePaths({ platform: "darwin", arch, resourcesPath, env: {} });
     const engineRoot = path.join(resourcesPath, "engines", `darwin-${arch}`);
     assert.equal(paths.ffmpeg, path.join(engineRoot, "runtime", "bin", "ffmpeg"));

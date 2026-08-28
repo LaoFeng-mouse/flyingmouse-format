@@ -224,7 +224,7 @@ if (Test-Path -LiteralPath $publishRoot) {
 
 if (-not $StagingRoot) {
   if (-not $env:LOCALAPPDATA) { throw "LOCALAPPDATA is required unless -StagingRoot is supplied." }
-  $StagingRoot = Join-Path $env:LOCALAPPDATA "FlyingMouseFormat\docstructure-build"
+  $StagingRoot = Join-Path $env:LOCALAPPDATA "MahiroFormat\docstructure-build"
 }
 $stagingRootPath = [IO.Path]::GetFullPath($StagingRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
 New-Item -ItemType Directory -Path $stagingRootPath -Force | Out-Null

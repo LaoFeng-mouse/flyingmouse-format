@@ -16,34 +16,44 @@ test("renderer exposes workflow hooks and drop zone copy", () => {
     assert.match(html, new RegExp(`data-step="${step}"`), `${step} workflow step is missing`);
   }
   assert.match(html, /id="dropZone"/);
-  assert.match(html, /把文件丢给鼠鼠|Drop files here/);
+  assert.match(html, /把文件放到 Mahiro 的工作台|Drop files onto Mahiro's desk/);
   assert.match(html, /id="dropHint"/);
 });
 
-test("renderer restores the original mouse mascot and keeps the sponsor widget", () => {
+test("renderer uses the Mahiro mascot state system and keeps the sponsor widget", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
-  assert.match(html, /mouse-mascot|mouseMascot/);
+  assert.match(html, /mahiro-mascot|mahiroMascot/);
   assert.match(html, /sponsorWidget|sponsorToggle/);
   assert.match(html, /sponsor-qr\.jpg/);
-  assert.match(app, /setMouseState|mouseAssets|mouseMascot/);
+  assert.match(html, /原作者：牢蜂（LaoFeng）/);
+  assert.match(html, /YKZStudio · 加密货币/);
+  assert.match(html, /TNsEbkyyy9XWpsTT64Zvn7bkN2wkbeWPwM/);
+  assert.match(html, /TV7w7oi18KiSVz9qoXsvQur2FKNnu3Ry5h/);
+  assert.match(app, /setMahiroState|mahiroAssets|mahiroMascot/);
   assert.match(app, /sponsorToggle/);
+  assert.doesNotMatch(html, /assets\/mouse-format/);
   assert.doesNotMatch(html, /3465177342@qq\.com/);
 });
 
-test("renderer uses the mouse brand and favicon", () => {
+test("renderer uses the Mahiro brand and favicon", () => {
   const html = readPublic("index.html");
-  assert.match(html, /class="brand-mouse"/);
+  assert.match(html, /class="brand-mahiro"/);
   assert.match(html, /rel="icon"/);
-  assert.match(html, /href="\/assets\/mouse-format\/mouse-idle\.png"/);
+  assert.match(html, /href="\/assets\/mahiro-format\/mahiro-avatar\.png"/);
+  assert.match(html, /Pastel File Studio/);
 });
 
-test("original mouse visual theme classes are present", () => {
+test("Mahiro pastel visual theme classes and motion states are present", () => {
   const css = readPublic("styles.css");
-  assert.match(css, /--accent:\s*#e95f6d/);
+  assert.match(css, /--accent:\s*#ff82ad/);
+  assert.match(css, /--sky:\s*#7fb8f5/);
+  assert.match(css, /--mint:\s*#79d9c2/);
   assert.match(css, /\.workflow-steps/);
-  assert.match(css, /\.mouse-stage/);
-  assert.match(css, /\.mouse-mascot/);
+  assert.match(css, /\.mahiro-stage/);
+  assert.match(css, /\.mahiro-mascot/);
+  assert.match(css, /@keyframes mahiro-cheer/);
+  assert.match(css, /@keyframes mahiro-oops/);
   assert.match(css, /\.sponsor-widget/);
   assert.match(css, /border-radius:\s*var\(--radius\)/);
 });
@@ -134,10 +144,10 @@ test("video targets expose a transparent background color selector", () => {
 
 
 
-test("renderer no longer enforces a batch size limit and localizes resource errors", () => {
+test("renderer enforces the server-provided batch budget and localizes resource errors", () => {
   const app = readPublic("app.js");
-  assert.match(app, /maxBatchBytes/);
-  assert.match(app, /maxBatchBytes \|\| Number\.MAX_SAFE_INTEGER/);
+  assert.match(app, /maxBatchBytes = state\.capabilities\?\.limits\?\.maxBatchBytes/);
+  assert.match(app, /totalBytes > maxBatchBytes/);
   assert.match(app, /result\?\.messages\?\.enUS/);
   assert.match(app, /result\?\.messages\?\.zhCN/);
 });
@@ -150,12 +160,12 @@ test("renderer shows localized conversion warnings without HTML injection", () =
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("renderer labels experimental inputs bilingually", () => {
+test("renderer labels unstable experimental inputs bilingually", () => {
   const app = readPublic("app.js");
   assert.match(app, /experimentalInputs/);
-  assert.match(app, /Experimental\/unverified inputs/);
-  assert.match(app, /实验性\/尚未完整验证的输入/);
-  assert.doesNotMatch(app, /NCM|MFLAC|Audio Vivid/);
+  assert.match(app, /Unstable\/experimental inputs/);
+  assert.match(app, /不稳定\/实验性输入/);
+  assert.match(app, /NCM \/ KGG \/ QQ 音乐 QMC \/ KGMA \/ KWM \/ VPR/);
 });
 
 test("renderer surfaces a feedback hint without personal contact details", () => {
@@ -237,15 +247,19 @@ test("blank page insertion is exposed in the image merge queue", () => {
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("non-commercial notice is present in UI and styles without author attribution", () => {
+test("Mahiro branding, attribution, unstable warning, and QQ guide are present", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
-  assert.match(html, /class="author-line"/);
-  assert.doesNotMatch(html, /牢蜂|LaoFeng/);
-  assert.match(html, /仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式/);
-  assert.match(html, /禁止商业售卖/);
+  assert.match(html, /<title>Mahiro Format<\/title>/);
+  assert.match(html, /原作者：牢蜂（LaoFeng）/);
+  assert.match(html, /YKZStudio/);
+  assert.match(html, /class="compatibility-warning"/);
+  assert.match(html, /NCM \/ KGG \/ QQ 音乐 QMC \/ KGMA \/ KWM \/ VPR/);
+  assert.match(html, /id="qqTutorialModal"/);
+  assert.match(app, /MFLAC_EKEY_REQUIRED/);
+  assert.match(app, /function maybeShowQqTutorial/);
   assert.match(css, /\.author-line/);
-  // 渲染器不重新引入 innerHTML
+  assert.match(css, /\.compatibility-warning/);
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });

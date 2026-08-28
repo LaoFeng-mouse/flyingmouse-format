@@ -1,10 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Mahiro Format pastel avatar icon</title>
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff9a5a"/>
-      <stop offset="1" stop-color="#ff7a45"/>
+    <linearGradient id="paper" x1="7" y1="5" x2="58" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE8F1"/>
+      <stop offset="0.5" stop-color="#EEF0FF"/>
+      <stop offset="1" stop-color="#E6F9F1"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="18" y1="15" x2="46" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFD5E0"/>
+      <stop offset="1" stop-color="#F3A9C0"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="url(#g)"/>
-  <path d="M36 12 L18 36 h11 l-3 16 20-26 H34 l2-14z" fill="#ffffff"/>
+  <rect x="2" y="2" width="60" height="60" rx="20" fill="url(#paper)" stroke="#8B789A" stroke-width="2"/>
+  <path d="M32 12c2-5 7-6 9-3-4 0-6 2-6 5 8 2 13 9 13 19v13H16V33c0-11 6-18 16-21Z" fill="url(#hair)" stroke="#725E82" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M20 31c0-9 5-15 12-15s12 6 12 15v5c0 8-5 14-12 14s-12-6-12-14v-5Z" fill="#FFF9F6" stroke="#725E82" stroke-width="2"/>
+  <path d="M20 29c2-9 7-13 15-13 4 0 8 2 10 6-6-2-10-1-14 2-4 3-7 5-11 5Z" fill="url(#hair)"/>
+  <ellipse cx="27" cy="34" rx="2.4" ry="3.2" fill="#4598D4"/>
+  <ellipse cx="37" cy="34" rx="2.4" ry="3.2" fill="#4598D4"/>
+  <circle cx="27.7" cy="33" r="0.8" fill="#FFFFFF"/>
+  <circle cx="37.7" cy="33" r="0.8" fill="#FFFFFF"/>
+  <path d="M29 41c2 1.8 4 1.8 6 0" fill="none" stroke="#D95187" stroke-width="2" stroke-linecap="round"/>
+  <path d="M17 50c4-5 9-7 15-7s11 2 15 7l-3 8H20l-3-8Z" fill="#F7FAFF" stroke="#725E82" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M27 48c2 3 3 4 5 5 2-1 3-2 5-5" fill="none" stroke="#79D9C2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M50 10v7M46.5 13.5h7" stroke="#D95187" stroke-width="2" stroke-linecap="round"/>
 </svg>

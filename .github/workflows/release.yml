@@ -81,7 +81,7 @@ jobs:
         run: npm test
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev
 
       - name: Build Windows 10 and 11 installer
         run: npm run dist
@@ -101,7 +101,7 @@ jobs:
       - name: Upload validated installers
         uses: actions/upload-artifact@v4
         with:
-          name: flyingmouse-format-${{ github.ref_name }}
+          name: mahiro-format-${{ github.ref_name }}
           path: |
             dist/*Setup-*-x64.exe
             dist/*Setup-*-win7-x64.exe
@@ -164,7 +164,7 @@ jobs:
           "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev
 
       - name: Build unsigned macOS DMG
         run: npm run dist:mac:${{ matrix.arch }}
@@ -173,7 +173,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dmg="$(find dist -maxdepth 1 -name "FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg" -print -quit)"
+          dmg="$(find dist -maxdepth 1 -name "Mahiro Format-Setup-*-mac-${{ matrix.arch }}.dmg" -print -quit)"
           test -n "$dmg"
           attach="$(hdiutil attach -readonly -nobrowse "$dmg")"
           mount="$(printf '%s\n' "$attach" | awk '/\/Volumes\// { sub(/^.*\/Volumes\//, "/Volumes/"); print; exit }')"
@@ -193,7 +193,7 @@ jobs:
           trap cleanup EXIT
           app="$(find "$mount" -maxdepth 1 -name '*.app' -print -quit)"
           test -n "$app"
-          file "$app/Contents/MacOS/FlyingMouse Format"
+          file "$app/Contents/MacOS/Mahiro Format"
           file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/ffmpeg"
           file "$app/Contents/Resources/engines/darwin-${{ matrix.arch }}/runtime/bin/pdftoppm"
           if ! codesign --verify --deep "$app"; then
@@ -201,7 +201,7 @@ jobs:
             printf '%s\n' "$signature"
             printf '%s\n' "$signature" | grep -Eq 'Signature=adhoc|code object is not signed at all'
           fi
-          "$app/Contents/MacOS/FlyingMouse Format" >"$RUNNER_TEMP/flyingmouse-smoke.log" 2>&1 &
+          "$app/Contents/MacOS/Mahiro Format" >"$RUNNER_TEMP/mahiro-smoke.log" 2>&1 &
           pid=$!
           sleep 12
           kill -0 "$pid"
@@ -211,8 +211,8 @@ jobs:
       - name: Upload validated DMG
         uses: actions/upload-artifact@v4
         with:
-          name: flyingmouse-format-${{ github.ref_name }}-mac-${{ matrix.arch }}
-          path: dist/FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg
+          name: mahiro-format-${{ github.ref_name }}-mac-${{ matrix.arch }}
+          path: dist/Mahiro Format-Setup-*-mac-${{ matrix.arch }}.dmg
           if-no-files-found: error
 
   publish:
@@ -240,10 +240,13 @@ jobs:
           # 标准版 x64 exe/blockmap 重命名为连字符，匹配 latest.yml 的 url
           # （空格会被 GitHub 显示成点，electron-updater 按 url 下载会 404）
           cd release-assets
-          # 把所有资产名里的空格统一换成连字符（exe/blockmap/dmg/win7），
-          # 否则 GitHub 资产上传会因文件名含空格返回 400（v0.6.5 发布事故根因），
-          # 且 electron-updater 按 latest.yml 的 url 下载也会 404。
-          for f in *; do
+          for f in *Setup-*-x64.exe; do
+            [ -e "$f" ] || continue
+            case "$(basename "$f")" in *win7*) continue;; esac
+            n="$(basename "$f" | tr ' ' '-')"
+            [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
+          done
+          for f in *.blockmap; do
             [ -e "$f" ] || continue
             n="$(basename "$f" | tr ' ' '-')"
             [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
@@ -261,7 +264,7 @@ jobs:
             echo "release $TAG already exists; uploading assets only"
           else
             gh release create "$TAG" --repo "${{ github.repository }}" \
-              --title "FlyingMouse Format $TAG" \
+              --title "Mahiro Format $TAG" \
               --notes-file "$NOTES" --draft
           fi
           gh release upload "$TAG" release-assets/* --repo "${{ github.repository }}" --clobber

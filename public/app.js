@@ -9,6 +9,7 @@ const state = {
   previewResult: null,
   previewOpener: null,
   folderName: "",
+  sessionToken: "",
   settings: { schemaVersion: 2, targetBySource: {} }
 };
 
@@ -83,11 +84,12 @@ const progressLabel = document.querySelector("#progressLabel");
 const progressPercent = document.querySelector("#progressPercent");
 const progressTrack = document.querySelector(".progress-track");
 const progressFill = document.querySelector("#progressFill");
-const mouseMascot = document.querySelector("#mouseMascot");
+const mahiroMascot = document.querySelector("#mahiroMascot");
 const languageSelect = document.querySelector("#languageSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
 const compressFolderButton = document.querySelector("#compressFolderButton");
 const agentInstallButton = document.querySelector("#agentInstallButton");
+const workspace = document.querySelector(".workspace");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
 const {
   STORAGE_KEY: LEGACY_TARGET_STORAGE_KEY,
@@ -99,7 +101,7 @@ const { LANGUAGE_STORAGE_KEY, createI18n } = window.FlyingMouseI18n;
 
 const messages = {
   "zh-CN": {
-    "workspace.aria": "文件转换工作台", "brand.title": "鼠鼠帮你把文件转成需要的格式",
+    "workspace.aria": "文件转换工作台", "brand.title": "真寻的格式工房，让每一份文件轻松变身",
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
@@ -112,7 +114,7 @@ const messages = {
     "preview.tooLarge": "文本文件超过 2 MB，为避免界面卡顿，请保存后查看。", "preview.failed": "预览失败：{message}",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
-    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
+    "upload.title": "把文件放到 Mahiro 的工作台", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
     "action.save": "保存", "action.saveAll": "保存全部", "action.compressFolder": "压缩文件夹",
@@ -121,7 +123,7 @@ const messages = {
     "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
-    "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
+    "formats.experimental": "不稳定/实验性输入（{count} 种）",
     "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
     "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
@@ -135,18 +137,51 @@ const messages = {
     "pdfGroupSize.label": "每几页一组",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
-    "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。音频仅支持普通格式转换（MP3/WAV/FLAC/AAC/OGG 等），不支持其他音乐平台的加密特殊格式。",
-    "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
-    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
-    "sponsor.qrAlt": "微信收款码",
+    "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。特殊音乐容器兼容已恢复，但统一标记为不稳定/实验性。",
+    "credits.line": "原作者：牢蜂（LaoFeng） · Mahiro Format 升级与维护：YKZStudio · 非官方绪山真寻同人主题 · 仅供个人免费使用，禁止商业售卖/转卖/套壳",
+    "specialAudio.warning": "不稳定功能：NCM / KGG / QQ 音乐 QMC / KGMA / KWM / VPR 的兼容性受客户端版本、密钥和样本影响。请只处理你有权使用的文件，保留源文件并复核结果。",
+    "sponsor.aria": "支持 Mahiro Format", "sponsor.close": "收起", "sponsor.title": "请真寻吃份布丁 🍮",
+    "sponsor.description": "Mahiro Format 仅供个人免费使用。如果帮到了你，欢迎请真寻吃份布丁～纯自愿。",
+    "sponsor.wechatPayee": "微信支付 · 原作者：牢蜂（LaoFeng）",
+    "sponsor.cryptoPayee": "YKZStudio · 加密货币",
+    "sponsor.qrAlt": "牢蜂（LaoFeng）的微信收款码",
     "feedback.label": "问题反馈", "feedback.hint": "如需帮助，请导出诊断报告并查看错误提示。",
     "feedback.guide": "问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。",
+    "tutorial.qq.title": "QQ 音乐登录凭据教程",
     "tutorial.close": "关闭",
+    "tutorial.qq.lead": "MFLAC / MGG / MMP4 的部分 musicex 变体需要使用 QQ 音乐网页版登录凭据在线换取密钥。此功能不稳定；只会向 QQ 音乐接口提交歌曲标识和凭据，不上传音频文件。请按下面步骤准备凭据后重新转换。",
+    "tutorial.qq.s1.title": "① 打开网页版 QQ 音乐并登录",
+    "tutorial.qq.s1.desc": "用电脑浏览器打开 y.qq.com，使用下载歌曲时的 QQ 账号登录。",
+    "tutorial.qq.s1.alt": "QQ 音乐网页版登录后的页面",
+    "tutorial.qq.s1.cap": "图 1：登录后的网页版 QQ 音乐",
+    "tutorial.qq.s2.title": "② 打开开发者工具",
+    "tutorial.qq.s2.desc": "按 F12（部分笔记本需 Fn+F12），或右键选择“检查”。",
+    "tutorial.qq.s2.alt": "按 F12 后开发者工具打开",
+    "tutorial.qq.s2.cap": "图 2：开发者工具面板",
+    "tutorial.qq.s3.title": "③ 切到“应用程序 / Application”",
+    "tutorial.qq.s3.desc": "在开发者工具顶部选择 Application；找不到时点击 » 展开更多标签。",
+    "tutorial.qq.s3.alt": "开发者工具顶部的 Application 标签",
+    "tutorial.qq.s3.cap": "图 3：Application 标签",
+    "tutorial.qq.s4.title": "④ 找到 Cookie 列表",
+    "tutorial.qq.s4.desc": "在左侧展开 Storage → Cookies，选择 https://y.qq.com。",
+    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com 的列表",
+    "tutorial.qq.s4.cap": "图 4：Cookie 列表",
+    "tutorial.qq.s5.title": "⑤ 复制登录字段",
+    "tutorial.qq.s5.desc": "复制 qm_keyst（新版可能是 psrf_qqmusic_key）的 Value，再复制 uin。不要把凭据发给他人。",
+    "tutorial.qq.s5.alt": "qm_keyst 和 uin 两行 Cookie",
+    "tutorial.qq.s5.cap": "图 5：qm_keyst 与 uin",
+    "tutorial.qq.s6.title": "⑥ 在桌面创建凭据文件",
+    "tutorial.qq.s6.desc": "新建 QQ音乐_登录cookie.txt，粘贴下面模板并替换为自己的值，保存到桌面。也可通过 FLYINGMOUSE_QQ_COOKIE 指定其他路径。",
+    "tutorial.qq.s6.alt": "记事本里 cookie 文件的格式",
+    "tutorial.qq.s6.cap": "图 6：凭据文件内容格式",
     "tutorial.copyTemplate": "复制模板",
+    "tutorial.copied": "模板已复制；请替换占位内容后保存，且不要分享凭据文件。",
+    "tutorial.qq.s7.title": "⑦ 返回 Mahiro Format 重试",
+    "tutorial.qq.s7.desc": "凭据文件就位后重新转换。凭据可能过期；再次提示时需要重新获取。",
     "tutorial.gotIt": "我知道了"
   },
   "en-US": {
-    "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
+    "workspace.aria": "File conversion workspace", "brand.title": "Mahiro's format studio, where every file transforms with ease",
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
@@ -159,7 +194,7 @@ const messages = {
     "preview.tooLarge": "This text file is larger than 2 MB. Save it to view without slowing the app.", "preview.failed": "Preview failed: {message}",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
-    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
+    "upload.title": "Drop files onto Mahiro's desk", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
     "action.save": "Save", "action.saveAll": "Save all", "action.compressFolder": "Compress folder",
@@ -168,7 +203,7 @@ const messages = {
     "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
-    "formats.experimental": "Experimental/unverified inputs: {formats}",
+    "formats.experimental": "Unstable/experimental inputs ({count})",
     "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
     "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
@@ -182,14 +217,47 @@ const messages = {
     "pdfGroupSize.label": "Pages per group",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
-    "formats.description": "Document conversion preserves layout where possible; PDFs can export page images, and images and scanned PDFs can be OCRed to TXT. Audio supports only ordinary formats (MP3/WAV/FLAC/AAC/OGG etc.); encrypted formats from music platforms are not supported.",
-    "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
-    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack — completely optional. If anyone charges you for this app, it's a scam.",
-    "sponsor.qrAlt": "WeChat payment QR code",
+    "formats.description": "Document conversion preserves layout where possible; PDFs can export page images, and images and scanned PDFs can be OCRed to TXT. Special music-container compatibility is restored but remains unstable and experimental.",
+    "credits.line": "Original author: 牢蜂 (LaoFeng) · Mahiro Format upgrade and maintenance: YKZStudio · Unofficial Mahiro Oyama fan theme · Free for personal use only; commercial resale and rebranding are prohibited",
+    "specialAudio.warning": "Unstable feature: NCM / KGG / QQ Music QMC / KGMA / KWM / VPR compatibility depends on client versions, keys, and sample coverage. Process only files you may lawfully use, keep the source, and review the result.",
+    "sponsor.aria": "Support Mahiro Format", "sponsor.close": "Close", "sponsor.title": "Treat Mahiro to pudding 🍮",
+    "sponsor.description": "Mahiro Format is free for personal use. If it helped you, you can treat Mahiro to pudding — completely optional.",
+    "sponsor.wechatPayee": "WeChat Pay · Original author: 牢蜂 (LaoFeng)",
+    "sponsor.cryptoPayee": "YKZStudio · Crypto",
+    "sponsor.qrAlt": "WeChat payment QR code for 牢蜂 (LaoFeng)",
     "feedback.label": "Feedback", "feedback.hint": "For help, export the diagnostics report and check the error details.",
     "feedback.guide": "Feedback: if a conversion fails, export the diagnostics report and check the error details. Help is described in the app documentation.",
+    "tutorial.qq.title": "QQ Music Login Credential Guide",
     "tutorial.close": "Close",
+    "tutorial.qq.lead": "Some MFLAC / MGG / MMP4 musicex variants require QQ Music web credentials for an online key exchange. This feature is unstable. Only the song identifier and credentials are sent to QQ Music; the audio file is not uploaded.",
+    "tutorial.qq.s1.title": "① Open QQ Music web and sign in",
+    "tutorial.qq.s1.desc": "Open y.qq.com in a desktop browser and sign in with the QQ account used to download the song.",
+    "tutorial.qq.s1.alt": "QQ Music web page after signing in",
+    "tutorial.qq.s1.cap": "Fig. 1: QQ Music web after sign-in",
+    "tutorial.qq.s2.title": "② Open Developer Tools",
+    "tutorial.qq.s2.desc": "Press F12 (Fn+F12 on some laptops), or right-click and choose Inspect.",
+    "tutorial.qq.s2.alt": "Developer Tools opened after pressing F12",
+    "tutorial.qq.s2.cap": "Fig. 2: Developer Tools",
+    "tutorial.qq.s3.title": "③ Open the Application tab",
+    "tutorial.qq.s3.desc": "Choose Application in the top tab bar; use » if the tab is hidden.",
+    "tutorial.qq.s3.alt": "Application tab in Developer Tools",
+    "tutorial.qq.s3.cap": "Fig. 3: Application tab",
+    "tutorial.qq.s4.title": "④ Open the Cookie list",
+    "tutorial.qq.s4.desc": "Expand Storage → Cookies and select https://y.qq.com.",
+    "tutorial.qq.s4.alt": "Storage → Cookies → y.qq.com list",
+    "tutorial.qq.s4.cap": "Fig. 4: Cookie list",
+    "tutorial.qq.s5.title": "⑤ Copy the login fields",
+    "tutorial.qq.s5.desc": "Copy the Value of qm_keyst (or psrf_qqmusic_key on newer sign-ins), then copy uin. Never share these credentials.",
+    "tutorial.qq.s5.alt": "qm_keyst and uin cookie rows",
+    "tutorial.qq.s5.cap": "Fig. 5: qm_keyst and uin",
+    "tutorial.qq.s6.title": "⑥ Create the credential file",
+    "tutorial.qq.s6.desc": "Create QQ音乐_登录cookie.txt on the desktop, paste the template below, replace both placeholders, and save. FLYINGMOUSE_QQ_COOKIE may point to another path.",
+    "tutorial.qq.s6.alt": "Cookie file format in Notepad",
+    "tutorial.qq.s6.cap": "Fig. 6: Credential file format",
     "tutorial.copyTemplate": "Copy template",
+    "tutorial.copied": "Template copied. Replace the placeholders, save it, and never share the credential file.",
+    "tutorial.qq.s7.title": "⑦ Retry in Mahiro Format",
+    "tutorial.qq.s7.desc": "Retry the conversion after saving the credential file. Credentials can expire and may need to be refreshed.",
     "tutorial.gotIt": "Got it"
   }
 };
@@ -219,22 +287,25 @@ function refreshLanguage() {
   applyStaticTranslations();
   renderHealth();
   if (state.capabilities) renderFormatTable();
-  if (!state.files.length) setStatus(t("status.ready"));
+  if (!state.files.length) {
+    setSelectPlaceholder(targetSelect, "", t("target.placeholder"));
+    setStatus(t("status.ready"));
+  }
   resetProgress();
   renderBatchList();
   syncPdfExcelHint();
 }
 
-const mouseAssets = {
-  idle: "/assets/mouse-format/mouse-idle.png",
-  upload: "/assets/mouse-format/mouse-upload.png",
-  analyzing: "/assets/mouse-format/mouse-analyzing.png",
-  converting: "/assets/mouse-format/mouse-converting.png",
-  pdfPages: "/assets/mouse-format/mouse-pdf-pages.png",
-  ocr: "/assets/mouse-format/mouse-ocr.png",
-  batch: "/assets/mouse-format/mouse-batch.png",
-  success: "/assets/mouse-format/mouse-success.png",
-  error: "/assets/mouse-format/mouse-error.png"
+const mahiroAssets = {
+  idle: "/assets/mahiro-format/mahiro-idle.png",
+  upload: "/assets/mahiro-format/mahiro-upload.png",
+  analyzing: "/assets/mahiro-format/mahiro-analyzing.png",
+  converting: "/assets/mahiro-format/mahiro-converting.png",
+  pdfPages: "/assets/mahiro-format/mahiro-pdf-pages.png",
+  ocr: "/assets/mahiro-format/mahiro-ocr.png",
+  batch: "/assets/mahiro-format/mahiro-batch.png",
+  success: "/assets/mahiro-format/mahiro-success.png",
+  error: "/assets/mahiro-format/mahiro-error.png"
 };
 
 const labels = {
@@ -300,19 +371,29 @@ function setStatus(message, type = "") {
   statusBox.className = `status-box ${type}`.trim();
 }
 
-function setMouseState(name) {
-  if (!mouseMascot) return;
-  mouseMascot.src = mouseAssets[name] || mouseAssets.idle;
-  mouseMascot.dataset.state = name;
+function setMahiroState(name) {
+  if (!mahiroMascot) return;
+  mahiroMascot.classList.remove("is-changing");
+  mahiroMascot.src = mahiroAssets[name] || mahiroAssets.idle;
+  mahiroMascot.dataset.state = name;
+  void mahiroMascot.offsetWidth;
+  mahiroMascot.classList.add("is-changing");
 }
 
 function setWorkflowStep(step) {
+  if (workspace) workspace.dataset.workflow = step;
   for (const item of workflowSteps) {
-    item.classList.toggle("active", item.dataset.step === step);
+    const isActive = item.dataset.step === step;
+    item.classList.toggle("active", isActive);
+    if (isActive) {
+      item.setAttribute("aria-current", "step");
+    } else {
+      item.removeAttribute("aria-current");
+    }
   }
 }
 
-function mouseStateForConversion(targetFormat) {
+function mahiroStateForConversion(targetFormat) {
   if (state.files.length > 1) return "batch";
   if (targetFormat === "txt" && state.fileInfos.some((info) => info.category === "image" || info.category === "pdf")) return "ocr";
   if ((targetFormat === "png" || targetFormat === "jpg") && state.fileInfos.some((info) => info.category === "pdf")) return "pdfPages";
@@ -398,14 +479,35 @@ function clearFile() {
   batchList.hidden = true;
   batchList.replaceChildren();
   setSelectPlaceholder(targetSelect, "", t("target.placeholder"));
+  syncZipCompressionField();
+  syncVideoCodecField();
+  syncAlphaBackgroundField();
+  syncPdfActionFields();
   syncPdfExcelHint();
   targetSelect.disabled = true;
   convertButton.disabled = true;
   resetDownload();
   resetProgress();
-  setMouseState("upload");
+  setMahiroState("upload");
   setStatus(t("status.ready"));
   setWorkflowStep("select");
+}
+
+async function initializeSession() {
+  const response = await fetch("/api/session", { cache: "no-store" });
+  if (!response.ok) throw new Error(i18n.language === "en-US" ? "Unable to establish a local session." : "无法建立本地安全会话。");
+  const payload = await response.json();
+  if (!/^[a-f0-9]{64}$/.test(String(payload?.token || ""))) {
+    throw new Error(i18n.language === "en-US" ? "The local session token is invalid." : "本地安全会话令牌无效。");
+  }
+  state.sessionToken = payload.token;
+}
+
+function apiFetch(url, options = {}) {
+  if (!state.sessionToken) throw new Error(i18n.language === "en-US" ? "The local session is unavailable." : "本地安全会话不可用。");
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Mahiro-Session-Token", state.sessionToken);
+  return fetch(url, { ...options, headers });
 }
 
 async function fetchCapabilities() {
@@ -451,9 +553,16 @@ function renderFormatTable() {
       createTextElement("p", "", `${i18n.language === "en-US" ? "Output" : "输出"}${pairSeparator}${group.targets.join(", ")}`)
     );
     if (Array.isArray(group.experimentalInputs) && group.experimentalInputs.length) {
-      article.append(createTextElement("p", "format-note", t("formats.experimental", {
-        formats: group.experimentalInputs.join(", ")
-      })));
+      const details = document.createElement("details");
+      details.className = "format-experimental";
+      const summary = createTextElement("summary", "", t("formats.experimental", {
+        count: group.experimentalInputs.length
+      }));
+      details.append(
+        summary,
+        createTextElement("p", "format-note", group.experimentalInputs.join(", "))
+      );
+      article.append(details);
     }
     return article;
   });
@@ -466,7 +575,7 @@ async function loadTargets(file) {
     return { extension: "", category: "image", targets: ["pdf"], experimental: false };
   }
   const extension = extensionOf(file.name);
-  const response = await fetch("/api/targets", {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension })
@@ -651,7 +760,7 @@ async function acceptFiles(fileList) {
     setStatus(i18n.language === "en-US"
       ? "This batch is too large for this computer. Convert the files in smaller batches."
       : "本批文件总大小超出当前电脑可处理范围，请分批转换。", "error");
-    setMouseState("error");
+    setMahiroState("error");
     fileInput.value = "";
     return;
   }
@@ -666,7 +775,7 @@ async function acceptFiles(fileList) {
   state.folderName = folderName && folderName !== firstRel.webkitRelativePath ? folderName : "";
   resetDownload();
   resetProgress();
-  setMouseState(files.length > 1 ? "batch" : "analyzing");
+  setMahiroState(files.length > 1 ? "batch" : "analyzing");
   setWorkflowStep("analyze");
 
   const summary = summarizeFiles(files);
@@ -697,7 +806,7 @@ async function acceptFiles(fileList) {
       syncZipCompressionField();
       syncVideoCodecField();
       syncPdfActionFields();
-      setMouseState("error");
+      setMahiroState("error");
       return;
     }
 
@@ -726,7 +835,7 @@ async function acceptFiles(fileList) {
     syncVideoCodecField();
     syncPdfActionFields();
     syncPdfExcelHint();
-    setMouseState(files.length > 1 ? "batch" : "idle");
+    setMahiroState(files.length > 1 ? "batch" : "idle");
     if (files.length === 1) {
       const info = infos[0];
       setStatus(i18n.language === "en-US"
@@ -741,7 +850,7 @@ async function acceptFiles(fileList) {
   } catch (error) {
     setStatus(i18n.language === "en-US" ? `Detection failed: ${error.message}` : `识别失败：${error.message}`, "error");
     setWorkflowStep("analyze");
-    setMouseState("error");
+    setMahiroState("error");
   }
 }
 
@@ -795,7 +904,7 @@ async function convertOneFile(file, targetFormat) {
     if (pdfGroupSize?.value) form.append("groupSize", pdfGroupSize.value);
   }
 
-  const response = await fetch("/api/convert", {
+  const response = await apiFetch("/api/convert", {
     method: "POST",
     body: form
   });
@@ -833,7 +942,7 @@ async function convertImagesToPdf(files) {
   // blanks=0,3 表示：在上传文件流的第 0 个（最前）和第 3 个文件之后插入空白页
   if (blankAfter.length) form.append("blanks", blankAfter.join(","));
 
-  const response = await fetch("/api/convert-images-to-pdf", {
+  const response = await apiFetch("/api/convert-images-to-pdf", {
     method: "POST",
     body: form
   });
@@ -868,7 +977,7 @@ async function convertMergedImagesToPdf() {
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `Images merged into ${result.fileName}.` : `图片已合并为：${result.fileName}。`, "success");
-    setMouseState("success");
+    setMahiroState("success");
     setWorkflowStep("save");
   } catch (error) {
     state.batchResults = state.files.map(() => ({
@@ -878,7 +987,7 @@ async function convertMergedImagesToPdf() {
     renderBatchList();
     setProgress(100, i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
     setStatus(i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
+    setMahiroState("error");
   } finally {
     state.isConverting = false;
     convertButton.disabled = !state.files.length;
@@ -906,7 +1015,7 @@ async function convertPdfsToMerged(files) {
     form.append("files", file);
   }
 
-  const response = await fetch("/api/merge-pdfs", {
+  const response = await apiFetch("/api/merge-pdfs", {
     method: "POST",
     body: form
   });
@@ -941,7 +1050,7 @@ async function convertMergedPdfs() {
     batchSaveButton.hidden = true;
     setProgress(100, i18n.language === "en-US" ? "Merge complete" : "合并完成", "success");
     setStatus(i18n.language === "en-US" ? `PDF files merged into ${result.fileName}.` : `PDF 已合并为：${result.fileName}。`, "success");
-    setMouseState("success");
+    setMahiroState("success");
     setWorkflowStep("save");
   } catch (error) {
     state.batchResults = state.files.map(() => ({
@@ -951,7 +1060,7 @@ async function convertMergedPdfs() {
     renderBatchList();
     setProgress(100, i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
     setStatus(i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
+    setMahiroState("error");
   } finally {
     state.isConverting = false;
     convertButton.disabled = !state.files.length;
@@ -969,7 +1078,7 @@ async function convertCurrentFiles() {
   resetDownload();
   state.batchResults = state.files.map(() => ({ status: "pending", detail: "等待转换" }));
   renderBatchList();
-  setMouseState(mouseStateForConversion(targetFormat));
+  setMahiroState(mahiroStateForConversion(targetFormat));
   setProgress(0, i18n.language === "en-US" ? "Preparing conversion" : "准备转换");
   setWorkflowStep("convert");
   setStatus(i18n.language === "en-US"
@@ -1041,7 +1150,7 @@ async function convertCurrentFiles() {
   }
 
   batchSaveButton.hidden = successful.length < 2;
-  setMouseState(failCount ? "error" : "success");
+  setMahiroState(failCount ? "error" : "success");
   if (successful.length) {
     setWorkflowStep("save");
   }
@@ -1063,7 +1172,8 @@ async function saveResult(result) {
     const saved = await window.flyingMouseFormat.saveConvertedFile({
       downloadUrl: result.downloadUrl,
       fileName: result.fileName,
-      assets: Array.isArray(result.assets) ? result.assets : undefined
+      assets: Array.isArray(result.assets) ? result.assets : undefined,
+      assetDirectoryName: result.assetDirectoryName
     });
     if (saved?.canceled) {
       setStatus(i18n.language === "en-US" ? `Converted: ${result.fileName}. Not saved yet.` : `转换完成：${result.fileName}。尚未保存。`, "success");
@@ -1212,12 +1322,12 @@ dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
   dropZone.classList.add("dragging");
-  setMouseState("upload");
+  setMahiroState("upload");
 });
 
 dropZone.addEventListener("dragleave", () => {
   dropZone.classList.remove("dragging");
-  setMouseState(state.files.length > 1 ? "batch" : state.files.length ? "idle" : "upload");
+  setMahiroState(state.files.length > 1 ? "batch" : state.files.length ? "idle" : "upload");
 });
 
 dropZone.addEventListener("drop", async (event) => {
@@ -1458,9 +1568,10 @@ async function initializeDurableSettings() {
 }
 
 async function initializeApp() {
+  await initializeSession();
   await initializeDurableSettings();
   applyStaticTranslations();
-  setMouseState("upload");
+  setMahiroState("upload");
   setWorkflowStep("select");
   await fetchCapabilities();
   initializeVersionLabel();
@@ -1479,7 +1590,7 @@ function initializeVersionLabel() {
 }
 
 initializeApp().catch((error) => {
-  setMouseState("error");
+  setMahiroState("error");
   toolHealth.textContent = t("health.failed");
   setStatus(error.message, "error");
   rendererLog("error", "能力检测失败", error);
@@ -1503,3 +1614,62 @@ if (sponsorToggle && sponsorPanel && sponsorClose && sponsorWidget) {
     if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) setSponsorOpen(false);
   });
 }
+
+/* --- QQ 音乐登录凭据教程 --- */
+const qqTutorialModal = document.querySelector("#qqTutorialModal");
+const qqTutorialBackdrop = document.querySelector("#qqTutorialBackdrop");
+const qqTutorialClose = document.querySelector("#qqTutorialClose");
+const qqTutorialGotIt = document.querySelector("#qqTutorialGotIt");
+const qqCookieTemplate = document.querySelector("#qqCookieTemplate");
+const qqCookieTemplateCopy = document.querySelector("#qqCookieTemplateCopy");
+const QQ_COOKIE_ERROR_CODES = new Set(["MFLAC_EKEY_REQUIRED", "MFLAC_EKEY_NETWORK"]);
+
+function openQqTutorial() {
+  if (qqTutorialModal) qqTutorialModal.hidden = false;
+}
+
+function closeQqTutorial() {
+  if (qqTutorialModal) qqTutorialModal.hidden = true;
+}
+
+function maybeShowQqTutorial(error) {
+  if (error && QQ_COOKIE_ERROR_CODES.has(String(error.errorCode || ""))) {
+    openQqTutorial();
+    return true;
+  }
+  return false;
+}
+
+async function copyQqCookieTemplate() {
+  if (!qqCookieTemplate) return;
+  const templateText = qqCookieTemplate.textContent;
+  try {
+    await navigator.clipboard.writeText(templateText);
+    setStatus(t("tutorial.copied"), "success");
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(qqCookieTemplate);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    setStatus(i18n.language === "en-US"
+      ? "Template selected. Press Ctrl+C to copy it."
+      : "模板已选中，请按 Ctrl+C 复制。", "success");
+  }
+}
+
+if (qqTutorialModal && qqTutorialBackdrop && qqTutorialClose && qqTutorialGotIt) {
+  qqTutorialClose.addEventListener("click", closeQqTutorial);
+  qqTutorialGotIt.addEventListener("click", closeQqTutorial);
+  qqTutorialBackdrop.addEventListener("click", closeQqTutorial);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !qqTutorialModal.hidden) closeQqTutorial();
+  });
+  qqTutorialModal.querySelectorAll(".step-figure img").forEach((img) => {
+    img.addEventListener("error", () => {
+      img.hidden = true;
+    });
+  });
+}
+
+qqCookieTemplateCopy?.addEventListener("click", copyQqCookieTemplate);

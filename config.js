@@ -1,4 +1,4 @@
-// config.js — 飞鼠格式服务端共享配置：引擎路径解析、目录、格式常量。
+// config.js — Mahiro Format 服务端共享配置：引擎路径解析、目录、格式常量。
 // 第一批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const fs = require("fs");
@@ -10,7 +10,7 @@ const DEFAULT_PORT = Number(process.env.PORT || 5177);
 const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir(), "flyingmouse-format-runtime");
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
-const MAX_UPLOAD_BYTES = Number.MAX_SAFE_INTEGER;
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 
 function bundledFfmpegPath() {
   const resourcesPath = process.resourcesPath || "";
@@ -158,10 +158,23 @@ const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
 const pdfImageTargets = ["png", "jpg"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
-const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
-// 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
-// （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
-// DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。
+const qmcV1Inputs = [
+  "tkm", "bkcmp3", "bkcm4a", "bkcflac", "bkcwav", "bkcape", "bkcogg", "bkcwma",
+  "666c6163", "6d7033", "6f6767", "6d3461", "776176"
+];
+const qmcV2Inputs = [
+  "mflac", "mflac0", "mgg", "mgg0", "mgg1", "mggl", "mmp4",
+  "qmcflac", "qmcogg", "qmc0", "qmc2", "qmc3", "qmc4", "qmc6", "qmc8"
+];
+const audioInput = new Set([
+  "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma",
+  "ncm", "kgg", "kgma", "kwm", "vpr", ...qmcV1Inputs, ...qmcV2Inputs
+]);
+// 特殊音乐容器兼容性受客户端版本、凭据、密钥与真实样本覆盖影响，统一标记为
+// 不稳定/实验性。Microsoft Store 构建继续隐藏这些入口并拒绝转换。
+const unlockAudioInputs = new Set([
+  "ncm", "kgg", "kgma", "kwm", "vpr", ...qmcV1Inputs, ...qmcV2Inputs
+]);
 const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
@@ -172,7 +185,7 @@ const experimentalInputsByCategory = Object.freeze({
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
   presentation: ["dps", "dpt"],
-  audio: []
+  audio: [...unlockAudioInputs]
 });
 const experimentalInputSet = new Set(Object.values(experimentalInputsByCategory).flat());
 const allTargets = new Set([
@@ -225,6 +238,7 @@ module.exports = {
   pdfImageTargets,
   pdfTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,

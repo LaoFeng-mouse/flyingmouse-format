@@ -1,10 +1,8 @@
 const LIMITS = Object.freeze({
-  // 所有大小/像素上限已移除：任何格式、任何大小，只要引擎能处理就转换（1:1 还原）。
-  // 用 Number.MAX_SAFE_INTEGER 占位（Infinity 会被 sharp/multer 当作非法值拒绝），上限检查恒为假，有效性检查（非法 size/尺寸）仍保留。
-  maxImagePixels: Number.MAX_SAFE_INTEGER,
-  maxImageDimension: Number.MAX_SAFE_INTEGER,
-  maxImagePdfPixels: Number.MAX_SAFE_INTEGER,
-  maxBatchBytes: Number.MAX_SAFE_INTEGER
+  maxImagePixels: 50_000_000,
+  maxImageDimension: 16_384,
+  maxImagePdfPixels: 100_000_000,
+  maxBatchBytes: 2 * 1024 * 1024 * 1024
 });
 
 const STRUCTURE_LIMITS = Object.freeze({

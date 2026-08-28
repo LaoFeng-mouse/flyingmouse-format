@@ -1,6 +1,10 @@
-# FlyingMouse Format / 飞鼠格式
+# Mahiro Format
 
-> A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
+> An unofficial Mahiro Oyama fan-themed, offline desktop file converter. / 一款采用非官方绪山真寻同人主题、可离线使用的桌面文件格式转换工具。
+
+界面角色图为本项目 AI 生成的非官方同人素材，不含动画截图或官方宣传图；角色与作品权利归原作者及相应权利方所有。本项目与原作权利方无官方合作或从属关系。详见 [`public/assets/mahiro-format/ASSET-NOTICE.md`](public/assets/mahiro-format/ASSET-NOTICE.md)。
+
+> 原作者 / Original author：牢蜂（LaoFeng） · Mahiro Format 升级与维护 / upgrade and maintenance：YKZStudio
 
 > **作者 Author：牢蜂（LaoFeng）**
 >
@@ -11,18 +15,22 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-0078D6)
 ![License](https://img.shields.io/badge/License-Non--Commercial-e95f6d)
 
-[下载最新版 / Download](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [问题反馈 / Issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues)
+[上游项目与历史版本 / Upstream project and historical releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) · [上游问题记录 / Upstream issues](https://github.com/LaoFeng-mouse/flyingmouse-format/issues)
 
-![FlyingMouse Format mouse UI](public/assets/screenshots/home.png)
+![Mahiro Format fan-theme UI](public/assets/screenshots/home.png)
 
 ## 中文
 
 ### 主要功能
 
-- 鼠鼠原版界面：鼠鼠会跟随上传、识别、批量、OCR、转换成功或失败切换状态。
+- Mahiro 液态玻璃同人主题界面：真寻会跟随上传、识别、批量、OCR、转换成功或失败切换状态；桌面、平板与窄窗口布局会自适应重排。
 - 本地离线转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器。
 - 支持图片、文本、Word/WPS、Excel/WPS、PPT/WPS、PDF、音频、视频和 ZIP。
-- 音频转换：支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA 等普通格式互转；**不支持其他音乐平台的加密特殊格式**（如 NCM / KGG / mflac / kgma / kwm 等）。
+- 特殊音乐容器兼容（不稳定/实验性）：NCM、KGG、QQ 音乐 QMC（TKM/BKC、MFLAC/MGG/MMP4/QMC）、KGMA、KWM、VPR 可转换为普通音频格式；兼容性受客户端版本、密钥、登录凭据和真实样本覆盖影响。
+- NCM：常规文件本地处理并保留可用元数据；Audio Vivid / AV3A 音轨仅支持 Windows。
+- KGG：需要本机酷狗 `KGMusicV3.db` 中对应歌曲的密钥；KGMA、KWM 可处理已知的内嵌密钥变体。
+- QQ 音乐 QMC：v1 静态密钥格式（TKM、BKC 与十六进制扩展名）和内嵌密钥 QMC2 / QTag 可离线处理；musicex 变体需要 QQ 音乐网页版登录凭据在线换取密钥。
+- VPR：当前掩码覆盖最多约 64 MiB 音频数据，且缺少足够真实样本，稳定性最低。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
 - 路径记忆：记住上次保存目录，下次保存时自动从该目录开始。
@@ -42,14 +50,14 @@
 - 相机 RAW 原片（CR2/CR3/NEF/ARW/DNG 等）可转换为 JPG/PNG/WebP/TIFF 等（内置 dcraw 解码，Windows 版，实验性）。
 - 资源保护：单图 50MP / 16384px、图片合并 PDF 总计 100MP、批量 2GB、PDF 不限页数（1:1 转换，长文档加载较慢）、OCR 不限页数。
 
-> **合规声明 Compliance Notice：本软件仅支持普通音频格式转换（MP3 / WAV / FLAC / AAC / OGG 等），不支持任何音乐平台的加密特殊格式。请支持正版音乐，尊重创作者。音频文件版权归原作者/唱片公司所有，本工具与各音乐平台无任何关联。本软件仅供个人免费使用，禁止商业售卖/转卖/套壳换皮重新发布。**
+> **不稳定功能与合规声明：NCM / KGG / QQ 音乐 QMC / KGMA / KWM / VPR 仅作为实验性兼容功能提供。请保留源文件并复核结果，只处理你合法取得且有权使用的文件。音频版权归相应创作者/唱片公司所有，本工具与音乐平台无关联。软件仅供个人免费使用，禁止商业售卖、转卖或套壳发布。详见 [特殊音乐格式兼容说明](docs/特殊音乐格式兼容说明.md)。**
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.6.5 对应系统的安装包。
-2. 安装并启动 FlyingMouse Format。
-3. 拖入文件，选择目标格式并开始转换。
-4. 选择保存位置；软件会记住目标格式与保存目录。
+1. 安装 Node.js 18 或更高版本。
+2. 运行 `npm ci` 安装锁定依赖。
+3. 运行 `npm run desktop` 启动 Mahiro Format。
+4. 拖入文件，选择目标格式并开始转换；转换后选择保存位置。
 
 从源码运行：
 
@@ -71,7 +79,7 @@ node cli.js images-to-pdf 1.jpg 2.jpg --output album.pdf --json
 node cli.js merge-pdfs a.pdf b.pdf --output merged.pdf --json
 ```
 
-安装版也可直接调用应用入口：macOS 使用 `FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format --cli ...`，Windows 使用 `FlyingMouse Format.exe --cli ...`。在软件顶部点击“接入 Agent”，会检索已存在的 `~/.codex/skills`、`~/.claude/skills`、`~/.agents/skills`（Windows 对应用户目录）并在确认后安装或更新 skill；不会自动创建未安装产品的目录。
+安装版也可直接调用应用入口：macOS 使用 `Mahiro Format.app/Contents/MacOS/Mahiro Format --cli ...`，Windows 使用 `Mahiro Format.exe --cli ...`。在软件顶部点击“接入 Agent”，会检索已存在的 `~/.codex/skills`、`~/.claude/skills`、`~/.agents/skills`（Windows 对应用户目录）并在确认后安装或更新 skill；不会自动创建未安装产品的目录。
 
 运行测试与打包：
 
@@ -82,15 +90,15 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.6.5-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
-- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.6.5-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
+- **Windows 10 / 11 x64（推荐）**：使用 `Mahiro Format-Setup-0.6.4-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
+- **Windows 7 SP1 x64（兼容版）**：使用 `Mahiro Format-Setup-0.6.4-win7-x64.exe`。它使用同一源码和 Mahiro 主题 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.6.5 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.6.4 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.6.5-mac-arm64.dmg`。
-- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.6.5-mac-x64.dmg`。
+- **Apple Silicon（M1 及更新）**：使用 `Mahiro Format-Setup-0.6.4-mac-arm64.dmg`。
+- **Intel Mac**：使用 `Mahiro Format-Setup-0.6.4-mac-x64.dmg`。
 
 首批 macOS 包支持 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。两个架构已在原生 GitHub runner 完成固定引擎、完整转换、包结构和 12 秒启动冒烟；真实 Mac 设备仍待验收。
 
@@ -108,10 +116,14 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Highlights
 
-- Original mouse UI with animated state changes for upload, detection, batch work, OCR, success, and errors.
+- Mahiro Oyama liquid-glass fan-theme UI with animated states for upload, detection, batch work, OCR, success, and errors, plus responsive desktop, tablet, and narrow-window layouts.
 - Fully local conversion with bundled FFmpeg, LibreOffice, Poppler, Tesseract, and an AVS3 decoder.
 - Converts images, text, Word/WPS, Excel/WPS, PPT/WPS, PDF, audio, video, and ZIP files.
-- Audio conversion between ordinary formats: MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA. **Encrypted special formats from music platforms (NCM / KGG / mflac / kgma / kwm etc.) are NOT supported.**
+- Unstable/experimental special music-container compatibility: NCM, KGG, QQ Music QMC (TKM/BKC, MFLAC/MGG/MMP4/QMC), KGMA, KWM, and VPR can be converted to ordinary audio formats. Results depend on client versions, keys, login credentials, and real-file coverage.
+- Standard NCM is handled locally with available metadata preserved; Audio Vivid / AV3A tracks require Windows.
+- KGG needs the matching key in the local Kugou `KGMusicV3.db`; known embedded-key KGMA and KWM variants work offline.
+- QQ Music QMC v1 static-key formats (TKM, BKC, and hexadecimal extensions) and embedded-key QMC2 / QTag variants work offline; musicex variants need QQ Music web credentials for online key exchange.
+- VPR currently supports at most about 64 MiB of encrypted audio data and has the least real-file validation.
 - Video codec selection: H.264 / H.265 / AV1 for video conversion (shown when targeting mp4/mov/mkv).
 - Remembers the chosen target separately for each source extension. Changing it replaces that extension's default.
 - Remembers the last save directory for the next save dialog.
@@ -129,16 +141,16 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - ICO icons convert to PNG/JPG and more; PNG/JPG can also produce multi-size ICO icons (experimental).
 - TGA images convert to PNG/JPG/WebP and more (built-in ffmpeg decoding, experimental).
 - Camera RAW files (CR2/CR3/NEF/ARW/DNG, etc.) convert to JPG/PNG/WebP/TIFF and more (built-in dcraw decoding, Windows build, experimental).
-- Resource safeguards: 50 MP / 16384 px per image, 100 MP image-to-PDF decode budget, 2 GB batches, 500 PDF pages, and 100 OCR pages.
+- Resource safeguards: 50 MP / 16,384 px per image, a 100 MP image-to-PDF decode budget, and 2 GB batches. PDF and OCR page counts are not capped, so very long documents may take longer.
 
-> **Compliance Notice: this software supports only ordinary audio format conversion (MP3 / WAV / FLAC / AAC / OGG etc.) and does NOT support encrypted special formats from any music platform. Please support the artists and respect copyright. Audio file copyrights belong to the respective artists/labels; this tool is not affiliated with any music platform. The software is free for personal use only; commercial resale or repackaging is prohibited.**
+> **Unstable-feature and compliance notice:** NCM / KGG / QQ Music QMC / KGMA / KWM / VPR support is experimental. Keep the source and review every result. Process only files you lawfully obtained and may use. Audio copyrights remain with their respective creators and labels; this tool is not affiliated with any music platform. Personal use only; commercial resale and rebranding are prohibited. See [special music format compatibility](docs/特殊音乐格式兼容说明.md).
 
 ### Quick start
 
-1. Download the v0.6.5 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
-2. Install and launch FlyingMouse Format.
-3. Drop in files, choose a target, and convert.
-4. Choose a save location. The app remembers both the target preference and save folder.
+1. Install Node.js 18 or newer.
+2. Run `npm ci` to install the locked dependencies.
+3. Run `npm run desktop` to launch Mahiro Format.
+4. Drop in files, choose a target, convert, and select a save location.
 
 > The source repository excludes the large FFmpeg, LibreOffice, Poppler, and Tesseract bundles. Regular users should install the Release build. Developers need to provide the corresponding resources under `bin/` for the complete conversion feature set.
 
@@ -153,19 +165,19 @@ node cli.js images-to-pdf 1.jpg 2.jpg --output album.pdf --json
 node cli.js merge-pdfs a.pdf b.pdf --output merged.pdf --json
 ```
 
-Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.app/Contents/MacOS/FlyingMouse Format --cli ...` on macOS or `FlyingMouse Format.exe --cli ...` on Windows. “Connect to Agent” discovers existing Codex, Claude, and generic Agent skill directories and installs the bundled lightweight wrapper after confirmation.
+Packaged builds accept the same commands after `--cli`: use `Mahiro Format.app/Contents/MacOS/Mahiro Format --cli ...` on macOS or `Mahiro Format.exe --cli ...` on Windows. “Connect to Agent” discovers existing Codex, Claude, and generic Agent skill directories and installs the bundled lightweight wrapper after confirmation.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.6.5-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
-- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.6.5-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
+- **Windows 10 / 11 x64 (recommended):** use `Mahiro Format-Setup-0.6.4-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `Mahiro Format-Setup-0.6.4-win7-x64.exe`, derived from the same source and Mahiro fan-theme UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.5 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.4 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.6.5-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse.Format-Setup-0.6.5-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `Mahiro Format-Setup-0.6.4-mac-arm64.dmg`.
+- **Intel Mac:** use `Mahiro Format-Setup-0.6.4-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 
@@ -190,7 +202,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, xls, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html, png, jpg (逐页转图 zip) |
 | PDF | pdf | xlsx, docx, txt, html, png, jpg, split/解密 PDF |
-| Audio / 音频 | mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
+| Audio / 音频 | ncm, kgg, tkm, bkc*, QMC v1 十六进制扩展名, mflac/mflac0, mgg/mgg0/mgg1/mggl, mmp4, qmcflac, qmcogg, qmc0/2/3/4/6/8, kgma, kwm, vpr, mp3, wav, flac, m4a, aac, ogg, opus, wma（特殊格式均不稳定/实验性） | mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Video / 视频 | mp4, mov, mkv, webm, avi, m4v, wmv, flv | mp4, webm, mkv, mov, gif, mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | ZIP / 压缩包 | zip | pdf (图片合并) |
 | Any file / 任意文件 | any | zip |
@@ -204,7 +216,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 ## License / 许可证
 
-**非商用许可 Non-Commercial License** — 作者：牢蜂（LaoFeng）。
+**非商用许可 Non-Commercial License** — 原作者：牢蜂（LaoFeng）；Mahiro Format 升级与维护：YKZStudio。
 
 - 允许个人免费使用与传播（须保留作者署名与本协议）。
 - **禁止商业用途**：禁止销售、转卖、收费提供服务、在电商平台（闲鱼/淘宝/拼多多等）倒卖。
@@ -219,6 +231,6 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 ## Support / 支持
 
-FlyingMouse Format is free, offline, and has no ads. If it helped you, you can buy Mouse a dried fish — completely optional. / 飞鼠格式免费、离线、无广告。如果它帮到了你，欢迎请鼠鼠吃根小鱼干，纯自愿。
+Mahiro Format is free, offline, and has no ads. If it helped you, you can treat Mahiro to pudding — completely optional. / Mahiro Format 免费、离线、无广告。如果它帮到了你，欢迎请真寻吃份布丁，纯自愿。
 
 ![WeChat payment QR / 微信收款码](public/assets/sponsor-qr.jpg)

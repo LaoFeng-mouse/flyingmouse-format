@@ -1,4 +1,4 @@
-// utils.js — 飞鼠格式服务端通用工具：进程执行、文件名/格式处理、输出命名。
+// utils.js — Mahiro Format 服务端通用工具：进程执行、文件名/格式处理、输出命名。
 // 第一批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const { randomUUID } = require("crypto");
@@ -215,7 +215,9 @@ function targetsForExt(rawExt, tools) {
 function platformCapabilities(platform = process.platform, arch = process.arch) {
   return {
     os: platform,
-    arch
+    arch,
+    standardNcm: true,
+    av3a: platform === "win32"
   };
 }
 
@@ -224,8 +226,8 @@ function experimentalInputWarning(inputExt) {
     code: "EXPERIMENTAL_INPUT",
     details: { inputFormat: inputExt },
     messages: {
-      zhCN: `${inputExt.toUpperCase()} 输入仍属实验性，尚未覆盖足够真实样本；请复核转换结果。`,
-      enUS: `${inputExt.toUpperCase()} input is experimental and lacks broad real-file validation; review the converted result.`
+      zhCN: `${inputExt.toUpperCase()} 属于不稳定的实验性兼容功能，尚未覆盖足够真实样本；请保留源文件并复核转换结果。`,
+      enUS: `${inputExt.toUpperCase()} support is unstable and experimental with limited real-file validation; keep the source and review the converted result.`
     }
   };
 }

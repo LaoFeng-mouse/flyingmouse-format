@@ -1,4 +1,4 @@
-// pdf.js — 飞鼠格式 PDF 转换域：加密/拆分/合并/渲染图片/扫描 OCR/表格→Excel/DOCX/HTML。
+// pdf.js — Mahiro Format PDF 转换域：加密/拆分/合并/渲染图片/扫描 OCR/表格→Excel/DOCX/HTML。
 // 第三批抽取自 server.js（零逻辑改动，纯搬移）。
 // convertScannedPdfToOcrDocx 依赖 text-docx.js（第四批），convertPresentationTo* 依赖
 // office-convert.js（第四批）——顶层不 require 以避免循环，函数内延迟 require。

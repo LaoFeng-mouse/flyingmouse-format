@@ -15,6 +15,11 @@ const { discoverSkillRoots, installAgentSkill } = require("./agent-skill-install
 const { resolveRuntimePaths } = require("./runtime-paths");
 const { zipDirectory } = require("./zip-util");
 const {
+  assetDirectoryNameForMarkdown,
+  rewriteMarkdownAssetReferences,
+  sanitizeAssetDirectoryName
+} = require("./markdown-assets");
+const {
   mergeLegacySettings,
   readLastSaveDirectory,
   readSettings,
@@ -50,8 +55,8 @@ function createWindow(url) {
     height: 820,
     minWidth: 900,
     minHeight: 640,
-    title: "FlyingMouse Format",
-    backgroundColor: "#f6f3ee",
+    title: "Mahiro Format",
+    backgroundColor: "#f3f0f8",
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -108,7 +113,7 @@ async function boot() {
   const started = await serverRuntime.startServer(0);
   server = started.server;
   serverUrl = started.url;
-  console.log(`FlyingMouse Format started at ${started.url}`);
+  console.log(`Mahiro Format started at ${started.url}`);
   log(`Server started at ${started.url}`);
   createWindow(started.url);
 }
@@ -144,7 +149,7 @@ ipcMain.handle("install-agent-skill", async (event, payload) => {
     defaultId: 0,
     cancelId: 1,
     title: "接入 Agent / Connect to Agent",
-    message: "将安装或更新 FlyingMouse Format skill",
+    message: "将安装或更新 Mahiro Format skill",
     detail: `应用会把轻量 skill 写入以下已存在的目录，并记录当前程序的 CLI 路径：\n\n${targetNames}`,
     noLink: true
   });
@@ -188,28 +193,25 @@ function downloadToFile(url, destination) {
 }
 
 // md 转换产物带图片外置目录时，把 assets 清单里的图片下载到
-// `<md所在目录>/<下载名basename>.assets/`，与 md 内相对引用（./xxx.assets/...）对应。
-async function downloadAssetsToMdSidecar(assets, mdDestination) {
+// `<md所在目录>/<最终保存名basename>.assets/`。用户改名后同步改写 md 引用。
+async function downloadAssetsToMdSidecar(assets, mdDestination, sourceAssetDirectoryName) {
   if (!Array.isArray(assets) || !assets.length) return;
   const mdDir = path.dirname(mdDestination);
-  const mdBasename = path.basename(mdDestination, path.extname(mdDestination)) || "document";
-  const assetsDir = path.join(mdDir, `${mdBasename}.assets`);
+  const targetAssetDirectoryName = assetDirectoryNameForMarkdown(mdDestination);
+  const assetsDir = path.join(mdDir, targetAssetDirectoryName);
   await fs.promises.mkdir(assetsDir, { recursive: true });
   for (const asset of assets) {
     const name = path.basename(String(asset?.name || ""));
     if (!name) continue;
-    let absoluteUrl;
-    try {
-      absoluteUrl = trustedDownloadUrl(asset?.url);
-    } catch (error) {
-      log("Rejected md asset URL", error);
-      continue;
-    }
-    try {
-      await downloadToFile(absoluteUrl, path.join(assetsDir, name));
-    } catch (error) {
-      log(`Failed to download md asset: ${name}`, error);
-    }
+    const absoluteUrl = trustedDownloadUrl(asset?.url);
+    await downloadToFile(absoluteUrl, path.join(assetsDir, name));
+  }
+
+  const source = sanitizeAssetDirectoryName(sourceAssetDirectoryName);
+  if (source && source !== targetAssetDirectoryName) {
+    const markdown = await fs.promises.readFile(mdDestination, "utf8");
+    const rewritten = rewriteMarkdownAssetReferences(markdown, source, targetAssetDirectoryName);
+    await fs.promises.writeFile(mdDestination, rewritten, "utf8");
   }
 }
 
@@ -296,6 +298,7 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   const fileName = path.basename(String(payload?.fileName || "converted-file"));
   const absoluteUrl = trustedDownloadUrl(payload?.downloadUrl);
   const assets = Array.isArray(payload?.assets) ? payload.assets : [];
+  const assetDirectoryName = sanitizeAssetDirectoryName(payload?.assetDirectoryName);
   const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "保存转换后的文件",
@@ -310,7 +313,7 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   await downloadToFile(absoluteUrl, result.filePath);
   // md 转换产物带图片外置目录时，把图片下载到 md 同目录的 <下载名>.assets/，
   // 保证 md 里的相对图片引用（./xxx.assets/...）可用。
-  await downloadAssetsToMdSidecar(assets, result.filePath);
+  await downloadAssetsToMdSidecar(assets, result.filePath, assetDirectoryName);
   await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
     .catch((error) => log("Failed to remember save directory", error));
   return { canceled: false, filePath: result.filePath };
@@ -326,7 +329,8 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
   const trustedFiles = files.map((item) => ({
     fileName: path.basename(String(item?.fileName || "converted-file")),
     downloadUrl: trustedDownloadUrl(item?.downloadUrl),
-    assets: Array.isArray(item?.assets) ? item.assets : []
+    assets: Array.isArray(item?.assets) ? item.assets : [],
+    assetDirectoryName: sanitizeAssetDirectoryName(item?.assetDirectoryName)
   }));
 
   const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
@@ -348,7 +352,7 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
   for (const item of trustedFiles) {
     const destination = uniqueDestination(directory, item.fileName);
     await downloadToFile(item.downloadUrl, destination);
-    await downloadAssetsToMdSidecar(item.assets, destination);
+    await downloadAssetsToMdSidecar(item.assets, destination, item.assetDirectoryName);
     saved.push(destination);
   }
 

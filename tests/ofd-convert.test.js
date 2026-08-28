@@ -24,6 +24,13 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 let server;
 let baseUrl;
+let sessionToken;
+
+function apiFetch(apiPath, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Mahiro-Session-Token", sessionToken);
+  return fetch(`${baseUrl}${apiPath}`, { ...options, headers });
+}
 
 before(async () => {
   await fsp.mkdir(scratchRoot, { recursive: true });
@@ -31,6 +38,12 @@ before(async () => {
     const started = await serverModule.startServer(0);
     server = started.server;
     baseUrl = started.url;
+    sessionToken = started.sessionToken;
+  }
+  if (!sessionToken && baseUrl) {
+    const response = await fetch(`${baseUrl}/api/session`, { cache: "no-store" });
+    assert.equal(response.status, 200);
+    sessionToken = (await response.json()).token;
   }
 });
 
@@ -141,7 +154,7 @@ async function uploadConvert(filePath, fileName, targetFormat) {
   const form = new FormData();
   form.append("file", new Blob([await fsp.readFile(filePath)], { type: "application/octet-stream" }), fileName);
   form.append("targetFormat", targetFormat);
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   const body = await response.json().catch(() => ({}));
   return { response, body };
 }

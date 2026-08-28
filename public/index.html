@@ -3,26 +3,35 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>FlyingMouse Format</title>
-    <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
+    <title>Mahiro Format</title>
+    <meta name="theme-color" content="#edf7ff">
+    <link rel="icon" href="/assets/mahiro-format/mahiro-avatar.png">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <div class="mahiro-sky" aria-hidden="true">
+      <span class="mahiro-sky-star star-one">✦</span>
+      <span class="mahiro-sky-star star-two">✧</span>
+      <span class="mahiro-sky-star star-three">✦</span>
+    </div>
     <main class="shell">
-      <section class="workspace" data-i18n-aria="workspace.aria" aria-label="文件转换工作台">
-        <div class="topbar">
+      <section class="workspace" data-workflow="select" data-i18n-aria="workspace.aria" aria-label="文件转换工作台">
+        <header class="topbar">
           <div class="brand-lockup">
-            <img class="brand-mouse" src="/assets/mouse-format/mouse-idle.png" alt="" aria-hidden="true">
-            <div>
-              <p class="eyebrow">FlyingMouse Format <span class="app-version" id="appVersion"></span></p>
+            <span class="brand-avatar" aria-hidden="true">
+              <span class="brand-avatar-halo"></span>
+              <img class="brand-mahiro" src="/assets/mahiro-format/mahiro-avatar.png" alt="">
+              <span class="brand-avatar-sparkle">✦</span>
+            </span>
+            <div class="brand-copy">
+              <p class="eyebrow">Mahiro Format · Pastel File Studio <span class="app-version" id="appVersion"></span></p>
               <div class="brand-title-row">
-                <h1 data-i18n="brand.title">鼠鼠帮你把文件转成需要的格式</h1>
-                <p class="feedback-line" data-i18n="feedback.guide">问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。</p>
+                <h1 data-i18n="brand.title">真寻的格式工房，让每一份文件轻松变身</h1>
               </div>
-              <p class="author-line">仅供个人免费使用，禁止商业售卖/转卖/套壳 · 仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式 · 请支持正版音乐</p>
             </div>
           </div>
           <div class="topbar-actions">
+            <div class="health" id="toolHealth" data-i18n="health.checking">正在检测转换引擎</div>
             <button class="ghost-button diagnostics-button" id="agentInstallButton" type="button" data-i18n="agent.install">接入 Agent</button>
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
             <label class="language-field">
@@ -32,132 +41,164 @@
                 <option value="en-US">English</option>
               </select>
             </label>
-            <div class="health" id="toolHealth" data-i18n="health.checking">正在检测转换引擎</div>
           </div>
-        </div>
+        </header>
 
-        <nav class="workflow-steps" id="workflowSteps" data-i18n-aria="workflow.aria" aria-label="转换流程">
-          <span class="workflow-step active" data-step="select" data-i18n="workflow.select">选择文件</span>
-          <span class="workflow-step" data-step="analyze" data-i18n="workflow.analyze">识别格式</span>
-          <span class="workflow-step" data-step="convert" data-i18n="workflow.convert">开始转换</span>
-          <span class="workflow-step" data-step="save" data-i18n="workflow.save">保存结果</span>
-        </nav>
+        <div class="studio-layout">
+          <aside class="studio-rail">
+            <nav class="workflow-steps" id="workflowSteps" data-i18n-aria="workflow.aria" aria-label="转换流程">
+              <span class="workflow-step active" data-step="select" aria-current="step" data-i18n="workflow.select">选择文件</span>
+              <span class="workflow-step" data-step="analyze" data-i18n="workflow.analyze">识别格式</span>
+              <span class="workflow-step" data-step="convert" data-i18n="workflow.convert">开始转换</span>
+              <span class="workflow-step" data-step="save" data-i18n="workflow.save">保存结果</span>
+            </nav>
 
-        <div class="converter-grid">
-          <section class="drop-panel" data-i18n-aria="upload.aria" aria-label="上传文件">
-            <input id="fileInput" type="file" class="sr-only" multiple>
-            <input id="folderInput" type="file" class="sr-only" webkitdirectory>
-            <button class="drop-zone" id="dropZone" type="button">
-              <span class="mouse-stage" aria-hidden="true">
-                <img class="mouse-mascot" id="mouseMascot" src="/assets/mouse-format/mouse-upload.png" alt="">
-              </span>
-              <span class="drop-main" data-i18n="upload.title">把文件丢给鼠鼠</span>
-              <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
-              <span class="drop-folder-line">
-                <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
-              </span>
-            </button>
-
-            <div class="file-strip" id="fileStrip" hidden>
-              <div>
-                <p class="file-name" id="fileName"></p>
-                <p class="file-meta" id="fileMeta"></p>
-              </div>
-              <button class="ghost-button" id="clearButton" type="button" data-i18n="action.clear">清空</button>
+            <div class="rail-notes">
+              <p class="feedback-line" data-i18n="feedback.guide">问题反馈：转换遇到问题，请导出诊断报告并查看错误提示，帮助信息详见软件说明。</p>
+              <p class="compatibility-warning" data-i18n="specialAudio.warning">不稳定功能：NCM / KGG / QQ 音乐 QMC / KGMA / KWM / VPR 的兼容性受客户端版本、密钥和样本影响。请只处理你有权使用的文件，保留源文件并复核结果。</p>
             </div>
-            <div class="batch-list" id="batchList" hidden></div>
-          </section>
-
-          <aside class="controls" data-i18n-aria="settings.aria" aria-label="转换设置">
-            <label class="field">
-              <span data-i18n="target.label">目标格式</span>
-              <select id="targetSelect" disabled>
-                <option value="" data-i18n="target.placeholder">先选择文件</option>
-              </select>
-            </label>
-            <p class="format-hint" id="pdfExcelHint" data-i18n="pdfExcel.hint" hidden>适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。</p>
-
-            <label class="field" id="zipCompressionField" hidden>
-              <span data-i18n="zip.label">ZIP 压缩级别（0=不压缩，9=最大）</span>
-              <select id="zipCompression">
-                <option value="0" data-i18n="zip.0">0 不压缩（最快）</option>
-                <option value="1" data-i18n="zip.1">1 最快</option>
-                <option value="6" selected data-i18n="zip.6">6 标准（默认）</option>
-                <option value="9" data-i18n="zip.9">9 最大压缩（最慢）</option>
-              </select>
-            </label>
-
-            <label class="field" id="videoCodecField" hidden>
-              <span data-i18n="videoCodec.label">视频编码</span>
-              <select id="videoCodec">
-                <option value="h264" selected data-i18n="videoCodec.h264">H.264（兼容性最好，默认）</option>
-                <option value="h265" data-i18n="videoCodec.h265">H.265（体积更小）</option>
-                <option value="av1" data-i18n="videoCodec.av1">AV1（压缩率最高）</option>
-              </select>
-            </label>
-
-            <label class="field" id="alphaBackgroundField" hidden>
-              <span data-i18n="alphaBackground.label">透明背景色（带透明通道的视频转码时合成）</span>
-              <select id="alphaBackground">
-                <option value="white" selected data-i18n="alphaBackground.white">白色（默认）</option>
-                <option value="black" data-i18n="alphaBackground.black">黑色</option>
-                <option value="0x00ff00" data-i18n="alphaBackground.green">绿色（绿幕）</option>
-                <option value="0xff00ff" data-i18n="alphaBackground.magenta">洋红（绿幕抠像常用）</option>
-              </select>
-            </label>
-
-            <label class="field" id="pdfPasswordField" hidden>
-              <span data-i18n="pdfPassword.label">PDF 密码（加密/解密）</span>
-              <input id="pdfPassword" type="password" autocomplete="off">
-            </label>
-            <label class="field" id="pdfActionField" hidden>
-              <span data-i18n="pdfAction.label">PDF 操作</span>
-              <select id="pdfAction">
-                <option value="" data-i18n="pdfAction.split">拆分 PDF（默认）</option>
-                <option value="encrypt" data-i18n="pdfAction.encrypt">加密 PDF</option>
-                <option value="decrypt" data-i18n="pdfAction.decrypt">解密 PDF</option>
-              </select>
-            </label>
-            <label class="field" id="pdfSplitModeField" hidden>
-              <span data-i18n="pdfSplitMode.label">拆分方式</span>
-              <select id="pdfSplitMode">
-                <option value="page" data-i18n="pdfSplitMode.page">逐页拆分（每页一个 PDF）</option>
-                <option value="group" data-i18n="pdfSplitMode.group">每 N 页一组</option>
-              </select>
-            </label>
-            <label class="field" id="pdfGroupSizeField" hidden>
-              <span data-i18n="pdfGroupSize.label">每几页一组</span>
-              <input id="pdfGroupSize" type="number" min="2" max="999" value="2" inputmode="numeric">
-            </label>
-
-            <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
-
-            <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
-
-            <div class="progress-panel" id="progressPanel" hidden>
-              <div class="progress-header">
-                <span id="progressLabel" data-i18n="progress.label">转换进度</span>
-                <span id="progressPercent">0%</span>
-              </div>
-              <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="progress.label" aria-label="转换进度">
-                <div class="progress-fill" id="progressFill"></div>
-              </div>
-            </div>
-
-            <div class="status-box" id="statusBox" role="status" data-i18n="status.ready">选择文件后会显示可用的转换格式。</div>
-            <button class="ghost-button preview-button" id="previewButton" type="button" hidden data-i18n="preview.open">预览</button>
-            <a class="download-button" id="downloadButton" hidden data-i18n="action.download">下载转换后的文件</a>
-            <button class="download-button" id="batchSaveButton" type="button" hidden data-i18n="action.saveAll">保存全部</button>
           </aside>
+
+          <div class="studio-content">
+            <div class="converter-grid">
+              <section class="drop-panel glass-panel" data-i18n-aria="upload.aria" aria-label="上传文件">
+                <span class="panel-index" aria-hidden="true">01</span>
+                <input id="fileInput" type="file" class="sr-only" multiple>
+                <input id="folderInput" type="file" class="sr-only" webkitdirectory>
+                <button class="drop-zone" id="dropZone" type="button">
+                  <span class="mahiro-stage" aria-hidden="true">
+                    <span class="mahiro-orbit orbit-one"></span>
+                    <span class="mahiro-orbit orbit-two"></span>
+                    <img class="mahiro-mascot" id="mahiroMascot" src="/assets/mahiro-format/mahiro-upload.png" alt="" data-state="upload">
+                  </span>
+                  <span class="drop-copy">
+                    <span class="drop-main" data-i18n="upload.title">把文件放到 Mahiro 的工作台</span>
+                    <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
+                  </span>
+                  <span class="drop-action" aria-hidden="true">＋</span>
+                </button>
+
+                <div class="drop-folder-line">
+                  <span class="drop-folder-rule" aria-hidden="true"></span>
+                  <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
+                  <span class="drop-folder-rule" aria-hidden="true"></span>
+                </div>
+
+                <div class="file-strip" id="fileStrip" hidden>
+                  <div>
+                    <p class="file-name" id="fileName"></p>
+                    <p class="file-meta" id="fileMeta"></p>
+                  </div>
+                  <button class="ghost-button" id="clearButton" type="button" data-i18n="action.clear">清空</button>
+                </div>
+                <div class="batch-list" id="batchList" hidden></div>
+              </section>
+
+              <aside class="controls glass-panel" data-i18n-aria="settings.aria" aria-label="转换设置">
+                <div class="controls-heading">
+                  <span class="panel-index" aria-hidden="true">02</span>
+                  <span class="controls-orb" aria-hidden="true"></span>
+                </div>
+
+                <label class="field">
+                  <span data-i18n="target.label">目标格式</span>
+                  <select id="targetSelect" disabled>
+                    <option value="" data-i18n="target.placeholder">先选择文件</option>
+                  </select>
+                </label>
+                <p class="format-hint" id="pdfExcelHint" data-i18n="pdfExcel.hint" hidden>适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。</p>
+
+                <label class="field" id="zipCompressionField" hidden>
+                  <span data-i18n="zip.label">ZIP 压缩级别（0=不压缩，9=最大）</span>
+                  <select id="zipCompression">
+                    <option value="0" data-i18n="zip.0">0 不压缩（最快）</option>
+                    <option value="1" data-i18n="zip.1">1 最快</option>
+                    <option value="6" selected data-i18n="zip.6">6 标准（默认）</option>
+                    <option value="9" data-i18n="zip.9">9 最大压缩（最慢）</option>
+                  </select>
+                </label>
+
+                <label class="field" id="videoCodecField" hidden>
+                  <span data-i18n="videoCodec.label">视频编码</span>
+                  <select id="videoCodec">
+                    <option value="h264" selected data-i18n="videoCodec.h264">H.264（兼容性最好，默认）</option>
+                    <option value="h265" data-i18n="videoCodec.h265">H.265（体积更小）</option>
+                    <option value="av1" data-i18n="videoCodec.av1">AV1（压缩率最高）</option>
+                  </select>
+                </label>
+
+                <label class="field" id="alphaBackgroundField" hidden>
+                  <span data-i18n="alphaBackground.label">透明背景色（带透明通道的视频转码时合成）</span>
+                  <select id="alphaBackground">
+                    <option value="white" selected data-i18n="alphaBackground.white">白色（默认）</option>
+                    <option value="black" data-i18n="alphaBackground.black">黑色</option>
+                    <option value="0x00ff00" data-i18n="alphaBackground.green">绿色（绿幕）</option>
+                    <option value="0xff00ff" data-i18n="alphaBackground.magenta">洋红（绿幕抠像常用）</option>
+                  </select>
+                </label>
+
+                <label class="field" id="pdfPasswordField" hidden>
+                  <span data-i18n="pdfPassword.label">PDF 密码（加密/解密）</span>
+                  <input id="pdfPassword" type="password" autocomplete="off">
+                </label>
+                <label class="field" id="pdfActionField" hidden>
+                  <span data-i18n="pdfAction.label">PDF 操作</span>
+                  <select id="pdfAction">
+                    <option value="" data-i18n="pdfAction.split">拆分 PDF（默认）</option>
+                    <option value="encrypt" data-i18n="pdfAction.encrypt">加密 PDF</option>
+                    <option value="decrypt" data-i18n="pdfAction.decrypt">解密 PDF</option>
+                  </select>
+                </label>
+                <label class="field" id="pdfSplitModeField" hidden>
+                  <span data-i18n="pdfSplitMode.label">拆分方式</span>
+                  <select id="pdfSplitMode">
+                    <option value="page" data-i18n="pdfSplitMode.page">逐页拆分（每页一个 PDF）</option>
+                    <option value="group" data-i18n="pdfSplitMode.group">每 N 页一组</option>
+                  </select>
+                </label>
+                <label class="field" id="pdfGroupSizeField" hidden>
+                  <span data-i18n="pdfGroupSize.label">每几页一组</span>
+                  <input id="pdfGroupSize" type="number" min="2" max="999" value="2" inputmode="numeric">
+                </label>
+
+                <div class="action-stack">
+                  <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
+                  <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
+                </div>
+
+                <div class="progress-panel" id="progressPanel" hidden>
+                  <div class="progress-header">
+                    <span id="progressLabel" data-i18n="progress.label">转换进度</span>
+                    <span id="progressPercent">0%</span>
+                  </div>
+                  <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="progress.label" aria-label="转换进度">
+                    <div class="progress-fill" id="progressFill"></div>
+                  </div>
+                </div>
+
+                <div class="status-box" id="statusBox" role="status" data-i18n="status.ready">选择文件后会显示可用的转换格式。</div>
+                <div class="result-actions">
+                  <button class="ghost-button preview-button" id="previewButton" type="button" hidden data-i18n="preview.open">预览</button>
+                  <a class="download-button" id="downloadButton" hidden data-i18n="action.download">下载转换后的文件</a>
+                  <button class="download-button" id="batchSaveButton" type="button" hidden data-i18n="action.saveAll">保存全部</button>
+                </div>
+              </aside>
+            </div>
+
+            <section class="matrix glass-panel" data-i18n-aria="formats.aria" aria-label="支持格式">
+              <span class="panel-index" aria-hidden="true">03</span>
+              <div class="matrix-header">
+                <h2 data-i18n="formats.title">当前支持</h2>
+                <p data-i18n="formats.description">文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。特殊音乐容器兼容已恢复，但统一标记为不稳定/实验性。</p>
+              </div>
+              <div class="format-table" id="formatTable"></div>
+            </section>
+          </div>
         </div>
 
-        <section class="matrix" data-i18n-aria="formats.aria" aria-label="支持格式">
-          <div class="matrix-header">
-            <h2 data-i18n="formats.title">当前支持</h2>
-            <p data-i18n="formats.description">文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。</p>
-          </div>
-          <div class="format-table" id="formatTable"></div>
-        </section>
+        <footer class="studio-footer">
+          <p class="author-line" data-i18n="credits.line">原作者：牢蜂（LaoFeng） · Mahiro Format 升级与维护：YKZStudio · 非官方绪山真寻同人主题 · 仅供个人免费使用，禁止商业售卖/转卖/套壳</p>
+        </footer>
       </section>
     </main>
 
@@ -174,17 +215,121 @@
       <div class="preview-content" id="previewContent"></div>
     </aside>
 
-    <aside class="sponsor-widget" id="sponsorWidget" data-i18n-aria="sponsor.aria" aria-label="支持鼠鼠">
-      <button class="sponsor-toggle" id="sponsorToggle" type="button" data-i18n-title="sponsor.aria" title="支持鼠鼠" aria-expanded="false">
-        <img class="sponsor-mouse" src="/assets/mouse-format/mouse-idle.png" alt="🐭">
+    <aside class="sponsor-widget" id="sponsorWidget" data-i18n-aria="sponsor.aria" aria-label="支持 Mahiro Format">
+      <button class="sponsor-toggle" id="sponsorToggle" type="button" data-i18n-title="sponsor.aria" title="支持 Mahiro Format" aria-expanded="false">
+        <img class="sponsor-mahiro" src="/assets/mahiro-format/mahiro-avatar.png" alt="真寻">
       </button>
       <div class="sponsor-panel" id="sponsorPanel" hidden>
         <button class="sponsor-close" id="sponsorClose" type="button" data-i18n-aria="sponsor.close" aria-label="收起">×</button>
-        <p class="sponsor-title" data-i18n="sponsor.title">请鼠鼠吃小鱼干 🐟</p>
-        <p class="sponsor-sub" data-i18n="sponsor.description">如果飞鼠格式帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿，软件永远免费</p>
-        <img class="sponsor-qr" src="/assets/sponsor-qr.jpg" data-i18n-alt="sponsor.qrAlt" alt="微信收款码">
+        <p class="sponsor-title" data-i18n="sponsor.title">请真寻吃份布丁 🍮</p>
+        <p class="sponsor-sub" data-i18n="sponsor.description">Mahiro Format 仅供个人免费使用。如果帮到了你，欢迎请真寻吃份布丁～纯自愿。</p>
+        <section class="sponsor-payment sponsor-payment-wechat" aria-labelledby="sponsorWechatPayee">
+          <p class="sponsor-payee" id="sponsorWechatPayee" data-i18n="sponsor.wechatPayee">微信支付 · 原作者：牢蜂（LaoFeng）</p>
+          <img class="sponsor-qr" src="/assets/sponsor-qr.jpg" data-i18n-alt="sponsor.qrAlt" alt="牢蜂（LaoFeng）的微信收款码">
+        </section>
+        <section class="sponsor-payment sponsor-payment-crypto" aria-labelledby="sponsorCryptoPayee">
+          <p class="sponsor-payee" id="sponsorCryptoPayee" data-i18n="sponsor.cryptoPayee">YKZStudio · 加密货币</p>
+          <dl class="sponsor-wallets">
+            <div class="sponsor-wallet">
+              <dt>TRON</dt>
+              <dd><code>TNsEbkyyy9XWpsTT64Zvn7bkN2wkbeWPwM</code></dd>
+            </div>
+            <div class="sponsor-wallet">
+              <dt>GasFree</dt>
+              <dd><code>TV7w7oi18KiSVz9qoXsvQur2FKNnu3Ry5h</code></dd>
+            </div>
+          </dl>
+        </section>
       </div>
     </aside>
+
+    <div class="tutorial-modal" id="qqTutorialModal" hidden>
+      <div class="tutorial-backdrop" id="qqTutorialBackdrop"></div>
+      <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-labelledby="qqTutorialTitle">
+        <div class="tutorial-header">
+          <h2 id="qqTutorialTitle" data-i18n="tutorial.qq.title">QQ 音乐登录凭据教程</h2>
+          <button class="tutorial-close" id="qqTutorialClose" type="button" data-i18n-aria="tutorial.close" aria-label="关闭">×</button>
+        </div>
+        <div class="tutorial-body">
+          <p class="tutorial-lead" data-i18n="tutorial.qq.lead">部分 musicex 变体需要 QQ 音乐网页版登录凭据在线换取密钥。此功能不稳定，只会提交歌曲标识和凭据，不上传音频文件。</p>
+          <ol class="tutorial-steps">
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s1.title">① 打开网页版 QQ 音乐并登录</h3>
+                <p data-i18n="tutorial.qq.s1.desc">用电脑浏览器打开 y.qq.com，使用下载歌曲时的 QQ 账号登录。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step1.png" data-i18n-alt="tutorial.qq.s1.alt" alt="QQ 音乐网页版登录后的页面" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s1.cap">图 1：登录后的网页版 QQ 音乐</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s2.title">② 打开开发者工具</h3>
+                <p data-i18n="tutorial.qq.s2.desc">按 F12，或右键选择“检查”。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step2.png" data-i18n-alt="tutorial.qq.s2.alt" alt="开发者工具面板" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s2.cap">图 2：开发者工具面板</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s3.title">③ 切到“应用程序 / Application”</h3>
+                <p data-i18n="tutorial.qq.s3.desc">在开发者工具顶部选择 Application。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step3.png" data-i18n-alt="tutorial.qq.s3.alt" alt="Application 标签" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s3.cap">图 3：Application 标签</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s4.title">④ 找到 Cookie 列表</h3>
+                <p data-i18n="tutorial.qq.s4.desc">在左侧展开 Storage → Cookies，选择 https://y.qq.com。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step4.png" data-i18n-alt="tutorial.qq.s4.alt" alt="QQ 音乐 Cookie 列表" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s4.cap">图 4：Cookie 列表</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s5.title">⑤ 复制登录字段</h3>
+                <p data-i18n="tutorial.qq.s5.desc">复制 qm_keyst（或 psrf_qqmusic_key）和 uin。不要把凭据发给他人。</p>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step5.png" data-i18n-alt="tutorial.qq.s5.alt" alt="qm_keyst 和 uin" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s5.cap">图 5：qm_keyst 与 uin</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s6.title">⑥ 在桌面创建凭据文件</h3>
+                <p data-i18n="tutorial.qq.s6.desc">新建 QQ音乐_登录cookie.txt，粘贴模板并替换为自己的值。</p>
+                <div class="template-card">
+                  <code class="template-code" id="qqCookieTemplate">uin=你的QQ号; qm_keyst=你复制的qm_keyst值</code>
+                  <button class="ghost-button" id="qqCookieTemplateCopy" type="button" data-i18n="tutorial.copyTemplate">复制模板</button>
+                </div>
+              </div>
+              <figure class="step-figure">
+                <img src="/assets/qq-tutorial/step6.png" data-i18n-alt="tutorial.qq.s6.alt" alt="凭据文件格式" loading="lazy">
+                <figcaption data-i18n="tutorial.qq.s6.cap">图 6：凭据文件内容格式</figcaption>
+              </figure>
+            </li>
+            <li class="tutorial-step">
+              <div class="step-copy">
+                <h3 data-i18n="tutorial.qq.s7.title">⑦ 返回 Mahiro Format 重试</h3>
+                <p data-i18n="tutorial.qq.s7.desc">凭据文件就位后重新转换；凭据过期时需要重新获取。</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+        <div class="tutorial-footer">
+          <button class="primary-button" id="qqTutorialGotIt" type="button" data-i18n="tutorial.gotIt">我知道了</button>
+        </div>
+      </div>
+    </div>
 
     <script src="/i18n.js"></script>
     <script src="/conversion-preferences.js"></script>

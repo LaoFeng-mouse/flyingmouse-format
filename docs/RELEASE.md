@@ -3,11 +3,12 @@
 ## 发布前门禁
 
 1. 确认 `package.json`、`package-lock.json`、`win7-package-lock.json` 和文档版本一致。
-2. 确认 `build/icon.png` 仍由鼠鼠资源生成，并运行图标回归。**商店 APPX 的 logo 另在 `build/appx/`（Square44x44Logo/Square150x150Logo/Wide310x150Logo/StoreLogo），必须同源鼠鼠、不得残留橙色闪电旧图标**——`git log -- build/appx/` 只允许鼠鼠相关提交，生成脚本 `scripts/gen-appx-logos.js`（从 build/icon.png 派生 4 个 logo）。
-3. 校验固定引擎 manifest 和 SHA-256；Windows 包含 FFmpeg、AVS3、LibreOffice、Poppler、Tesseract，macOS 使用对应原生架构引擎。
-4. 运行完整 `npm test`、生产依赖审计、真实 NCM/AV3A 回归和 `git diff --check`。
-5. PDF 智能表格固定样本必须满足：电子 PDF 单元格准确率不低于 95%，扫描 PDF 不低于 85%，表格数量、页签和明确合并区域 100% 正确。
-6. 任一测试、审计、构建、架构、PE、包结构或安装包门禁失败，不得公开 Release。
+2. 确认 `build/icon.png` 与 `public/assets/mahiro-format/mahiro-avatar.png` 同源，并运行 Mahiro 图标回归。**商店 APPX 的 logo 另在 `build/appx/`（Square44x44Logo/Square150x150Logo/Wide310x150Logo/StoreLogo），必须同源 Mahiro 头像、不得残留橙色闪电或原版鼠鼠图标**——生成脚本 `scripts/gen-appx-logos.js` 会从 `build/icon.png` 派生 4 个 logo。
+3. 确认 `public/assets/mahiro-format/ASSET-NOTICE.md` 随包保留，界面与商店材料不得把非官方同人主题描述成官方授权或合作。
+4. 校验固定引擎 manifest 和 SHA-256；Windows 包含 FFmpeg、AVS3、LibreOffice、Poppler、Tesseract，macOS 使用对应原生架构引擎。
+5. 运行完整 `npm test`、生产依赖审计、真实 NCM/AV3A 回归和 `git diff --check`。
+6. PDF 智能表格固定样本必须满足：电子 PDF 单元格准确率不低于 95%，扫描 PDF 不低于 85%，表格数量、页签和明确合并区域 100% 正确。
+7. 任一测试、审计、构建、架构、PE、包结构或安装包门禁失败，不得公开 Release。
 
 ## Windows 10/11 x64
 
@@ -15,7 +16,7 @@
 npm run dist
 ```
 
-输出 `dist/FlyingMouse Format-Setup-<version>-x64.exe`。验收版本、哈希、ASAR 白名单、转换资源、鼠鼠图标、PE 元数据和启动冒烟。
+输出 `dist/Mahiro Format-Setup-<version>-x64.exe`。验收版本、哈希、ASAR 白名单、转换资源、Mahiro 图标、同人主题声明、PE 元数据和启动冒烟。
 
 ## Windows 7 SP1 x64 Legacy
 

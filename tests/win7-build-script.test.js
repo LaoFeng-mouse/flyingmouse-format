@@ -107,12 +107,12 @@ test("prepare-only creates a clean, current Win7 staging tree without changing t
   const rootWin7Lock = JSON.parse(beforeWin7Lock.toString("utf8"));
   const stagedPackage = JSON.parse(fs.readFileSync(path.join(stagePath, "package.json"), "utf8"));
   const stagedLock = JSON.parse(fs.readFileSync(path.join(stagePath, "package-lock.json"), "utf8"));
-  assert.equal(rootPackage.name, "flyingmouse-format");
+  assert.equal(rootPackage.name, "mahiro-format");
   assert.notEqual(stagedPackage.name, rootPackage.name);
   assert.equal(stagedPackage.dependencies.sharp, "0.32.6");
   assert.equal(stagedPackage.dependencies["pdfjs-dist"], "2.16.105");
   assert.equal(stagedPackage.devDependencies.electron, "22.3.27");
-  assert.equal(stagedLock.name, "flyingmouse-format-win7");
+  assert.equal(stagedLock.name, "mahiro-format-win7");
   assert.equal(stagedLock.version, rootWin7Lock.version);
   assert.equal(stagedLock.packages[""].devDependencies.electron, "22.3.27");
   assert.equal(stagedLock.packages[""].dependencies.sharp, "0.32.6");
@@ -797,7 +797,7 @@ test("artifact copying rejects a staging directory outside the project output", 
   assert.throws(
     () =>
       copyWin7Artifact(path.join(projectRoot, "..", "win7-stage"), projectRoot, {
-        productName: "FlyingMouse Format",
+        productName: "Mahiro Format",
         version: "0.3.2"
       }),
     /must be strictly inside.*output/i
@@ -811,8 +811,8 @@ test("artifact copying replaces only the exact Win7 installer in the root dist",
   const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
   const stageDist = path.join(temporaryStage, "dist");
   const rootDist = path.join(temporaryRoot, "dist");
-  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
-  const regularName = "FlyingMouse Format-Setup-0.3.2.exe";
+  const win7Name = "Mahiro Format-Setup-0.3.2-win7-x64.exe";
+  const regularName = "Mahiro Format-Setup-0.3.2.exe";
   const stagedInstaller = Buffer.from([0x4d, 0x5a, 0x57, 0x49, 0x4e, 0x37]);
   const oldWin7Installer = Buffer.from("old Win7 installer", "utf8");
   const regularInstaller = Buffer.from([0x4d, 0x5a, 0x52, 0x45, 0x47, 0x55, 0x4c, 0x41, 0x52]);
@@ -826,7 +826,7 @@ test("artifact copying replaces only the exact Win7 installer in the root dist",
   const regularBefore = fs.readFileSync(path.join(rootDist, regularName));
 
   const copiedPath = copyWin7Artifact(temporaryStage, temporaryRoot, {
-    productName: "FlyingMouse Format",
+    productName: "Mahiro Format",
     version: "0.3.2"
   });
 
@@ -844,8 +844,8 @@ test("artifact copying restores the previous Win7 installer when promotion fails
   const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
   const stageDist = path.join(temporaryStage, "dist");
   const rootDist = path.join(temporaryRoot, "dist");
-  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
-  const regularName = "FlyingMouse Format-Setup-0.3.2.exe";
+  const win7Name = "Mahiro Format-Setup-0.3.2-win7-x64.exe";
+  const regularName = "Mahiro Format-Setup-0.3.2.exe";
   const oldWin7 = Buffer.from("recover this installer", "utf8");
   const regularBefore = Buffer.from("ordinary installer stays", "utf8");
 
@@ -861,7 +861,7 @@ test("artifact copying restores the previous Win7 installer when promotion fails
       copyWin7Artifact(
         temporaryStage,
         temporaryRoot,
-        { productName: "FlyingMouse Format", version: "0.3.2" },
+        { productName: "Mahiro Format", version: "0.3.2" },
         {
           renameSync(source, destination) {
             renameCalls += 1;
@@ -965,7 +965,7 @@ test("artifact copying rejects a root dist junction without touching external fi
   const temporaryRoot = createTemporaryRoot(t, "flyingmouse-win7-dist-root-");
   const externalRoot = createTemporaryRoot(t, "flyingmouse-win7-dist-target-");
   const temporaryStage = path.join(temporaryRoot, "output", "win7-stage");
-  const win7Name = "FlyingMouse Format-Setup-0.3.2-win7-x64.exe";
+  const win7Name = "Mahiro Format-Setup-0.3.2-win7-x64.exe";
   const sentinel = path.join(externalRoot, "do-not-overwrite.txt");
   fs.mkdirSync(path.join(temporaryStage, "dist"), { recursive: true });
   fs.mkdirSync(path.join(temporaryRoot, "dist"), { recursive: true });
@@ -978,7 +978,7 @@ test("artifact copying rejects a root dist junction without touching external fi
   assert.throws(
     () =>
       copyWin7Artifact(temporaryStage, temporaryRoot, {
-        productName: "FlyingMouse Format",
+        productName: "Mahiro Format",
         version: "0.3.2"
       }),
     /root dist.*reparse|reparse.*root dist/i

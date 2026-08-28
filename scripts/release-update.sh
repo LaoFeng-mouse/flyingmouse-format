@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 飞鼠格式 v0.3.6+ 半自动发布脚本（Windows NSIS 自动更新闭环）
+# Mahiro Format v0.3.6+ 半自动发布脚本（Windows NSIS 自动更新闭环）
 # 功能：打包 → 上传 exe+latest.yml+.blockmap 到 GitHub Release → 设为 Latest
 # 用法：
 #   bash scripts/release-update.sh            # 发布当前版本（版本号从 package.json 读）
@@ -56,13 +56,13 @@ log "开始打包 npm run dist（NSIS + APPX，约 10 分钟）..."
 CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist
 
 # ---------- 5. 产物校验 ----------
-EXE="dist/FlyingMouse Format-Setup-${VERSION}-x64.exe"
+EXE="dist/Mahiro Format-Setup-${VERSION}-x64.exe"
 [[ -f "$EXE" ]] || die "未找到安装包: $EXE"
 [[ -f dist/latest.yml ]] || die "未找到 latest.yml"
 # blockmap 必须精确匹配当前版本，不能用 ls | head -1（dist 里可能残留旧版本
 # blockmap，字母序会取错，导致上传的 blockmap 与 exe 版本不配对、老用户
 # 自动更新下载差量包时校验失败）
-BLOCKMAP="dist/FlyingMouse Format-Setup-${VERSION}-x64.exe.blockmap"
+BLOCKMAP="dist/Mahiro Format-Setup-${VERSION}-x64.exe.blockmap"
 [[ -f "$BLOCKMAP" ]] || die "未找到与 v${VERSION} 配对的 .blockmap: $BLOCKMAP"
 
 LATEST_VER=$(grep '^version:' dist/latest.yml | head -1 | awk '{print $2}')
@@ -76,7 +76,7 @@ if [[ -z "$TAG_COMMIT" ]]; then
   git -c http.proxy=http://127.0.0.1:7897 push origin "$TAG"
 fi
 
-NOTES="## FlyingMouse Format v$VERSION
+NOTES="## Mahiro Format v$VERSION
 
 （发布说明请在此填写，或用 --notes-file 传入）
 - Windows x64 安装包 + 自动更新（latest.yml/blockmap）
@@ -86,12 +86,12 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   log "Release $TAG 已存在，跳过创建"
 else
   log "创建 Release $TAG（draft）"
-  gh release create "$TAG" --draft --title "FlyingMouse Format v$VERSION" --notes "$NOTES"
+  gh release create "$TAG" --draft --title "Mahiro Format v$VERSION" --notes "$NOTES"
 fi
 
 # ---------- 7. 上传资产 ----------
 log "上传安装包 + latest.yml + blockmap"
-SAFE_EXE="FlyingMouse-Format-Setup-${VERSION}-x64.exe"
+SAFE_EXE="Mahiro-Format-Setup-${VERSION}-x64.exe"
 cp "$EXE" "/tmp/${SAFE_EXE}"
 cp dist/latest.yml /tmp/release-latest.yml
 cp "$BLOCKMAP" "/tmp/${SAFE_EXE}.blockmap"

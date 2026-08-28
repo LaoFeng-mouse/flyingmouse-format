@@ -1,4 +1,4 @@
-## FlyingMouse Format v0.5.1
+## Mahiro Format v0.5.1
 
 ### 新增
 
@@ -20,10 +20,10 @@
 
 | 你的系统 | 下载这个文件 |
 |---|---|
-| **Windows 10 / 11（64 位，绝大多数人）** | `FlyingMouse-Format-Setup-0.5.1-x64.exe` |
-| Windows 7 SP1（64 位，老旧系统） | `FlyingMouse.Format-Setup-0.5.1-win7-x64.exe` |
-| **macOS（Apple Silicon：M1/M2/M3/M4，2020 年及以后的 Mac）** | `FlyingMouse.Format-Setup-0.5.1-mac-arm64.dmg` |
-| **macOS（Intel：2019 年及更早的 Mac）** | `FlyingMouse.Format-Setup-0.5.1-mac-x64.dmg` |
+| **Windows 10 / 11（64 位，绝大多数人）** | `Mahiro-Format-Setup-0.5.1-x64.exe` |
+| Windows 7 SP1（64 位，老旧系统） | `Mahiro.Format-Setup-0.5.1-win7-x64.exe` |
+| **macOS（Apple Silicon：M1/M2/M3/M4，2020 年及以后的 Mac）** | `Mahiro.Format-Setup-0.5.1-mac-arm64.dmg` |
+| **macOS（Intel：2019 年及更早的 Mac）** | `Mahiro.Format-Setup-0.5.1-mac-x64.dmg` |
 
 > 判断 Mac 芯片：点左上角苹果菜单 →「关于本机」→「芯片」栏——「Apple M1/M2/M3/M4」选 arm64；「Intel Core…」选 x64。选错了也没关系，Apple Silicon 也能运行 x64 包（Rosetta 转译）。
 >

@@ -1,4 +1,4 @@
-// ocr.js — 飞鼠格式 OCR 运行时：tesseract 加载、worker 创建、图片/PDF 页文字识别。
+// ocr.js — Mahiro Format OCR 运行时：tesseract 加载、worker 创建、图片/PDF 页文字识别。
 // 第二批抽取自 server.js（零逻辑改动，纯搬移）。
 // 顶层 require("./image") 获取 inspectImageMetadata（prepareImageForOcr 需要）；
 // image.js 的 convertImage 延迟 require 本模块，避免顶层循环依赖。

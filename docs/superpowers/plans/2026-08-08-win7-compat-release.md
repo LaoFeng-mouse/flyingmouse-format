@@ -1,8 +1,8 @@
-# FlyingMouse Format v0.3.2 Win7 Compatibility Implementation Plan
+# Mahiro Format v0.3.2 Win7 Compatibility Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build and publish a reproducible Windows 7 SP1 x64 installer from the current FlyingMouse Format v0.3.2 mouse-UI source without downgrading the Windows 10/11 main package.
+**Goal:** Build and publish a reproducible Windows 7 SP1 x64 installer from the current Mahiro Format v0.3.2 mouse-UI source without downgrading the Windows 10/11 main package.
 
 **Architecture:** Keep the root package on Electron 43. A pure profile module derives a Win7 package manifest, while a CLI copies controlled source files into `output/win7-stage`, installs Electron 22-compatible dependencies there, and builds an NSIS-only x64 artifact. Shared runtime code gains a PDF.js `.mjs` to legacy `.js` fallback so the same source works with both dependency lines.
 
@@ -492,7 +492,7 @@ Add `tests/pe-metadata.test.js` to `test` and `test:ci`.
 
 ```powershell
 node --test tests/pe-metadata.test.js
-node scripts/inspect-pe.js "D:\34615\飞鼠格式-win7\dist\win-unpacked\FlyingMouse Format.exe"
+node scripts/inspect-pe.js "D:\34615\Mahiro Format-win7\dist\win-unpacked\Mahiro Format.exe"
 ```
 
 Expected: 3 tests pass; old EXE reports OS version `5.2`.
@@ -524,10 +524,10 @@ Expected: every command exits 0 without output.
 - [ ] **Step 2: Run the complete current-engine suite**
 
 ```powershell
-$env:FLYINGMOUSE_FFMPEG_PATH='D:\34615\飞鼠格式\bin\ffmpeg\ffmpeg.exe'
-$env:FLYINGMOUSE_AVS3_DECODER_PATH='D:\34615\飞鼠格式\bin\avs3\avs3RM0Decoder.exe'
-$env:FLYINGMOUSE_LIBREOFFICE_PATH='D:\34615\飞鼠格式\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
-$env:FLYINGMOUSE_PDFTOPPM_PATH='D:\34615\飞鼠格式\bin\poppler\Library\bin\pdftoppm.exe'
+$env:FLYINGMOUSE_FFMPEG_PATH='D:\34615\Mahiro Format\bin\ffmpeg\ffmpeg.exe'
+$env:FLYINGMOUSE_AVS3_DECODER_PATH='D:\34615\Mahiro Format\bin\avs3\avs3RM0Decoder.exe'
+$env:FLYINGMOUSE_LIBREOFFICE_PATH='D:\34615\Mahiro Format\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
+$env:FLYINGMOUSE_PDFTOPPM_PATH='D:\34615\Mahiro Format\bin\poppler\Library\bin\pdftoppm.exe'
 npm test
 ```
 
@@ -547,7 +547,7 @@ Expected: mainline audit reports 0 vulnerabilities; diff check is clean; only in
 
 **Files:**
 - Generated only: `output/win7-stage/**`
-- Generated only: `dist/FlyingMouse Format-Setup-0.3.2-win7-x64.exe`
+- Generated only: `dist/Mahiro Format-Setup-0.3.2-win7-x64.exe`
 
 - [ ] **Step 1: Prepare and inspect the generated manifest**
 
@@ -569,17 +569,17 @@ npm run dist:win7
 Expected: build exits 0 and creates both:
 
 ```text
-output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe
-dist/FlyingMouse Format-Setup-0.3.2-win7-x64.exe
+output/win7-stage/dist/win-unpacked/Mahiro Format.exe
+dist/Mahiro Format-Setup-0.3.2-win7-x64.exe
 ```
 
 - [ ] **Step 3: Run the generated staging test suite**
 
 ```powershell
-$env:FLYINGMOUSE_FFMPEG_PATH='D:\34615\飞鼠格式\bin\ffmpeg\ffmpeg.exe'
-$env:FLYINGMOUSE_AVS3_DECODER_PATH='D:\34615\飞鼠格式\bin\avs3\avs3RM0Decoder.exe'
-$env:FLYINGMOUSE_LIBREOFFICE_PATH='D:\34615\飞鼠格式\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
-$env:FLYINGMOUSE_PDFTOPPM_PATH='D:\34615\飞鼠格式\bin\poppler\Library\bin\pdftoppm.exe'
+$env:FLYINGMOUSE_FFMPEG_PATH='D:\34615\Mahiro Format\bin\ffmpeg\ffmpeg.exe'
+$env:FLYINGMOUSE_AVS3_DECODER_PATH='D:\34615\Mahiro Format\bin\avs3\avs3RM0Decoder.exe'
+$env:FLYINGMOUSE_LIBREOFFICE_PATH='D:\34615\Mahiro Format\bin\libreoffice\LibreOfficePortable\App\libreoffice\program\soffice.com'
+$env:FLYINGMOUSE_PDFTOPPM_PATH='D:\34615\Mahiro Format\bin\poppler\Library\bin\pdftoppm.exe'
 npm test --prefix output\win7-stage
 ```
 
@@ -610,8 +610,8 @@ Expected: capture the exact JSON result. Any advisory caused by fixed legacy dep
 - [ ] **Step 1: Verify version, PE requirement, size, and hash**
 
 ```powershell
-$exe='D:\34615\飞鼠格式\output\win7-stage\dist\win-unpacked\FlyingMouse Format.exe'
-$installer='D:\34615\飞鼠格式\dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe'
+$exe='D:\34615\Mahiro Format\output\win7-stage\dist\win-unpacked\Mahiro Format.exe'
+$installer='D:\34615\Mahiro Format\dist\Mahiro Format-Setup-0.3.2-win7-x64.exe'
 node scripts/inspect-pe.js $exe
 (Get-Item -LiteralPath $exe).VersionInfo | Select-Object ProductVersion,FileVersion
 Get-Item -LiteralPath $installer | Select-Object FullName,Length
@@ -632,11 +632,11 @@ Expected: every runtime module is listed and both AVS3 files exist.
 - [ ] **Step 3: Launch the exact unpacked Win7 build and capture logs**
 
 ```powershell
-$win7Exe='D:\34615\飞鼠格式\output\win7-stage\dist\win-unpacked\FlyingMouse Format.exe'
+$win7Exe='D:\34615\Mahiro Format\output\win7-stage\dist\win-unpacked\Mahiro Format.exe'
 $before=Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $win7Exe} | Select-Object -ExpandProperty ProcessId
 Start-Process -FilePath $win7Exe -WindowStyle Hidden
 Start-Sleep -Seconds 8
-Get-Content -LiteralPath "$env:APPDATA\FlyingMouse Format\debug.log" -Tail 80
+Get-Content -LiteralPath "$env:APPDATA\Mahiro Format\debug.log" -Tail 80
 $after=Get-CimInstance Win32_Process | Where-Object {$_.ExecutablePath -eq $win7Exe -and $_.ProcessId -notin $before}
 $after | ForEach-Object {Stop-Process -Id $_.ProcessId -Force}
 ```
@@ -648,8 +648,8 @@ Expected: log contains `Server started`, `Creating window`, and `Window finished
 Run:
 
 ```powershell
-$exe='D:\34615\飞鼠格式\output\win7-stage\dist\win-unpacked\FlyingMouse Format.exe'
-$iconOut='D:\34615\飞鼠格式\output\win7-acceptance\extracted-icon.png'
+$exe='D:\34615\Mahiro Format\output\win7-stage\dist\win-unpacked\Mahiro Format.exe'
+$iconOut='D:\34615\Mahiro Format\output\win7-acceptance\extracted-icon.png'
 New-Item -ItemType Directory -Path (Split-Path -LiteralPath $iconOut) -Force | Out-Null
 Add-Type -AssemblyName System.Drawing
 $icon=[System.Drawing.Icon]::ExtractAssociatedIcon($exe)
@@ -668,7 +668,7 @@ Expected: the icon is the gray mouse identity, not the orange lightning mark.
 Generate a machine-readable evidence record from the verified artifact:
 
 ```powershell
-$installer='D:\34615\飞鼠格式\dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe'
+$installer='D:\34615\Mahiro Format\dist\Mahiro Format-Setup-0.3.2-win7-x64.exe'
 $evidence=[PSCustomObject]@{
   version='0.3.2'
   automatedTests=[PSCustomObject]@{status='passed';count=80}
@@ -705,7 +705,7 @@ Document these exact commands in `AGENTS.md` and `docs/RELEASE.md`:
 ```powershell
 node scripts/build-win7.js --prepare-only
 npm run dist:win7
-node scripts/inspect-pe.js "output\win7-stage\dist\win-unpacked\FlyingMouse Format.exe"
+node scripts/inspect-pe.js "output\win7-stage\dist\win-unpacked\Mahiro Format.exe"
 npm audit --omit=dev --prefix output\win7-stage
 ```
 
@@ -760,7 +760,7 @@ Expected: remote `main` advances to the implementation/docs commit. The existing
 ```powershell
 $env:HTTPS_PROXY='http://127.0.0.1:7897'
 $env:HTTP_PROXY='http://127.0.0.1:7897'
-gh release upload v0.3.2 'dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe' --repo LaoFeng-mouse/flyingmouse-format
+gh release upload v0.3.2 'dist\Mahiro Format-Setup-0.3.2-win7-x64.exe' --repo LaoFeng-mouse/flyingmouse-format
 ```
 
 Expected: GitHub reports successful upload and does not replace the standard x64 asset.
@@ -793,7 +793,7 @@ Expected: the Win7 asset state is `uploaded`; its remote size and `sha256:` dige
 - [ ] **Step 6: Copy the verified installer and acceptance report to the Codex output folder**
 
 ```powershell
-Copy-Item -LiteralPath 'D:\34615\飞鼠格式\dist\FlyingMouse Format-Setup-0.3.2-win7-x64.exe' -Destination 'C:\Users\34615\Documents\Codex\2026-08-08\zhi\outputs\FlyingMouse Format-Setup-0.3.2-win7-x64.exe' -Force
+Copy-Item -LiteralPath 'D:\34615\Mahiro Format\dist\Mahiro Format-Setup-0.3.2-win7-x64.exe' -Destination 'C:\Users\34615\Documents\Codex\2026-08-08\zhi\outputs\Mahiro Format-Setup-0.3.2-win7-x64.exe' -Force
 ```
 
-Create `C:\Users\34615\Documents\Codex\2026-08-08\zhi\outputs\FlyingMouse-Format-v0.3.2-Win7-QA.md` with the exact local/remote hash, size, tests, audit result, PE version, smoke result, actual-Win7 status, commit, and Release URL.
+Create `C:\Users\34615\Documents\Codex\2026-08-08\zhi\outputs\Mahiro-Format-v0.3.2-Win7-QA.md` with the exact local/remote hash, size, tests, audit result, PE version, smoke result, actual-Win7 status, commit, and Release URL.

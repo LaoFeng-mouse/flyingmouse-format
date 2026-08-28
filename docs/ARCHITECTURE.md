@@ -1,4 +1,4 @@
-# FlyingMouse Format 架构说明
+# Mahiro Format 架构说明
 
 ## 运行结构
 
@@ -9,7 +9,7 @@ Electron 主进程
 ├─ 通过 preload 暴露保存文件 IPC
 └─ 从 resources/ 或开发环境 bin/ 定位转换引擎
         ↓
-鼠鼠 UI（public/） → 本地 API（server.js） → 转换器/外部引擎 → 临时结果
+Mahiro 主题 UI（public/） → 本地 API（server.js） → 转换器/外部引擎 → 临时结果
         ↓
 Electron 保存对话框 → 用户选择的目录
 ```
@@ -28,21 +28,25 @@ Electron 保存对话框 → 用户选择的目录
 | `ncm-format.js` | 常规 NCM 解密、元数据和封面处理 |
 | `av3a-format.js` | 从 NCM 中识别并准备 Audio Vivid（AV3A）音频 |
 | `kgg-format.js` | KGG 输入处理 |
+| `mflac-format.js` | QQ 音乐 QMC v1/QMC2 解密与 musicex 密钥交换 |
+| `kwm-format.js` | KWM 文件头密钥解密与旧版循环掩码恢复 |
+| `audio-sniffer.js` | 解密后音频容器魔数统一识别与候选密钥校验 |
 | `settings-store.js` | 在 Electron `userData/settings.json` 保存上次目录 |
-| `public/app.js` | 鼠鼠状态、批量队列、转换和保存交互 |
+| `public/app.js` | Mahiro 角色状态、批量队列、转换和保存交互 |
 | `public/conversion-preferences.js` | 按源扩展名分别记忆目标格式 |
 | `public/i18n.js` | 中文/English 选择及持久化 |
 
 ## 本地接口
 
 - `GET /api/capabilities`：返回当前可用引擎能力和 `limits` 资源策略。
+- `GET /api/session`：向同源 Mahiro 主题 UI 返回本次启动的一次性会话令牌，响应禁止缓存。
 - `POST /api/targets`：根据文件列表计算可选目标格式。
 - `POST /api/convert`：转换单个文件。
 - `POST /api/convert-images-to-pdf`：将多张图片合并为 PDF。
 - `POST /api/merge-pdfs`：合并多个 PDF。
 - `GET /downloads/:id`：读取本次会话生成的临时结果。
 
-所有改变状态的接口都校验本地页面来源；服务只绑定回环地址和随机端口。
+所有 POST 接口同时校验本次启动生成的 256 位会话令牌；浏览器请求还必须匹配本次随机端口的精确 `127.0.0.1` origin。会话令牌只通过同源 `/api/session` 返回，CLI 从其私有服务实例直接取得。
 
 ## 状态记忆
 
@@ -96,8 +100,8 @@ PDF.js 先读取电子文字及坐标，Poppler 以固定 DPI 渲染页面；无
 - PDF.js 加载器把入口固定在当前应用自己的 `node_modules/pdfjs-dist`，现代版优先 `.mjs`，旧版仅在该入口确实缺失时回退 `.js`，禁止借用父目录依赖。
 - 所有 PDF.js 文本提取调用都设置 `isEvalSupported: false`，用于缓解旧 PDF.js 的动态代码执行风险。
 
-Windows 7 构建是兼容 profile，不改变标准版运行时。PE 元数据由 `pe-metadata.js` / `scripts/inspect-pe.js` 检查；兼容性判断必须读取 `win-unpacked/FlyingMouse Format.exe` 这一内层应用，而不是 OS 字段不同的 NSIS 外壳。
+Windows 7 构建是兼容 profile，不改变标准版运行时。PE 元数据由 `pe-metadata.js` / `scripts/inspect-pe.js` 检查；兼容性判断必须读取 `win-unpacked/Mahiro Format.exe` 这一内层应用，而不是 OS 字段不同的 NSIS 外壳。
 
 ## 产品边界
 
-本仓库是“鼠鼠 UI 的飞鼠格式”。`鼠鼠打印` 是独立项目，不共享发布产物、桌面快捷方式或功能改动。
+本仓库是采用非官方绪山真寻同人主题的 Mahiro Format。角色状态素材仅属于表现层，不改变本地转换、安全或隐私边界；素材来源与权利声明见 `public/assets/mahiro-format/ASSET-NOTICE.md`。`鼠鼠打印` 是独立项目，不共享发布产物、桌面快捷方式或功能改动。

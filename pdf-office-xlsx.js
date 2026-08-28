@@ -1212,8 +1212,8 @@ async function writePdfOfficeXlsx({
     const expectedTables = tableDescriptors(manifest).map(expectedTable);
     const assets = await preflightReferenceAssets(manifest, assetRoot, fileSystem);
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = "FlyingMouse Format";
-    workbook.company = "FlyingMouse Format";
+    workbook.creator = "Mahiro Format";
+    workbook.company = "Mahiro Format";
     workbook.created = new Date("2000-01-01T00:00:00.000Z");
     workbook.modified = new Date("2000-01-01T00:00:00.000Z");
     workbook.calcProperties.fullCalcOnLoad = true;

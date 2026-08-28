@@ -1,4 +1,4 @@
-// image.js — 飞鼠格式图片转换域：图片解码/中转、图片→PDF、图片→视频、OCR 输入预处理。
+// image.js — Mahiro Format 图片转换域：图片解码/中转、图片→PDF、图片→视频、OCR 输入预处理。
 // 第二批抽取自 server.js（零逻辑改动，纯搬移）。
 // 注意：convertImage 的 OCR 分支延迟 require("./ocr")，避免与 ocr.js 顶层循环依赖
 //（ocr.js 需要本模块的 inspectImageMetadata，本模块需要 ocr.js 的 convertImageToOcrText）。
@@ -320,35 +320,11 @@ async function readPngAsPdfImage(inputPath) {
   };
 }
 
-// 流式写入辅助：向 PDF 输出流逐块写入，并同步累计字节位置（供 xref 偏移使用）。
-// 当写缓冲达到高水位（write() 返回 false）时等待 drain，避免 Node 内部写入队列
-// 无限增长——这是「大量图片转 PDF 不再 OOM」的关键：内存只保留当前块，不随张数累积。
-function writePdfChunk(stream, buffer, pos) {
-  pos.value += buffer.length;
-  if (stream.write(buffer)) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const onDrain = () => {
-      stream.removeListener("error", onError);
-      resolve();
-    };
-    const onError = (err) => {
-      stream.removeListener("drain", onDrain);
-      reject(err);
-    };
-    stream.once("drain", onDrain);
-    stream.once("error", onError);
-  });
-}
-
-// 图片合并为 PDF：逐张解码、即时流式写盘，内存占用与图片数量无关（O(1)），
-// 因此不因「图片过多」而失败。每张图以原始分辨率整页内嵌、不做缩放，质量不降。
 async function convertImagesToPdf(imageFiles, outputPath) {
   if (!imageFiles.length) {
     throw new Error("请先选择要转换为 PDF 的图片。");
   }
 
-  // 只做元数据级校验（预算上限已按「不限数量」禁用；这里仅保留对损坏图片的
-  // 输入有效性检查，让坏文件在开工前统一暴露，而不是写一半才失败）。
   const metadataList = [];
   for (const file of imageFiles) {
     if (file?.blank) {
@@ -359,84 +335,87 @@ async function convertImagesToPdf(imageFiles, outputPath) {
   }
   assertImagePdfBudget(metadataList);
 
-  // 页对象编号是确定的（3 + index*3），可先算好 Kids 列表，再写 /Pages 对象 2。
-  const count = imageFiles.length;
+  const images = [];
+  for (const file of imageFiles) {
+    if (file?.blank) {
+      // 空白页：A4 竖版比例（595×842pt），纯白 RGB 图像，deflate 压缩
+      const blankWidth = 595;
+      const blankHeight = 842;
+      const rgb = Buffer.alloc(blankWidth * blankHeight * 3, 0xff);
+      images.push({
+        width: blankWidth,
+        height: blankHeight,
+        data: zlib.deflateSync(rgb)
+      });
+      continue;
+    }
+    images.push(await readImageForPdf(file.inputPath));
+  }
+
+  const objects = [];
   const pageRefs = [];
-  for (let index = 0; index < count; index += 1) {
-    pageRefs.push(`${3 + index * 3} 0 R`);
+  const addObject = (number, content) => {
+    objects.push({ number, content: Buffer.isBuffer(content) ? content : pdfAscii(content) });
+  };
+
+  addObject(1, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+  for (let index = 0; index < images.length; index += 1) {
+    const image = images[index];
+    const pageNumber = 3 + index * 3;
+    const imageNumber = pageNumber + 1;
+    const contentNumber = pageNumber + 2;
+    const pageWidth = Math.max(1, image.width);
+    const pageHeight = Math.max(1, image.height);
+    pageRefs.push(`${pageNumber} 0 R`);
+
+    addObject(pageNumber, `${pageNumber} 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(pageWidth)} ${pdfNumber(pageHeight)}] /Resources << /XObject << /Im${index + 1} ${imageNumber} 0 R >> >> /Contents ${contentNumber} 0 R >>
+endobj
+`);
+
+    addObject(imageNumber, Buffer.concat([
+      pdfAscii(`${imageNumber} 0 obj
+<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${image.data.length} >>
+stream
+`),
+      image.data,
+      pdfAscii("\nendstream\nendobj\n")
+    ]));
+
+    const content = `q
+${pdfNumber(pageWidth)} 0 0 ${pdfNumber(pageHeight)} 0 0 cm
+/Im${index + 1} Do
+Q
+`;
+    addObject(contentNumber, `${contentNumber} 0 obj
+<< /Length ${Buffer.byteLength(content, "latin1")} >>
+stream
+${content}endstream
+endobj
+`);
   }
 
-  const stream = fs.createWriteStream(outputPath);
-  const pos = { value: 0 };
-  const offsets = {};
-  try {
-    // PDF 头必须在最前（对象偏移从头部之后起算）
-    await writePdfChunk(stream, pdfAscii("%PDF-1.4\n"), pos);
+  addObject(2, `2 0 obj
+<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRefs.length} >>
+endobj
+`);
 
-    offsets[1] = pos.value;
-    await writePdfChunk(stream, pdfAscii("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"), pos);
-
-    offsets[2] = pos.value;
-    await writePdfChunk(stream, pdfAscii(`2 0 obj\n<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRefs.length} >>\nendobj\n`), pos);
-
-    for (let index = 0; index < count; index += 1) {
-      const file = imageFiles[index];
-      const pageNumber = 3 + index * 3;
-      const imageNumber = pageNumber + 1;
-      const contentNumber = pageNumber + 2;
-
-      let image;
-      if (file?.blank) {
-        // 空白页：A4 竖版比例（595×842pt），纯白 RGB 图像，deflate 压缩
-        const blankWidth = 595;
-        const blankHeight = 842;
-        image = {
-          width: blankWidth,
-          height: blankHeight,
-          data: zlib.deflateSync(Buffer.alloc(blankWidth * blankHeight * 3, 0xff))
-        };
-      } else {
-        image = await readImageForPdf(file.inputPath);
-      }
-
-      const pageWidth = Math.max(1, image.width);
-      const pageHeight = Math.max(1, image.height);
-
-      // Page 对象
-      offsets[pageNumber] = pos.value;
-      await writePdfChunk(stream, pdfAscii(`${pageNumber} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pdfNumber(pageWidth)} ${pdfNumber(pageHeight)}] /Resources << /XObject << /Im${index + 1} ${imageNumber} 0 R >> >> /Contents ${contentNumber} 0 R >>\nendobj\n`), pos);
-
-      // Image(XObject) 对象：头 + 压缩流 + 尾部，分三段写，避免为当前图额外拼一份拷贝
-      offsets[imageNumber] = pos.value;
-      await writePdfChunk(stream, pdfAscii(`${imageNumber} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${image.data.length} >>\nstream\n`), pos);
-      await writePdfChunk(stream, image.data, pos);
-      await writePdfChunk(stream, pdfAscii("\nendstream\nendobj\n"), pos);
-      // 本页图数据已写盘，置空以尽早释放（不随张数累积）
-      image = null;
-
-      // Contents 对象
-      offsets[contentNumber] = pos.value;
-      const content = `q\n${pdfNumber(pageWidth)} 0 0 ${pdfNumber(pageHeight)} 0 0 cm\n/Im${index + 1} Do\nQ\n`;
-      await writePdfChunk(stream, pdfAscii(`${contentNumber} 0 obj\n<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}endstream\nendobj\n`), pos);
-    }
-
-    const xrefOffset = pos.value;
-    const objectCount = Object.keys(offsets).length;
-    let xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`;
-    for (let number = 1; number <= objectCount; number += 1) {
-      xref += `${String(offsets[number]).padStart(10, "0")} 00000 n \n`;
-    }
-    const trailer = `trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
-    await writePdfChunk(stream, pdfAscii(xref + trailer), pos);
-
-    await new Promise((resolve, reject) => {
-      stream.once("error", reject);
-      stream.end(resolve);
-    });
-  } catch (error) {
-    stream.destroy();
-    throw error;
+  objects.sort((a, b) => a.number - b.number);
+  const chunks = [pdfAscii("%PDF-1.4\n")];
+  const offsets = [0];
+  for (const object of objects) {
+    offsets[object.number] = Buffer.concat(chunks).length;
+    chunks.push(object.content);
   }
+
+  const body = Buffer.concat(chunks);
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let number = 1; number <= objects.length; number += 1) {
+    xref += `${String(offsets[number]).padStart(10, "0")} 00000 n \n`;
+  }
+  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${body.length}\n%%EOF\n`;
+  await fsp.writeFile(outputPath, Buffer.concat([body, pdfAscii(xref + trailer)]));
 }
 
 module.exports = {

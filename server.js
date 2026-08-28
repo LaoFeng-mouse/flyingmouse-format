@@ -1,4 +1,4 @@
-const { randomUUID } = require("crypto");
+const { randomBytes, randomUUID, timingSafeEqual } = require("crypto");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
@@ -31,6 +31,14 @@ const {
 } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
 const { convertOfdToPdf } = require("./ofd-convert");
+const { convertNcm } = require("./ncm-format");
+const { buildNcmFfmpegOptions } = require("./ncm-metadata");
+const { prepareDecryptedAudio } = require("./av3a-format");
+const { convertKgg } = require("./kgg-format");
+const { convertMflac } = require("./mflac-format");
+const { convertKgma } = require("./kgma-format");
+const { convertKwm } = require("./kwm-format");
+const { convertVpr } = require("./kgm-vpr-format");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
 const logger = require("./logger");
@@ -168,6 +176,7 @@ const {
   pdfTextTargets,
   pdfImageTargets,
   audioInput,
+  unlockAudioInputs,
   videoInput,
   mediaAudioTargets,
   mediaVideoTargets,
@@ -179,6 +188,8 @@ const {
 } = require("./config");
 
 const app = express();
+let trustedServerOrigin = "";
+let sessionToken = "";
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
@@ -200,18 +211,20 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES }
 });
 
-async function cleanupOldFiles() {
-  const cutoff = Date.now() - 1000 * 60 * 60;
+async function cleanupOldFiles(options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const cutoff = now - 1000 * 60 * 60;
+  const directories = Array.isArray(options.directories) ? options.directories : [UPLOAD_DIR, OUTPUT_DIR];
   for (const [id, item] of downloads.entries()) {
     if (item.createdAt < cutoff) downloads.delete(id);
   }
-  for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
+  for (const dir of directories) {
     const files = await fsp.readdir(dir).catch(() => []);
     await Promise.all(files.map(async (file) => {
       const filePath = path.join(dir, file);
       const stat = await fsp.stat(filePath).catch(() => null);
       if (stat && stat.mtimeMs < cutoff) {
-        await fsp.rm(filePath, { force: true }).catch(() => {});
+        await fsp.rm(filePath, { recursive: stat.isDirectory(), force: true }).catch(() => {});
       }
     }));
   }
@@ -290,26 +303,35 @@ async function getToolDiagnostics() {
   };
 }
 
-function isLocalWebOrigin(value) {
-  if (!value) return false;
+function exactServerOrigin(value) {
+  if (!value || !trustedServerOrigin) return false;
   try {
-    const url = new URL(value);
-    return url.protocol === "http:"
-      && (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]" || url.hostname === "::1");
+    const parsed = new URL(value);
+    return parsed.origin === trustedServerOrigin
+      && !parsed.username
+      && !parsed.password;
   } catch {
     return false;
   }
 }
 
+function hasValidSessionToken(req) {
+  const supplied = String(req.headers["x-mahiro-session-token"] || "");
+  if (!supplied || !sessionToken) return false;
+  const actual = Buffer.from(supplied);
+  const expected = Buffer.from(sessionToken);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 function assertLocalWebRequest(req, res, next) {
-  const origin = req.headers.origin;
-  const referer = req.headers.referer;
-  if (origin && !isLocalWebOrigin(origin)) {
-    res.status(403).json({ error: "拒绝跨站请求。" });
+  if (!hasValidSessionToken(req)) {
+    res.status(403).json({ error: "请求缺少有效的本地会话令牌。", errorCode: "INVALID_SESSION_TOKEN" });
     return;
   }
-  if (referer && !isLocalWebOrigin(referer)) {
-    res.status(403).json({ error: "拒绝跨站请求。" });
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+  if ((origin && !exactServerOrigin(origin)) || (referer && !exactServerOrigin(referer))) {
+    res.status(403).json({ error: "拒绝非本次应用页面的请求。", errorCode: "UNTRUSTED_REQUEST_ORIGIN" });
     return;
   }
   next();
@@ -321,6 +343,11 @@ app.use((_req, res, next) => {
 });
 app.use(express.static(path.join(ROOT, "public")));
 app.use(express.json());
+app.get("/api/session", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.json({ token: sessionToken });
+});
 
 function resourceErrorPayload(error) {
   return {
@@ -352,7 +379,7 @@ app.get("/api/capabilities", async (_req, res) => {
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
-      audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
+      audio: { inputs: [...audioInput].filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext)).sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
     },
@@ -365,7 +392,7 @@ app.get("/api/capabilities", async (_req, res) => {
   });
 });
 
-app.post("/api/targets", async (req, res) => {
+app.post("/api/targets", assertLocalWebRequest, async (req, res) => {
   const tools = await getTools();
   const ext = normalizeExt(String(req.body?.extension || "").toLowerCase());
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
@@ -402,9 +429,7 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   const blankAfter = new Set(
     String(req.body?.blanks || "")
       .split(",")
-      .map((item) => item.trim())
-      .filter((item) => item !== "")
-      .map(Number)
+      .map((item) => Number(item.trim()))
       .filter((item) => Number.isFinite(item) && item >= 0 && item <= imageFiles.length)
   );
   for (const blankIndex of [...blankAfter].sort((a, b) => b - a)) {
@@ -603,12 +628,39 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
       }
     } else if (category === "audio" || category === "video") {
-      const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
-        ? String(req.body.videoCodec)
-        : "h264";
-      // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
-      const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
-      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      if (category === "audio" && unlockAudioInputs.has(inputExt)) {
+        if (process.windowsStore) {
+          logger.warn(`Rejected special-audio conversion on Store build: ${originalName}`);
+          await fsp.rm(file.path, { force: true }).catch(() => {});
+          res.status(400).json({ error: "商店版不支持特殊音乐容器转换。", errorCode: "AUDIO_UNLOCK_UNAVAILABLE_ON_STORE" });
+          return;
+        }
+        let decrypted;
+        if (inputExt === "ncm") decrypted = await convertNcm(file.path);
+        else if (inputExt === "kgg") decrypted = await convertKgg(file.path);
+        else if (inputExt === "kgma") decrypted = await convertKgma(file.path);
+        else if (inputExt === "kwm") decrypted = await convertKwm(file.path);
+        else if (inputExt === "vpr") decrypted = await convertVpr(file.path);
+        else decrypted = await convertMflac(file.path, { sourceExt: inputExt });
+        try {
+          const conversionInput = inputExt === "ncm"
+            ? await prepareDecryptedAudio(decrypted)
+            : decrypted.nativePath;
+          const mediaOptions = inputExt === "ncm"
+            ? buildNcmFfmpegOptions(decrypted, requestedTarget)
+            : {};
+          await convertMedia(conversionInput, outputPath, requestedTarget, "audio", mediaOptions);
+        } finally {
+          await fsp.rm(decrypted.tempDir, { recursive: true, force: true }).catch(() => {});
+        }
+      } else {
+        const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
+          ? String(req.body.videoCodec)
+          : "h264";
+        // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
+        const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
+        await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      }
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }
@@ -622,7 +674,10 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       mdAssetsDir = await findMarkdownAssetsDir(outputPath, downloadName);
     }
     const registered = registerDownload(outputPath, downloadName, mimeType, { assetsDir: mdAssetsDir });
-    if (mdAssetsDir) registered.assets = await listDownloadAssets(mdAssetsDir, registered.downloadUrl);
+    if (mdAssetsDir) {
+      registered.assets = await listDownloadAssets(mdAssetsDir, registered.downloadUrl);
+      registered.assetDirectoryName = path.basename(mdAssetsDir);
+    }
     const previewSize = (await fsp.stat(outputPath)).size;
     const payload = {
       ok: true,
@@ -652,6 +707,13 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   } catch (error) {
     const isClientConversionError = [
       "CSV_PARSE_FAILED",
+      "AV3A_UNSUPPORTED_PLATFORM",
+      "MFLAC_DECRYPT_FAILED",
+      "MFLAC_EKEY_REQUIRED",
+      "MFLAC_EKEY_NETWORK",
+      "VPR_INVALID_FILE",
+      "VPR_MASK_RANGE_EXCEEDED",
+      "VPR_DECRYPT_FAILED",
       "PDF_TABLE_OCR_REQUIRED",
       "PDF_TABLE_OCR_EMPTY",
       "MEDIA_NO_AUDIO_TRACK",
@@ -762,6 +824,8 @@ let cleanupTimer = null;
 
 function startServer(port = DEFAULT_PORT) {
   ensureDirs();
+  sessionToken = randomBytes(32).toString("hex");
+  trustedServerOrigin = "";
   logger.info(`Server starting (runtime dir: ${RUNTIME_DIR}, engines: ffmpeg=${FFMPEG_PATH}, libreoffice=${LIBREOFFICE_PATH}, poppler=${PDFTOPPM_PATH}, tessdata=${TESSDATA_PATH})`);
   if (!cleanupTimer) {
     cleanupTimer = setInterval(cleanupOldFiles, 1000 * 60 * 20);
@@ -772,11 +836,13 @@ function startServer(port = DEFAULT_PORT) {
     const server = app.listen(port, "127.0.0.1", () => {
       const address = server.address();
       const actualPort = typeof address === "object" && address ? address.port : port;
-      logger.info(`Server listening on http://127.0.0.1:${actualPort}`);
+      trustedServerOrigin = `http://127.0.0.1:${actualPort}`;
+      logger.info(`Server listening on ${trustedServerOrigin}`);
       resolve({
         server,
         port: actualPort,
-        url: `http://127.0.0.1:${actualPort}`
+        url: trustedServerOrigin,
+        sessionToken
       });
     });
     server.on("error", (error) => {
@@ -795,4 +861,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };
+module.exports = { app, startServer, cleanupOldFiles, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };

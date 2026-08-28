@@ -1,4 +1,4 @@
-// pdfjs.js — 飞鼠格式 PDF.js 加载域：入口解析、打包/开发路径差异处理、模块加载器。
+// pdfjs.js — Mahiro Format PDF.js 加载域：入口解析、打包/开发路径差异处理、模块加载器。
 // 第三批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const path = require("path");

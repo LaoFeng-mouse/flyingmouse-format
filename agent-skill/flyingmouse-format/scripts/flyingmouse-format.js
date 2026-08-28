@@ -17,11 +17,11 @@ let config;
 try {
   config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 } catch {
-  fail("FlyingMouse Format is not connected. Open the app and choose Connect to Agent.");
+  fail("Mahiro Format is not connected. Open the app and choose Connect to Agent.");
 }
 
 if (!path.isAbsolute(config.executable) || !fs.existsSync(config.executable)) {
-  fail("The configured FlyingMouse Format executable no longer exists. Reconnect it from the app.");
+  fail("The configured Mahiro Format executable no longer exists. Reconnect it from the app.");
 }
 
 const result = spawnSync(config.executable, [...(config.args || []), "--cli", ...process.argv.slice(2)], {

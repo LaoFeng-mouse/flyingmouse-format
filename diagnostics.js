@@ -88,13 +88,13 @@ function buildDiagnosticsReport(input = {}) {
   const boundedLog = tailUtf8(sanitized);
   const engines = Object.entries(input.engines || {}).sort(([left], [right]) => left.localeCompare(right));
   return [
-    "FlyingMouse Format diagnostics",
+    "Mahiro Format diagnostics",
     `Generated: ${safeField(input.generatedAt || new Date().toISOString())}`,
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",
-    "Notice: This software supports only ordinary audio format conversion and does not support encrypted special formats from any music platform. Please support the artists.",
+    "Notice: Special music-container compatibility is experimental and unavailable in Microsoft Store builds. Process only files you lawfully obtained and may use; keep the source and review the output.",
     "",
     "Engines:",
     ...(engines.length ? engines.map(([name, details]) => engineLine(name, details)) : ["- unavailable"]),

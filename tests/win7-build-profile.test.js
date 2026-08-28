@@ -25,7 +25,7 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
     path.resolve(__dirname, "..")
   );
 
-  assert.equal(profile.name, "flyingmouse-format-win7");
+  assert.equal(profile.name, "mahiro-format-win7");
   assert.equal(profile.version, rootPackage.version);
   assert.equal(profile.devDependencies.electron, "22.3.27");
   assert.equal(profile.dependencies.sharp, "0.32.6");
@@ -34,7 +34,7 @@ test("Win7 profile pins the legacy runtime and is NSIS-only without mutating its
   assert.equal(profile.build.artifactName, "${productName}-Setup-${version}-win7-${arch}.${ext}");
   assert.equal(
     resolveArtifactName(profile),
-    `FlyingMouse Format-Setup-${rootPackage.version}-win7-x64.exe`
+    `Mahiro Format-Setup-${rootPackage.version}-win7-x64.exe`
   );
   assert.deepEqual(profile.build.win.target, ["nsis"]);
   assert.equal(profile.build.win.extraResources, undefined);
@@ -57,7 +57,7 @@ test("Win7 artifact name follows a non-current input version", () => {
   const profile = createWin7Package(input, path.resolve(__dirname, ".."));
 
   assert.equal(profile.build.artifactName, "${productName}-Setup-${version}-win7-${arch}.${ext}");
-  assert.equal(resolveArtifactName(profile), "FlyingMouse Format-Setup-9.8.7-win7-x64.exe");
+  assert.equal(resolveArtifactName(profile), "Mahiro Format-Setup-9.8.7-win7-x64.exe");
   assert.doesNotMatch(profile.build.artifactName, /0\.3\.2/);
 });
 
@@ -73,6 +73,7 @@ test("Win7 profile includes every current runtime module and absolute binary res
     "server.js",
     "logger.js",
     "settings-store.js",
+    "markdown-assets.js",
     "office-engine.js",
     "config.js",
     "utils.js",

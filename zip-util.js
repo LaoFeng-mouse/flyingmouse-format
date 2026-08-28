@@ -1,4 +1,4 @@
-// zip-util.js — 飞鼠格式 zip 打包与读取工具（yazl/yauzl）。
+// zip-util.js — Mahiro Format zip 打包与读取工具（yazl/yauzl）。
 // 第一、三批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const fs = require("fs");

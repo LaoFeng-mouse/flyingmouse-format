@@ -1,4 +1,4 @@
-// pdf-table.js — 飞鼠格式 PDF 表格提取域：PDF.js 文字坐标分行、复杂表格模型、OCR 回退、Excel 工作簿生成。
+// pdf-table.js — Mahiro Format PDF 表格提取域：PDF.js 文字坐标分行、复杂表格模型、OCR 回退、Excel 工作簿生成。
 // 第三批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const fs = require("fs");

@@ -1,4 +1,4 @@
-// Unified logger for FlyingMouse Format.
+// Unified logger for Mahiro Format.
 //
 // Writes leveled log lines to a single file so failures can be diagnosed
 // after the fact. The target file is resolved in this priority order:

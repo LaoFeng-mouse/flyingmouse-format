@@ -1,4 +1,4 @@
-// media.js — 飞鼠格式媒体转换：音视频 → 目标格式（ffmpeg 封装）。
+// media.js — Mahiro Format 媒体转换：音视频 → 目标格式（ffmpeg 封装）。
 // 第一批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const { FFMPEG_PATH } = require("./config");

@@ -31,6 +31,15 @@ const REQUIRED_RUNTIME_FILES = [
   "ci-engines-v1.json",
   "logger.js",
   "settings-store.js",
+  "markdown-assets.js",
+  "ncm-format.js",
+  "ncm-metadata.js",
+  "av3a-format.js",
+  "kgg-format.js",
+  "mflac-format.js",
+  "kgma-format.js",
+  "kwm-format.js",
+  "kgm-vpr-format.js",
   "config.js",
   "utils.js",
   "media.js",
@@ -106,7 +115,7 @@ function createWin7Package(basePackage, projectRoot) {
   validateBasePackage(basePackage, projectRoot);
 
   const profile = cloneJson(basePackage);
-  profile.name = "flyingmouse-format-win7";
+  profile.name = "mahiro-format-win7";
   profile.dependencies.sharp = "0.32.6";
   profile.dependencies["pdfjs-dist"] = "2.16.105";
   profile.dependencies.turndown = "7.2.0";

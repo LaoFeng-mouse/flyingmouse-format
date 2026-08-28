@@ -2,9 +2,9 @@
 
 ## Project boundary
 
-FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
+Mahiro Format 是基于原项目升级的 Windows Electron 离线文件转换器。主产品使用非官方绪山真寻同人主题；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。原版鼠鼠素材仅由 Git 历史保留，不再随当前源码或安装包分发，也不再作为产品主题或打包图标。
 
-当前主线：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）、OFD→PDF（ofd-convert.js，@miconvert/ofd-to-pdf，仅支持转 PDF 不走 LibreOffice）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
+当前主线：Electron 43、Windows 10/11 x64、Mahiro 同人主题 UI、中英文切换、批量转换、按源格式记忆目标格式、保存目录记忆、NCM/KGG/MFLAC/MGG/KGMA/MMP4/KWM/VPR 实验性兼容、PDF→Word 版式还原（docengine）、PDF→Excel 表格提取（camelot）、视频编码选择（H.264/H.265/AV1）、OFD→PDF（ofd-convert.js，@miconvert/ofd-to-pdf，仅支持转 PDF 不走 LibreOffice）。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27 兼容包，禁止降低根 manifest 的主线依赖。
 
 ## Source map
 
@@ -12,7 +12,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `electron-main.js`：启动本地服务、创建窗口、设置打包引擎路径、保存 IPC。
 - `electron-security.js`：导航、外链、下载和 IPC 的同源信任策略。
 - `preload.js`：向渲染器暴露最小 IPC 接口。
-- `public/index.html`、`public/styles.css`、`public/app.js`：鼠鼠 UI、批量队列、进度、状态与保存交互。
+- `public/index.html`、`public/styles.css`、`public/app.js`：Mahiro 主题 UI、批量队列、进度、状态与保存交互。
 - `public/i18n.js`：`zh-CN` / `en-US` 语言状态与持久化。
 - `public/conversion-preferences.js`：按规范化源扩展名记忆目标格式。
 - `settings-store.js`：在 Electron `userData/settings.json` 中原子保存最近目录。
@@ -23,13 +23,14 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
 - `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
 - `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
-- `build/icon.png`：NSIS、EXE、任务栏和快捷方式的 512×512 鼠鼠图标；必须由 `public/assets/mouse-format/mouse-idle.png` 生成。
+- `build/icon.png`：NSIS、EXE、任务栏和快捷方式的 512×512 Mahiro 图标；必须由 `public/assets/mahiro-format/mahiro-avatar.png` 生成。
 - `bin/`：本地转换引擎。除 `bin/avs3/` 外被 Git 忽略，换机时必须单独准备。
 
 ## Product invariants
 
-- 保留鼠鼠品牌：页面必须包含 `mouseMascot` 和鼠鼠状态图；打包图标必须是鼠鼠，不得恢复闲鱼版橙色闪电或中性 UI。
-- 鼠鼠状态覆盖上传、识别、普通转换、批量、OCR、PDF、成功与失败。
+- 保留 Mahiro 品牌：页面必须包含 `mahiroMascot` 和 Mahiro 状态图；打包图标必须与 `mahiro-avatar.png` 同源，不得恢复闲鱼版橙色闪电、原版鼠鼠或中性 UI。
+- Mahiro 状态覆盖上传、识别、普通转换、批量、OCR、PDF、成功与失败；状态名和转换语义不得因视觉换肤而改变。
+- `public/assets/mahiro-format/ASSET-NOTICE.md` 必须随角色素材保留；界面与公开说明必须明确这是非官方同人主题，不得声称获得原作官方授权或合作。
 - 用户运行时文本使用 DOM API / `textContent`，禁止重新引入动态 `innerHTML`。
 - 长文件名、错误和按钮文案必须可换行，避免窄窗口溢出。
 - 批量转换只显示所有选中文件都支持的目标格式交集。
@@ -47,7 +48,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR。
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
-- 音频仅支持普通格式（MP3/WAV/FLAC/AAC/OGG/OPUS/WMA），不支持任何音乐平台加密特殊格式（DRM 规避法律风险，公开版已移除解锁模块，见 docs/分发与合规规范.md）。
+- NCM/KGG/MFLAC/MGG/KGMA/MMP4/KWM/VPR 作为不稳定/实验性兼容功能提供：全部保留源文件并复核结果；Microsoft Store 构建继续隐藏并拒绝这些入口。NCM AV3A 仅支持 Windows；KGG 依赖本机 KGMusicV3.db；musicex 变体依赖 QQ 音乐登录凭据；VPR 当前最多覆盖约 64 MiB 音频数据。
 
 ## Security boundaries
 
@@ -70,7 +71,7 @@ Electron 启动时设置：
 
 开发或测试还可覆盖 `FLYINGMOUSE_PDFTOPPM_PATH`、`FLYINGMOUSE_TESSDATA_PATH` 和 `PORT`。
 
-桌面日志位于 `%APPDATA%\FlyingMouse Format\debug.log`。独立运行 `node server.js` 时默认写 `%TEMP%\flyingmouse-format-debug.log`。
+桌面日志位于 `%APPDATA%\Mahiro Format\debug.log`。独立运行 `node server.js` 时默认写 `%TEMP%\flyingmouse-format-debug.log`（为兼容旧诊断路径保留内部文件名）。
 
 ## Commands
 
@@ -83,7 +84,7 @@ npm audit --omit=dev
 npm run dist
 node scripts/build-win7.js --prepare-only
 npm run dist:win7
-node scripts/inspect-pe.js "output/win7-stage/dist/win-unpacked/FlyingMouse Format.exe"
+node scripts/inspect-pe.js "output/win7-stage/dist/win-unpacked/Mahiro Format.exe"
 npm audit --omit=dev --prefix output\win7-stage
 ```
 
@@ -97,11 +98,11 @@ npm audit --omit=dev --prefix output\win7-stage
 - `extraResources` 必须包含 FFmpeg、AVS3、LibreOffice、Poppler、tessdata、Tesseract core 和 docengine（PDF→Word/Excel 文档引擎，Windows 标准版专用；win7 版与 macOS 排除，回退纯 JS）。
 - 保持 `signExecutable: false`，不要使用 `signAndEditExecutable: false`，后者会跳过图标嵌入。
 - `npm run dist` 当前生成 NSIS 安装包和 `dist/win-unpacked`；不要假设 APPX 已同步生成。
-- Microsoft Store 使用同一鼠鼠 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、鼠鼠图标和 SHA-256。
+- Microsoft Store 使用同一 Mahiro 主题 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、Mahiro 图标、同人主题声明和 SHA-256。
 - Partner Center 的“包验证通过”“认证通过”“公开发布”是不同状态；外部状态只能按现场回读结果和绝对日期记录，不能由本地构建或上传成功推断。
-- 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。
+- 发布前必须检查：完整测试、真实 AV3A 样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、Mahiro 内嵌图标、桌面快捷方式、同人主题声明和 GitHub 资产摘要。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
-- Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
+- Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/Mahiro Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
 - Windows 7 发布证据必须同时记录：主线测试、staging 测试、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
 - Win7 staging 测试只运行能在 staging 内自洽执行的 90 项；根专属真实引擎/打包管线测试由主线执行，不得把根测试文件复制进 staging 后制造假失败。
 - GitHub remote：`https://github.com/LaoFeng-mouse/flyingmouse-format.git`。
@@ -117,7 +118,7 @@ npm audit --omit=dev --prefix output\win7-stage
 
 ## 著作权与许可（2026-08-14 起强制执行）
 
-- 作者：牢蜂（LaoFeng）。所有公开发布物（README、Release、安装包、UI、诊断文件、商店材料）必须保留作者署名。
+- 原作者：牢蜂（LaoFeng）；Mahiro Format 升级与维护：YKZStudio。所有公开发布物（README、Release、安装包、UI、诊断文件、商店材料）必须同时保留原作者署名与 YKZStudio 升级维护署名。
 - 许可证为非商用：禁止销售、转卖、收费服务、电商平台倒卖、套壳换皮重新发布。LICENSE 已从 MIT 更换为非商用许可。
-- 任何界面文案/文档新增作者信息时：作者=牢蜂，禁止商用表述为「仅供个人免费使用，禁止商业售卖/转卖/套壳」。
+- 任何界面文案/文档新增署名时：原作者=牢蜂（LaoFeng），Mahiro Format 升级与维护=YKZStudio；禁止商用表述为「仅供个人免费使用，禁止商业售卖/转卖/套壳」。
 - 包内版本号、README 版本号、release notes、package-lock/win7-package-lock 版本号必须与 package.json 同步，发版前逐一核对。

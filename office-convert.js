@@ -1,4 +1,4 @@
-// office-convert.js — 飞鼠格式 LibreOffice 转换域：Office 文档（doc/docx/odt/rtf/wps 等）互转与转文本/Markdown。
+// office-convert.js — Mahiro Format LibreOffice 转换域：Office 文档（doc/docx/odt/rtf/wps 等）互转与转文本/Markdown。
 // 第四批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const fsp = require("fs/promises");

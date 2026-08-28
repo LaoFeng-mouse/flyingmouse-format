@@ -1,14 +1,14 @@
-# FlyingMouse Format v0.3.2 Win7 兼容版设计
+# Mahiro Format v0.3.2 Win7 兼容版设计
 
 ## 目标
 
-在不降低 Windows 10/11 主版本 Electron 43、安全边界和功能的前提下，恢复可重复构建的 Windows 7 SP1 x64 兼容发行通道，并生成 `FlyingMouse Format-Setup-0.3.2-win7-x64.exe`。
+在不降低 Windows 10/11 主版本 Electron 43、安全边界和功能的前提下，恢复可重复构建的 Windows 7 SP1 x64 兼容发行通道，并生成 `Mahiro Format-Setup-0.3.2-win7-x64.exe`。
 
 Win7 兼容版必须使用当前鼠鼠 UI，并包含 v0.3.2 已有能力：普通 NCM、Audio Vivid（AV3A）NCM、按源格式记忆目标格式、保存目录记忆、中文/English、批量转换和鼠鼠打包图标。`鼠鼠打印` 不在本次范围内。
 
 ## 已有基础
 
-2026-08-07 已在 `D:\34615\飞鼠格式-win7` 构建过 v0.2.1 Win7 版，并上传到 GitHub v0.2.1 Release。旧方案使用：
+2026-08-07 已在 `D:\34615\Mahiro Format-win7` 构建过 v0.2.1 Win7 版，并上传到 GitHub v0.2.1 Release。旧方案使用：
 
 - Electron `22.3.27`；
 - Sharp `0.32.6`；
@@ -32,7 +32,7 @@ Win7 兼容版必须使用当前鼠鼠 UI，并包含 v0.3.2 已有能力：普�
 - 兼容依赖、打包白名单和产物名称可以自动测试；
 - 后续功能更新可以用同一命令重新生成 Win7 包。
 
-### 不采用：继续手工维护 `D:\34615\飞鼠格式-win7`
+### 不采用：继续手工维护 `D:\34615\Mahiro Format-win7`
 
 旧副本已经落后于 v0.3.2，缺少 AV3A、操作记忆、双语和新版图标。继续复制文件容易漏模块、漏资源或把旧 UI 带回发布包。
 
@@ -53,7 +53,7 @@ Win7 构建脚本
 ├─ 安装 Win7 兼容依赖
 └─ 调用 electron-builder NSIS x64
         ▼
-FlyingMouse Format-Setup-0.3.2-win7-x64.exe
+Mahiro Format-Setup-0.3.2-win7-x64.exe
 ```
 
 临时目录和其 `node_modules`、`dist` 不进入 Git。构建脚本不得修改主仓库的 `package.json`、`package-lock.json` 或 `node_modules`。
@@ -110,7 +110,7 @@ Win7 专用配置固定：
 ## 发布
 
 - 不移动或重建 Windows 10/11 主安装包；
-- 将 `FlyingMouse Format-Setup-0.3.2-win7-x64.exe` 追加到现有 GitHub v0.3.2 Release；
+- 将 `Mahiro Format-Setup-0.3.2-win7-x64.exe` 追加到现有 GitHub v0.3.2 Release；
 - Release 说明明确“仅 Windows 7 SP1 x64”“Legacy”“Electron 22 已停止上游安全维护”“安装包未签名”；
 - README 中提供按系统选择安装包的中英文说明；
 - `docs/RELEASE.md`、`docs/HANDOFF.md` 和 `AGENTS.md` 记录可重复构建命令、兼容边界、哈希和实际验证状态；

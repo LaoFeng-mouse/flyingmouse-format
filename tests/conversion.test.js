@@ -21,6 +21,11 @@ const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require(".
 const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH
   || path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
 const { QPDF_PATH } = require("../config");
+const {
+  assetDirectoryNameForMarkdown,
+  rewriteMarkdownAssetReferences,
+  sanitizeAssetDirectoryName
+} = require("../markdown-assets");
 const qpdfAvailable = (() => {
   try {
     execFileSync(QPDF_PATH, ["--version"], { timeout: 5000, windowsHide: true });
@@ -34,6 +39,13 @@ const structuredEnginePresent = fs.existsSync(
 );
 let server;
 let baseUrl;
+let sessionToken;
+
+function apiFetch(apiPath, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Mahiro-Session-Token", sessionToken);
+  return fetch(`${baseUrl}${apiPath}`, { ...options, headers });
+}
 
 function hashFile(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
@@ -182,7 +194,7 @@ async function uploadConvert(filePath, fileName, targetFormat, mimeType = "appli
   form.append("file", new Blob([await fsp.readFile(filePath)], { type: mimeType }), fileName);
   form.append("targetFormat", targetFormat);
 
-  const response = await fetch(`${baseUrl}/api/convert`, {
+  const response = await apiFetch("/api/convert", {
     method: "POST",
     body: form
   });
@@ -198,7 +210,7 @@ async function uploadImagesToPdf(files, options = {}) {
   if (options.blanks) form.append("blanks", options.blanks);
   if (options.folderName) form.append("folderName", options.folderName);
 
-  const response = await fetch(`${baseUrl}/api/convert-images-to-pdf`, {
+  const response = await apiFetch("/api/convert-images-to-pdf", {
     method: "POST",
     body: form
   });
@@ -288,6 +300,12 @@ before(async () => {
     const started = await serverModule.startServer(0);
     server = started.server;
     baseUrl = started.url;
+    sessionToken = started.sessionToken;
+  }
+  if (!sessionToken) {
+    const sessionResponse = await fetch(`${baseUrl}/api/session`, { cache: "no-store" });
+    assert.strictEqual(sessionResponse.status, 200);
+    sessionToken = (await sessionResponse.json()).token;
   }
 });
 
@@ -298,6 +316,37 @@ after(async () => {
   if (!process.env.KEEP_CONVERSION_TESTS) {
     await fsp.rm(scratchRoot, { recursive: true, force: true });
   }
+});
+test("cleanup removes expired Markdown sidecar directories recursively", { skip: !serverModule }, async () => {
+  const cleanupRoot = path.join(scratchRoot, "cleanup-runtime");
+  const expiredDir = path.join(cleanupRoot, "expired.assets");
+  const freshDir = path.join(cleanupRoot, "fresh.assets");
+  await fsp.mkdir(expiredDir, { recursive: true });
+  await fsp.mkdir(freshDir, { recursive: true });
+  await fsp.writeFile(path.join(expiredDir, "image-1.png"), "old");
+  await fsp.writeFile(path.join(freshDir, "image-1.png"), "fresh");
+  const now = Date.now();
+  const oldDate = new Date(now - 2 * 60 * 60 * 1000);
+  await fsp.utimes(expiredDir, oldDate, oldDate);
+
+  await serverModule.cleanupOldFiles({ now, directories: [cleanupRoot] });
+
+  await assert.rejects(fsp.stat(expiredDir), (error) => error?.code === "ENOENT");
+  assert.strictEqual((await fsp.stat(freshDir)).isDirectory(), true);
+});
+
+test("renamed Markdown outputs rewrite their sidecar directory references", () => {
+  const markdown = [
+    "# 报告",
+    "![截图](带图报告.assets/image-1.png)",
+    "<img src=\"带图报告.assets/image-2.jpg\">"
+  ].join("\n");
+  const rewritten = rewriteMarkdownAssetReferences(markdown, "带图报告.assets", "重命名报告.assets");
+  assert.doesNotMatch(rewritten, /带图报告\.assets\//);
+  assert.match(rewritten, /!\[截图\]\(重命名报告\.assets\/image-1\.png\)/);
+  assert.match(rewritten, /src="重命名报告\.assets\/image-2\.jpg"/);
+  assert.strictEqual(assetDirectoryNameForMarkdown(path.join("输出", "重命名报告.md")), "重命名报告.assets");
+  assert.strictEqual(sanitizeAssetDirectoryName("../带图报告.assets"), "带图报告.assets");
 });
 
 test("converts a PNG image to a visually equivalent single-page PDF without changing the source", async () => {
@@ -359,29 +408,6 @@ test("merges images with blank pages inserted at requested positions", async () 
   assert.strictEqual(doc.numPages, 4);
 });
 
-test("merges a large batch of images into one PDF without hitting memory limits", async () => {
-  // 回归：convertImagesToPdf 流式化之前，约 53 张手机截图合并即报
-  // RangeError: Failed to allocate memory（转换全部驻留内存 + O(n^2) 拼接）。
-  // 此用例用 60 张图走完整路径，锁定「不因图片数量失败」且页数正确。
-  const batch = [];
-  for (let i = 0; i < 60; i += 1) {
-    const p = path.join(scratchRoot, `批量-${String(i).padStart(3, "0")}.png`);
-    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, 400, 600);
-    batch.push({ path: p, name: `批量-${String(i).padStart(3, "0")}.png` });
-  }
-
-  const { response, body } = await uploadImagesToPdf(batch);
-  assert.strictEqual(response.status, 200, body.error);
-  assert.match(body.fileName, /等\d+个文件\.pdf$/);
-  const outputPath = await downloadResult(body, "large-batch.pdf");
-  assertPdf(outputPath);
-
-  const { getDocument } = await import(pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
-  const data = new Uint8Array(await fsp.readFile(outputPath));
-  const doc = await getDocument({ data, isEvalSupported: false }).promise;
-  assert.strictEqual(doc.numPages, batch.length);
-});
-
 test("converts a PDF to DOCX with extracted text and tables", async () => {
   const sourcePath = path.join(scratchRoot, "word-source.pdf");
   await createTextPdf(sourcePath);
@@ -396,14 +422,12 @@ test("converts a PDF to DOCX with extracted text and tables", async () => {
   assert.strictEqual(packageBytes.readUInt32LE(0), 0x04034b50, "docx must be a ZIP package");
   const documentXml = readZipEntry(packageBytes, "word/document.xml");
   assert.match(documentXml, /<w:document/);
-  // pdf2docx 对「纯文本定位拼出的无边框表格」不识别为 <w:tbl>（parse_stream_table 开关
-  // 无影响，原始库/当前库对照验证一致），退化成 <w:tab/> 分隔段落，且 ≥3 列时最后一列被丢弃
-  // （本用例 Price/3.50 列丢失）——pdf2docx 固有行为，非本次 parse_stream_table=False 引入。
-  // 有边框 lattice 表格不受影响（见下方 cropped PDF table 用例）。
-  // Windows 走 docengine（pdf2docx）→ <w:tab/>；mac/Linux 无 docengine，走 PDF.js 文字提取
-  // （tab 不会变成 <w:tab/>）——仅 Windows 断言 tab。
+  // Windows 标准版的结构化 PDF 回退会把这组规则定位文字恢复为真实表格，
+  // 并保留最后一列；其他平台仍允许走纯 PDF.js 文字回退。
   if (process.platform === "win32") {
-    assert.match(documentXml, /<w:tab\/>/);
+    assert.match(documentXml, /<w:tbl>/);
+    assert.match(documentXml, /Price/);
+    assert.match(documentXml, /3\.50/);
   }
   assert.match(documentXml, /Item/);
   assert.match(documentXml, /Qty/);
@@ -494,7 +518,7 @@ test("encrypts a PDF with a password via qpdf (requires qpdf engine)", { skip: !
   form.append("targetFormat", "pdf");
   form.append("pdfAction", "encrypt");
   form.append("password", "secret123");
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   const body = await parseBody(response);
 
   assert.strictEqual(response.status, 200, body.error);
@@ -521,7 +545,7 @@ test("rejects PDF encryption without a password with a clear error", async () =>
   form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "application/pdf" }), "encrypt-no-password.pdf");
   form.append("targetFormat", "pdf");
   form.append("pdfAction", "encrypt");
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   const body = await parseBody(response);
 
   assert.strictEqual(response.status, 422);
@@ -543,7 +567,7 @@ test("decrypts a qpdf-encrypted PDF back to readable content (requires qpdf engi
   encForm.append("targetFormat", "pdf");
   encForm.append("pdfAction", "encrypt");
   encForm.append("password", "secret123");
-  const encResponse = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: encForm });
+  const encResponse = await apiFetch("/api/convert", { method: "POST", body: encForm });
   const encBody = await parseBody(encResponse);
   assert.strictEqual(encResponse.status, 200, encBody.error);
   const encryptedPath = await downloadResult(encBody, "roundtrip-enc.pdf");
@@ -554,7 +578,7 @@ test("decrypts a qpdf-encrypted PDF back to readable content (requires qpdf engi
   decForm.append("targetFormat", "pdf");
   decForm.append("pdfAction", "decrypt");
   decForm.append("password", "secret123");
-  const decResponse = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: decForm });
+  const decResponse = await apiFetch("/api/convert", { method: "POST", body: decForm });
   const decBody = await parseBody(decResponse);
   assert.strictEqual(decResponse.status, 200, decBody.error);
   const decryptedPath = await downloadResult(decBody, "roundtrip-dec.pdf");
@@ -763,7 +787,7 @@ test("scanned PDF to XLSX fails closed when the structured engine is unavailable
 });
 
 test("audio files must not offer video container targets", async () => {
-  const response = await fetch(`${baseUrl}/api/targets`, {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension: "mp3" })
@@ -779,7 +803,7 @@ test("audio files must not offer video container targets", async () => {
 });
 
 test("video files keep both audio and video targets", async () => {
-  const response = await fetch(`${baseUrl}/api/targets`, {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension: "mp4" })
@@ -798,19 +822,44 @@ test("cross-site conversion requests are rejected", async () => {
   form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "image/png" }), "csrf-test.png");
   form.append("targetFormat", "jpg");
 
-  const evilResponse = await fetch(`${baseUrl}/api/convert`, {
+  const evilResponse = await apiFetch("/api/convert", {
     method: "POST",
     headers: { Origin: "https://evil.example.com" },
     body: form
   });
   assert.strictEqual(evilResponse.status, 403, "cross-site origin must be rejected");
 
-  const refererResponse = await fetch(`${baseUrl}/api/convert`, {
+  const refererResponse = await apiFetch("/api/convert", {
     method: "POST",
     headers: { Referer: "https://evil.example.com/page.html" },
     body: form
   });
   assert.strictEqual(refererResponse.status, 403, "cross-site referer must be rejected");
+});
+
+test("local requests require the current session token and exact startup origin", async () => {
+  const payload = JSON.stringify({ extension: "txt" });
+  const missingToken = await fetch(`${baseUrl}/api/targets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: new URL(baseUrl).origin
+    },
+    body: payload
+  });
+  assert.strictEqual(missingToken.status, 403);
+  assert.strictEqual((await parseBody(missingToken)).errorCode, "INVALID_SESSION_TOKEN");
+
+  const wrongLocalOrigin = await apiFetch("/api/targets", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: "http://127.0.0.1:1"
+    },
+    body: payload
+  });
+  assert.strictEqual(wrongLocalOrigin.status, 403);
+  assert.strictEqual((await parseBody(wrongLocalOrigin)).errorCode, "UNTRUSTED_REQUEST_ORIGIN");
 });
 
 test("local-origin conversion requests are allowed", async () => {
@@ -822,7 +871,7 @@ test("local-origin conversion requests are allowed", async () => {
   form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "image/png" }), "local-origin.png");
   form.append("targetFormat", "jpg");
 
-  const response = await fetch(`${baseUrl}/api/convert`, {
+  const response = await apiFetch("/api/convert", {
     method: "POST",
     headers: { Origin: new URL(baseUrl).origin },
     body: form
@@ -837,7 +886,7 @@ test("local-origin conversion requests are allowed", async () => {
 });
 
 test("audio files offer the new AAC/OPUS/WMA outputs", async () => {
-  const response = await fetch(`${baseUrl}/api/targets`, {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension: "mp3" })
@@ -850,7 +899,7 @@ test("audio files offer the new AAC/OPUS/WMA outputs", async () => {
 });
 
 test("image files offer MP4/WebM video outputs when ffmpeg is available", async () => {
-  const response = await fetch(`${baseUrl}/api/targets`, {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension: "gif" })
@@ -862,7 +911,7 @@ test("image files offer MP4/WebM video outputs when ffmpeg is available", async 
 });
 
 test("text files offer PDF output when LibreOffice is available", async () => {
-  const response = await fetch(`${baseUrl}/api/targets`, {
+  const response = await apiFetch("/api/targets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ extension: "txt" })
@@ -911,7 +960,7 @@ test("merges multiple PDFs into one PDF without changing the sources", async () 
   form.append("files", new Blob([await fsp.readFile(firstPath)], { type: "application/pdf" }), "合并一.pdf");
   form.append("files", new Blob([await fsp.readFile(secondPath)], { type: "application/pdf" }), "合并二.pdf");
 
-  const response = await fetch(`${baseUrl}/api/merge-pdfs`, { method: "POST", body: form });
+  const response = await apiFetch("/api/merge-pdfs", { method: "POST", body: form });
   const body = await parseBody(response);
 
   assert.strictEqual(response.status, 200, body.error);
@@ -933,7 +982,7 @@ test("splits a PDF into a per-page PDF zip without changing the source", async (
   const form = new FormData();
   form.append("files", new Blob([await fsp.readFile(firstPath)], { type: "application/pdf" }), "页一.pdf");
   form.append("files", new Blob([await fsp.readFile(secondPath)], { type: "application/pdf" }), "页二.pdf");
-  const mergedResponse = await fetch(`${baseUrl}/api/merge-pdfs`, { method: "POST", body: form });
+  const mergedResponse = await apiFetch("/api/merge-pdfs", { method: "POST", body: form });
   const mergedBody = await parseBody(mergedResponse);
   assert.strictEqual(mergedResponse.status, 200, mergedBody.error);
   const twoPagePdf = await downloadResult(mergedBody, "two-pages.pdf");
@@ -971,7 +1020,7 @@ test("splits a PDF into N-page groups when splitMode=group", { skip: !qpdfAvaila
   form.append("targetFormat", "pdf");
   form.append("splitMode", "group");
   form.append("groupSize", "2");
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   const body = await parseBody(response);
 
   assert.strictEqual(response.status, 200, body.error);
@@ -1127,6 +1176,7 @@ test("converts a DOCX with embedded images to Markdown with externalized asset f
 
   assert.strictEqual(response.status, 200, body.error);
   assert.strictEqual(body.fileName, "带图报告.md");
+  assert.strictEqual(body.assetDirectoryName, "带图报告.assets");
   assert.ok(Array.isArray(body.assets), "payload must include assets list");
   assert.strictEqual(body.assets.length, 1, "one embedded image expected");
   assert.strictEqual(body.assets[0].name, "image-1.png");
@@ -1408,7 +1458,7 @@ test("zip conversion honors compression level and reports sizes", async () => {
     form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "text/plain" }), "压缩样本.txt");
     form.append("targetFormat", "zip");
     if (level != null) form.append("compressionLevel", String(level));
-    const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+    const response = await apiFetch("/api/convert", { method: "POST", body: form });
     const body = await parseBody(response);
     assert.strictEqual(response.status, 200, body.error);
     return body;

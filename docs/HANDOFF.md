@@ -1,4 +1,4 @@
-# FlyingMouse Format 交接
+# Mahiro Format 交接
 
 更新时间：2026-08-21（OFD→PDF 接入 + 编号注入加固）
 

@@ -8,19 +8,27 @@ const runtimeDir = path.join(os.tmpdir(), `flyingmouse-text-integration-${proces
 process.env.FLYINGMOUSE_RUNTIME_DIR = runtimeDir;
 // csv->pdf 走 LibreOffice html->pdf 管线；本机已安装版引擎存在时启用，否则跳过该断言。
 // 注意必须用 soffice.com（命令行壳）：portable 版 soffice.exe 会拉起 GUI 挂起，probe 超时。
-const candidateLo = "C:\\Users\\34615\\AppData\\Local\\Programs\\FlyingMouse Format\\resources\\libreoffice\\LibreOfficePortable\\App\\libreoffice\\program\\soffice.com";
+const candidateLo = "C:\\Users\\34615\\AppData\\Local\\Programs\\Mahiro Format\\resources\\libreoffice\\LibreOfficePortable\\App\\libreoffice\\program\\soffice.com";
 const LO_AVAILABLE = require("node:fs").existsSync(candidateLo);
 if (LO_AVAILABLE) process.env.FLYINGMOUSE_LIBREOFFICE_PATH = candidateLo;
 const { startServer, platformCapabilities } = require("../server");
-const { DCRAW_PATH, rawInput } = require("../config");
+const { DCRAW_PATH, rawInput, experimentalInputsByCategory } = require("../config");
 
 let server;
 let baseUrl;
+let sessionToken;
+
+function apiFetch(apiPath, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Mahiro-Session-Token", sessionToken);
+  return fetch(`${baseUrl}${apiPath}`, { ...options, headers });
+}
 
 before(async () => {
   const started = await startServer(0);
   server = started.server;
   baseUrl = started.url;
+  sessionToken = started.sessionToken;
 });
 
 after(async () => {
@@ -32,7 +40,7 @@ async function convert(name, content, targetFormat, type) {
   const form = new FormData();
   form.append("file", new Blob([content], { type }), name);
   form.append("targetFormat", targetFormat);
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   const body = await response.json();
   assert.equal(response.status, 200, body.error);
   const download = await fetch(`${baseUrl}${body.downloadUrl}`);
@@ -44,7 +52,7 @@ async function convertResponse(name, content, targetFormat, type) {
   const form = new FormData();
   form.append("file", new Blob([content], { type }), name);
   form.append("targetFormat", targetFormat);
-  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  const response = await apiFetch("/api/convert", { method: "POST", body: form });
   return { response, body: await response.json() };
 }
 
@@ -189,16 +197,16 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.equal(response.status, 200);
   const capabilities = await response.json();
   assert.deepEqual(capabilities.limits, {
-    maxImagePixels: Number.MAX_SAFE_INTEGER,
-    maxImageDimension: Number.MAX_SAFE_INTEGER,
-    maxImagePdfPixels: Number.MAX_SAFE_INTEGER,
-    maxBatchBytes: Number.MAX_SAFE_INTEGER
+    maxImagePixels: 50_000_000,
+    maxImageDimension: 16_384,
+    maxImagePdfPixels: 100_000_000,
+    maxBatchBytes: 2 * 1024 * 1024 * 1024
   });
   assert.deepEqual(capabilities.groups.image.experimentalInputs, ["heic", "heif", "ico", "tga"].concat(DCRAW_PATH ? [...rawInput] : []).sort());
   assert.deepEqual(capabilities.groups.document.experimentalInputs, ["wpd", "wps", "wpt"]);
   assert.deepEqual(capabilities.groups.spreadsheet.experimentalInputs, ["et", "ett"]);
   assert.deepEqual(capabilities.groups.presentation.experimentalInputs, ["dps", "dpt"]);
-  assert.deepEqual(capabilities.groups.audio.experimentalInputs, []);
+  assert.deepEqual(capabilities.groups.audio.experimentalInputs, experimentalInputsByCategory.audio);
   const serverSource = require("node:fs").readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const imageSource = require("node:fs").readFileSync(path.join(__dirname, "..", "image.js"), "utf8");
   const pdfTableSource = require("node:fs").readFileSync(path.join(__dirname, "..", "pdf-table.js"), "utf8");
@@ -209,12 +217,12 @@ test("capabilities expose stable conversion limits and Sharp keeps pixel protect
   assert.match(pdfTableSource, /async function\* pages\(\)/);
 });
 
-test("platform capabilities report os and arch only (no music-platform capability flags)", () => {
+test("platform capabilities report restored NCM and AV3A boundaries", () => {
   assert.deepEqual(platformCapabilities("darwin", "arm64"), {
-    os: "darwin", arch: "arm64"
+    os: "darwin", arch: "arm64", standardNcm: true, av3a: false
   });
   assert.deepEqual(platformCapabilities("win32", "x64"), {
-    os: "win32", arch: "x64"
+    os: "win32", arch: "x64", standardNcm: true, av3a: true
   });
 });
 
@@ -222,7 +230,7 @@ test("packaging and Win7 staging include the new runtime modules", () => {
   const packageJson = require("../package.json");
   const source = require("node:fs").readFileSync(path.join(__dirname, "..", "win7-build-profile.js"), "utf8");
   assert.ok(packageJson.build.files.includes("pdf-classifier.js"), "pdf-classifier.js is missing from build.files");
-  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js"]) {
+  for (const file of ["resource-policy.js", "text-conversion.js", "pdf-table-extractor.js", "pdf-table-runtime.js", "config.js", "utils.js", "media.js", "zip-util.js", "image.js", "ocr.js", "pdfjs.js", "pdf-table.js", "pdf.js", "text-docx.js", "office-convert.js", "markdown-assets.js", "ncm-format.js", "ncm-metadata.js", "av3a-format.js", "kgg-format.js", "mflac-format.js", "kgma-format.js", "kwm-format.js", "kgm-vpr-format.js"]) {
     assert.ok(packageJson.build.files.includes(file), `${file} is missing from build.files`);
     assert.match(source, new RegExp(`["]${file.replace(".", "\\.")}["]`));
   }
