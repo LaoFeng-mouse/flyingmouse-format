@@ -71,10 +71,25 @@ test("convertMflac rejects an unrecognized mflac with a stable error code", asyn
   const dir = await tmpDir();
   try {
     const badPath = path.join(dir, "bad.mflac");
-    await fsp.writeFile(badPath, Buffer.alloc(256, 0x00));
+    // 非全零的未知数据（0x33），才能走到 footer 解析的 unknown 分支
+    await fsp.writeFile(badPath, Buffer.alloc(256, 0x33));
     await assert.rejects(
       () => convertMflac(badPath),
       (error) => error.code === "MFLAC_DECRYPT_FAILED"
+    );
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("convertMflac reports MFLAC_BLANK_FILE for an all-zero file (interrupted download)", async () => {
+  const dir = await tmpDir();
+  try {
+    const blankPath = path.join(dir, "blank.mflac");
+    await fsp.writeFile(blankPath, Buffer.alloc(42568, 0x00));
+    await assert.rejects(
+      () => convertMflac(blankPath),
+      (error) => error.code === "MFLAC_BLANK_FILE" && /空字节/.test(error.message)
     );
   } finally {
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});

@@ -404,10 +404,33 @@ function detectAudioFormat(buf) {
   return "unknown";
 }
 
+// 全零/空白文件探测：下载中断常留下「占位大小正确但内容全 0x00」的文件。
+// 抽样检测（头 4KB + 中部 4KB + 尾 4KB）即可可靠识别，避免 42MB 全量扫描。
+function isBlankBuffer(buf) {
+  if (buf.length === 0) return true;
+  const SAMPLE = 4096;
+  const regions = [
+    [0, Math.min(SAMPLE, buf.length)],
+    [Math.floor(buf.length / 2), Math.floor(buf.length / 2) + Math.min(SAMPLE, Math.floor(buf.length / 2))],
+    [Math.max(0, buf.length - SAMPLE), buf.length],
+  ];
+  return regions.every(([start, end]) => {
+    for (let i = start; i < end; i++) if (buf[i] !== 0) return false;
+    return true;
+  });
+}
+
 // 解密 mflac：返回 { nativePath, format, tempDir }
 async function convertMflac(inputPath, options = {}) {
   const buf = await fsp.readFile(inputPath);
   if (buf.length < 16) throw qmcError("MFLAC 文件不完整。");
+  // 空/全零文件探测（下载中断或占位文件）：避免误导性的「footer 缺失」报错
+  if (isBlankBuffer(buf)) {
+    throw qmcError(
+      "这个文件的内容全部是空字节（0x00），很可能是下载中断或传输失败留下的占位文件；请重新下载完整文件后再试。",
+      "MFLAC_BLANK_FILE"
+    );
+  }
   const footer = parseMflacFooter(buf);
   let ekey = null;
   let qmc2 = null;
