@@ -358,6 +358,30 @@ test("merges images with blank pages inserted at requested positions", async () 
   assert.strictEqual(doc.numPages, 4);
 });
 
+test("merges a large batch of images into one PDF without hitting memory limits", async () => {
+  // 回归：convertImagesToPdf 流式化之前，约 53 张手机截图合并即报
+  // RangeError: Failed to allocate memory（转换全部驻留内存 + O(n^2) 拼接）。
+  // 此用例用 60 张图走完整路径，锁定「不因图片数量失败」且页数正确。
+  const batch = [];
+  for (let i = 0; i < 60; i += 1) {
+    const p = path.join(scratchRoot, `批量-${String(i).padStart(3, "0")}.png`);
+    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, 400, 600);
+    batch.push({ path: p, name: `批量-${String(i).padStart(3, "0")}.png` });
+  }
+
+  const { response, body } = await uploadImagesToPdf(batch);
+  assert.strictEqual(response.status, 200, body.error);
+  assert.match(body.fileName, /等\d+个文件\.pdf$/);
+  const outputPath = await downloadResult(body, "large-batch.pdf");
+  assertPdf(outputPath);
+
+  const pdfjsPath = path.join(__dirname, "..", "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs");
+  const { getDocument } = await import(`file:///${pdfjsPath.replace(/\\/g, "/")}`);
+  const data = new Uint8Array(await fsp.readFile(outputPath));
+  const doc = await getDocument({ data, isEvalSupported: false }).promise;
+  assert.strictEqual(doc.numPages, batch.length);
+});
+
 test("converts a PDF to DOCX with extracted text and tables", async () => {
   const sourcePath = path.join(scratchRoot, "word-source.pdf");
   await createTextPdf(sourcePath);

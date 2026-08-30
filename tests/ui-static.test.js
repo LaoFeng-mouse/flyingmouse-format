@@ -20,13 +20,13 @@ test("renderer exposes workflow hooks and drop zone copy", () => {
   assert.match(html, /id="dropHint"/);
 });
 
-test("renderer restores the original mouse mascot and removes sponsor widget", () => {
+test("renderer restores the original mouse mascot and sponsor widget", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   assert.match(html, /mouse-mascot|mouseMascot/);
-  assert.doesNotMatch(html, /sponsorWidget|sponsorToggle/);
+  assert.match(html, /sponsorWidget|sponsorToggle/);
   assert.match(app, /setMouseState|mouseAssets|mouseMascot/);
-  assert.doesNotMatch(app, /sponsorToggle/);
+  assert.match(app, /sponsorToggle/);
 });
 
 test("renderer uses the mouse brand and favicon", () => {
@@ -42,7 +42,7 @@ test("original mouse visual theme classes are present", () => {
   assert.match(css, /\.workflow-steps/);
   assert.match(css, /\.mouse-stage/);
   assert.match(css, /\.mouse-mascot/);
-  assert.doesNotMatch(css, /\.sponsor-widget/);
+  assert.match(css, /\.sponsor-widget/);
   assert.match(css, /border-radius:\s*var\(--radius\)/);
 });
 

@@ -174,7 +174,10 @@ const messages = {
     "tutorial.copied": "模板已复制，粘贴到记事本后替换成你的信息",
     "tutorial.qq.s7.title": "⑦ 回到鼠鼠重新转换",
     "tutorial.qq.s7.desc": "文件放好后，回到本软件重新拖入那个加密音频转换即可。cookie 偶尔会过期，提示需要凭据时重复上面的步骤更新一次就好。",
-    "tutorial.gotIt": "我知道了"
+    "tutorial.gotIt": "我知道了",
+    "sponsor.aria": "支持鼠鼠", "sponsor.close": "收起", "sponsor.title": "请鼠鼠吃小鱼干 🐟",
+    "sponsor.description": "本软件永久免费。如果帮到了你，欢迎请鼠鼠吃根小鱼干～纯自愿。若有人收费售卖本软件，那一定是套壳圈钱的骗子，请勿上当。",
+    "sponsor.qrAlt": "微信收款码"
   },
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
@@ -252,7 +255,10 @@ const messages = {
     "tutorial.copied": "Template copied. Paste it into Notepad and replace the placeholders with your info.",
     "tutorial.qq.s7.title": "⑦ Convert again in Mouse",
     "tutorial.qq.s7.desc": "Once the file is in place, drag the encrypted audio into this app and convert again. The cookie expires occasionally; when credentials are requested again, repeat the steps above to refresh it.",
-    "tutorial.gotIt": "Got it"
+    "tutorial.gotIt": "Got it",
+    "sponsor.aria": "Support Mouse", "sponsor.close": "Close", "sponsor.title": "Buy Mouse a dried fish 🐟",
+    "sponsor.description": "This app is permanently free. If it helped you, you can buy Mouse a snack - completely optional. If anyone charges you for this app, it's a scam.",
+    "sponsor.qrAlt": "WeChat payment QR code"
   }
 };
 
@@ -1660,3 +1666,20 @@ async function copyQqCookieTemplate() {
 }
 
 qqCookieTemplateCopy.addEventListener("click", copyQqCookieTemplate);
+const sponsorToggle = document.querySelector("#sponsorToggle");
+const sponsorPanel = document.querySelector("#sponsorPanel");
+const sponsorClose = document.querySelector("#sponsorClose");
+const sponsorWidget = document.querySelector("#sponsorWidget");
+
+function setSponsorOpen(open) {
+  sponsorPanel.hidden = !open;
+  sponsorToggle.setAttribute("aria-expanded", String(open));
+}
+
+if (sponsorToggle && sponsorPanel && sponsorClose && sponsorWidget) {
+  sponsorToggle.addEventListener("click", () => setSponsorOpen(sponsorPanel.hidden));
+  sponsorClose.addEventListener("click", () => setSponsorOpen(false));
+  document.addEventListener("click", (event) => {
+    if (!sponsorPanel.hidden && !sponsorWidget.contains(event.target)) setSponsorOpen(false);
+  });
+}

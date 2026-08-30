@@ -410,7 +410,9 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   const blankAfter = new Set(
     String(req.body?.blanks || "")
       .split(",")
-      .map((item) => Number(item.trim()))
+      .map((item) => item.trim())
+      .filter((item) => item !== "")
+      .map(Number)
       .filter((item) => Number.isFinite(item) && item >= 0 && item <= imageFiles.length)
   );
   for (const blankIndex of [...blankAfter].sort((a, b) => b - a)) {
