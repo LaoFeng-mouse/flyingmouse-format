@@ -80,11 +80,26 @@ function docxRunXml(runs, base = {}) {
 
 function docxParagraphXml(runs, options = {}) {
   const pPr = [];
+  // 标题段落写真实 HeadingN 样式：docx->md 走 mammoth styleMap（按 styles.xml 的
+  // 样式名映射 h1-h6），无样式的加粗段落会被降级成普通段落 -> md 丢大纲（实测）。
+  if (options.style) pPr.push(`<w:pStyle w:val="${options.style}"/>`);
   if (options.indent) pPr.push(`<w:ind w:left="${options.indent}"/>`);
   if (options.after) pPr.push(`<w:spacing w:after="${options.after}"/>`);
   const pPrXml = pPr.length ? `<w:pPr>${pPr.join("")}</w:pPr>` : "";
   return `<w:p>${pPrXml}${docxRunXml(runs, options)}</w:p>`;
 }
+
+// styles.xml 里的 Heading 1-6 定义（基于 docDefaults，无 numbering）：让本工具生成
+// 的 docx 在 Word/WPS 显示为真实标题（大纲视图可导航），也让 mammoth styleMap 能
+// 把样式名「heading N」映射回 h1-h6。
+const DOCX_HEADING_STYLES = [1, 2, 3, 4, 5, 6].map((n) =>
+  `<w:style w:type="paragraph" w:styleId="Heading${n}"><w:name w:val="heading ${n}"/>` +
+  `<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>` +
+  (n <= 3 ? '<w:uiPriority w:val="9"/><w:qFormat/>' : '<w:uiPriority w:val="9"/><w:unhideWhenUsed/>') +
+  `<w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="120"/>` +
+  `<w:outlineLvl w:val="${n - 1}"/></w:pPr>` +
+  `<w:rPr><w:b/><w:sz w:val="${[36, 32, 28, 26, 24, 24][n - 1]}"/><w:szCs w:val="${[36, 32, 28, 26, 24, 24][n - 1]}"/></w:rPr></w:style>`
+).join("");
 
 // 把 HTML 按块级结构拆成逻辑行，供 convertTextToDocx 逐行识别标题/列表。
 function splitHtmlIntoLines(html) {
@@ -104,19 +119,24 @@ async function convertTextToDocx(raw, source, outputPath) {
     lines = String(raw).split(CR + "\n").join("\n").split("\n");
   }
   const paragraphs = [];
+  let emptyStreak = 0;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) {
-      paragraphs.push(docxParagraphXml([{ t: "" }]));
+      // 连续空行压缩为单个空段：逐行转空段会让 3 段 txt 往返后膨胀成 9 行（实测），
+      // 视觉段距已由 spacing(after) 提供，空段只承担显式分块。
+      if (emptyStreak === 0) paragraphs.push(docxParagraphXml([{ t: "" }]));
+      emptyStreak += 1;
       continue;
     }
+    emptyStreak = 0;
     if (source === "md") {
       const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
       if (heading) {
         const level = Number(heading[1].length);
         const size = [36, 32, 28, 26, 24, 24][level - 1];
-        paragraphs.push(docxParagraphXml(mdInlineRuns(heading[2]), { size, bold: true, after: 120 }));
+        paragraphs.push(docxParagraphXml(mdInlineRuns(heading[2]), { style: `Heading${level}`, size, after: 120 }));
         continue;
       }
       const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
@@ -134,7 +154,7 @@ async function convertTextToDocx(raw, source, outputPath) {
       if (heading) {
         const level = Number(heading[1]);
         const size = [36, 32, 28, 26, 24, 24][level - 1];
-        paragraphs.push(docxParagraphXml([{ t: htmlToText(heading[2]) }], { size, bold: true, after: 120 }));
+        paragraphs.push(docxParagraphXml([{ t: htmlToText(heading[2]) }], { style: `Heading${level}`, size, after: 120 }));
         continue;
       }
       const listItem = /^<li\b[^>]*>([\s\S]*)<\/li\s*>$/i.exec(trimmed);
@@ -149,9 +169,11 @@ async function convertTextToDocx(raw, source, outputPath) {
   }
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`;
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`;
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="word/styles.xml"/></Relationships>`;
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="宋体" w:hAnsi="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${DOCX_HEADING_STYLES}</w:styles>`;
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.join("")}<w:sectPr/></w:body></w:document>`;
 
@@ -159,6 +181,7 @@ async function convertTextToDocx(raw, source, outputPath) {
   zip.addBuffer(Buffer.from(contentTypes), "[Content_Types].xml");
   zip.addBuffer(Buffer.from(rels), "_rels/.rels");
   zip.addBuffer(Buffer.from(documentXml), "word/document.xml");
+  zip.addBuffer(Buffer.from(stylesXml), "word/styles.xml");
   await new Promise((resolve, reject) => {
     const stream = zip.outputStream.pipe(fs.createWriteStream(outputPath));
     stream.on("finish", resolve);

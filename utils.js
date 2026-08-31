@@ -156,8 +156,15 @@ function targetsForExt(rawExt, tools) {
     }
   }
 
-  // 电子书输入（EPUB/MOBI）是二进制容器，仅支持文本类目标；MOBI 只支持 EPUB/TXT/MD。
-  if (["epub", "mobi"].includes(normalizeExt(rawExt))) {
+  // 电子书输入（EPUB/MOBI）是二进制容器。EPUB 的 pdf/docx/html 走「合并 spine
+  // html -> LibreOffice」管线（ebook.js convertEpubViaLibreOffice，LO 存在才可用）；
+  // MOBI 只支持 EPUB/TXT/MD。
+  if (normalizeExt(rawExt) === "epub") {
+    const epubTargets = ["txt", "md", "html"];
+    if (tools.libreoffice) epubTargets.push("pdf", "docx");
+    return [...targets].filter((target) => [...epubTargets, "zip"].includes(target));
+  }
+  if (normalizeExt(rawExt) === "mobi") {
     return [...targets].filter((target) => ["epub", "txt", "md", "zip"].includes(target));
   }
 

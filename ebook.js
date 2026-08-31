@@ -215,23 +215,75 @@ function readZipEntries(zipPath) {
   });
 }
 
+// 优先从 central directory 读（EOCD 定位）：流式打包器（7-Zip、部分在线工具）写
+// data descriptor（局部头 bit3=1，compSize/crc 为 0 或占位），按局部头顺序扫会读到
+// 0 字节数据而断链——这是「EPUB 转换几乎全失败」的根因（2026-08-31 实测复现）。
+// central directory 回退到旧的局部头顺序扫描，保证两代逻辑都有出路。
 function readZipEntriesSync(zipPath) {
   const buffer = fs.readFileSync(zipPath);
   const entries = new Map();
-  let offset = 0;
-  while (offset + 46 <= buffer.length) {
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
-    const method = buffer.readUInt16LE(offset + 8);
-    const compSize = buffer.readUInt32LE(offset + 18);
-    const nameLen = buffer.readUInt16LE(offset + 26);
-    const extraLen = buffer.readUInt16LE(offset + 28);
-    const name = buffer.toString("utf8", offset + 30, offset + 30 + nameLen);
-    const dataStart = offset + 30 + nameLen + extraLen;
-    const data = buffer.subarray(dataStart, dataStart + compSize);
-    entries.set(name, method === 0 ? data : zlib.inflateRawSync(data));
-    offset = dataStart + compSize;
+  const zlibLocal = zlib;
+
+  // ---- 路径 A：EOCD -> central directory ----
+  let eocd = -1;
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 22 - 65536); i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
   }
-  return entries;
+  if (eocd >= 0) {
+    const entryCount = buffer.readUInt16LE(eocd + 10);
+    let offset = buffer.readUInt32LE(eocd + 16); // central dir offset（ZIP64 不在此范围）
+    let ok = true;
+    for (let index = 0; index < entryCount && ok; index += 1) {
+      if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== 0x02014b50) { ok = false; break; }
+      const method = buffer.readUInt16LE(offset + 10);
+      const flags = buffer.readUInt16LE(offset + 8);
+      const compSize = buffer.readUInt32LE(offset + 20);
+      const nameLen = buffer.readUInt16LE(offset + 28);
+      const extraLen = buffer.readUInt16LE(offset + 30);
+      const commentLen = buffer.readUInt16LE(offset + 32);
+      const lfhOffset = buffer.readUInt32LE(offset + 42);
+      const name = buffer.toString("utf8", offset + 46, offset + 46 + nameLen);
+      offset += 46 + nameLen + extraLen + commentLen;
+      if (name.endsWith("/") || !name || flags & 0x0001) continue; // 目录条目/加密条目跳过
+      if (lfhOffset + 30 > buffer.length) { ok = false; break; }
+      // 局部头的 name/extra 长度可能与 central 不一致（极少见），以局部头为准定位数据
+      const lNameLen = buffer.readUInt16LE(lfhOffset + 26);
+      const lExtraLen = buffer.readUInt16LE(lfhOffset + 28);
+      const dataStart = lfhOffset + 30 + lNameLen + lExtraLen;
+      if (dataStart + compSize > buffer.length) { ok = false; break; }
+      const data = buffer.subarray(dataStart, dataStart + compSize);
+      try {
+        entries.set(name, method === 0 ? Buffer.from(data) : Buffer.from(zlibLocal.inflateRawSync(data)));
+      } catch {
+        // 单条解压失败跳过（坏条目不拖垮整包）
+      }
+    }
+    if (ok && entries.size) return entries;
+  }
+
+  // ---- 路径 B（回退）：局部头顺序扫描（兼容无 EOCD/ZIP64 特殊布局） ----
+  const legacy = new Map();
+  let p = 0;
+  while (p + 46 <= buffer.length) {
+    if (buffer.readUInt32LE(p) !== 0x04034b50) break;
+    const method = buffer.readUInt16LE(p + 8);
+    const flags = buffer.readUInt16LE(p + 6);
+    let compSize = buffer.readUInt32LE(p + 18);
+    const nameLen = buffer.readUInt16LE(p + 26);
+    const extraLen = buffer.readUInt16LE(p + 28);
+    const name = buffer.toString("utf8", p + 30, p + 30 + nameLen);
+    let dataStart = p + 30 + nameLen + extraLen;
+    if (flags & 0x08 && compSize === 0) {
+      // data descriptor：扫 0x08074b50 签名（或直接对 crc32+size 组合）取真实 compSize
+      for (let j = dataStart; j + 4 <= buffer.length; j += 1) {
+        if (buffer.readUInt32LE(j) === 0x08074b50) { compSize = j - dataStart; break; }
+      }
+    }
+    const data = buffer.subarray(dataStart, dataStart + compSize);
+    legacy.set(name, method === 0 ? Buffer.from(data) : Buffer.from(zlibLocal.inflateRawSync(data)));
+    p = dataStart + compSize;
+  }
+  return legacy;
 }
 
 async function epubSpineXhtml(entries) {

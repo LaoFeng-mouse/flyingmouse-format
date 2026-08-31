@@ -12,7 +12,86 @@ const {
   splitChapters
 } = require("../ebook");
 
-const SAMPLES = "C:\\Users\\34615\\Documents\\Codex\\2026-08-08\\zhi\\samples";
+const SAMPLES = path.join(__dirname, "fixtures");
+
+// 构造带 data descriptor（局部头 bit3=1、compSize=0、数据后 16 字节 0x08074b50 描述符）
+// 的最小 EPUB：7-Zip/流式打包器的标准写法，旧版 readZipEntriesSync 按局部头顺序扫
+// 会读到 0 字节数据断链 ->「EPUB 转换几乎全失败」用户反馈的根因（2026-08-31 实测复现）。
+function buildDataDescriptorEpub(targetPath) {
+  const zlib = require("node:zlib");
+  function crc32(buf) {
+    let c, crc = 0xffffffff;
+    for (let i = 0; i < buf.length; i += 1) {
+      c = (crc ^ buf[i]) & 0xff;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+      crc = (crc >>> 8) ^ c;
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+  const entries = [
+    { name: "mimetype", data: Buffer.from("application/epub+zip"), store: true },
+    { name: "META-INF/container.xml", data: Buffer.from(`<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>`) },
+    { name: "OEBPS/content.opf", data: Buffer.from(`<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="bid">
+<manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest>
+<spine><itemref idref="c1"/></spine></package>`) },
+    { name: "OEBPS/c1.xhtml", data: Buffer.from(`<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>t</title></head>
+<body><p>Hello descriptor world</p></body></html>`) }
+  ];
+  const parts = [];
+  let offset = 0;
+  const central = [];
+  for (const e of entries) {
+    const nameB = Buffer.from(e.name, "utf8");
+    const crc = crc32(e.data);
+    const comp = e.store ? e.data : zlib.deflateRawSync(e.data);
+    const lfh = Buffer.alloc(30);
+    lfh.writeUInt32LE(0x04034b50, 0);
+    lfh.writeUInt16LE(20, 4);
+    lfh.writeUInt16LE(e.store ? 0 : 0x08, 6); // bit3 = data descriptor
+    lfh.writeUInt16LE(e.store ? 0 : 8, 8);
+    lfh.writeUInt16LE(nameB.length, 26);
+    let piece = Buffer.concat([lfh, nameB, comp]);
+    if (!e.store) {
+      const dd = Buffer.alloc(16);
+      dd.writeUInt32LE(0x08074b50, 0);
+      dd.writeUInt32LE(crc, 4);
+      dd.writeUInt32LE(comp.length, 8);
+      dd.writeUInt32LE(e.data.length, 12);
+      piece = Buffer.concat([piece, dd]);
+    }
+    central.push({ name: e.name, nameB, crc, comp, raw: e.data, method: e.store ? 0 : 8, lfhOffset: offset });
+    parts.push(piece);
+    offset += piece.length;
+  }
+  const cdOffset = offset;
+  for (const c of central) {
+    const cdh = Buffer.alloc(46);
+    cdh.writeUInt32LE(0x02014b50, 0);
+    cdh.writeUInt16LE(20, 4);
+    cdh.writeUInt16LE(20, 6);
+    cdh.writeUInt16LE(c.method, 10);
+    cdh.writeUInt32LE(c.crc, 16);
+    cdh.writeUInt32LE(c.comp.length, 20);
+    cdh.writeUInt32LE(c.raw.length, 24);
+    cdh.writeUInt16LE(c.nameB.length, 28);
+    cdh.writeUInt32LE(c.lfhOffset, 42);
+    parts.push(Buffer.concat([cdh, c.nameB]));
+  }
+  const cdSize = parts.slice(central.length ? parts.length - central.length : 0).reduce((s, b) => s + b.length, 0);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(central.length, 8);
+  eocd.writeUInt16LE(central.length, 10);
+  eocd.writeUInt32LE(cdSize, 12);
+  eocd.writeUInt32LE(cdOffset, 16);
+  parts.push(eocd);
+  require("node:fs").writeFileSync(targetPath, Buffer.concat(parts));
+}
 
 async function tmpDir() {
   return fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ebook-test-"));
@@ -48,6 +127,21 @@ test("splitChapters splits markdown by headings and txt by blocks", () => {
   const txtParts = splitChapters(txt, "txt");
   assert.ok(txtParts.length >= 1);
   assert.ok(txtParts[0].body.includes("para one"));
+});
+
+test("EPUB with data descriptor entries (7-Zip style zip) converts to TXT", async () => {
+  // 7-Zip 等流式打包器写 bit3+compSize=0 的 zip，旧解析器读 0 字节断链（用户「几乎全失败」反馈）
+  const dir = await tmpDir();
+  try {
+    const epub = path.join(dir, "dd.epub");
+    buildDataDescriptorEpub(epub);
+    const out = path.join(dir, "dd.txt");
+    await convertEpubToText(epub, out);
+    const text = await fsp.readFile(out, "utf8");
+    assert.ok(text.includes("Hello descriptor world"), "data-descriptor epub must extract text");
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 test("EPUB to TXT extracts readable text from a real Gutenberg epub", async () => {
