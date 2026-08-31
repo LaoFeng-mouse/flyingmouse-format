@@ -66,13 +66,24 @@ async function commandExists(command, versionArgs = ["-version"]) {
   }
 }
 
-function extFromName(name = "") {
-  // 双后缀加密音频：VIPER HiFi / 酷狗客户端导出的 .vpr.flac / .kgm.flac、
-  // QQ 音乐新版 .mgg2.flac
-  // 会被 path.extname 当成普通 .flac，这里先识别双后缀（unlock-music 同规则）。
+// 双后缀输入：path.extname 只看最后一段，这里集中登记「真实格式在倒数第二段」的输入名。
+// 加密音频：VIPER HiFi / 酷狗客户端导出的 .vpr.flac、QQ 音乐新版 .mgg2.flac（unlock-music 同规则）。
+// 电子书：FictionBook 官方发行普遍打成 .fb2.zip（ZIP 内含单个 .fb2），
+// 不登记的话会被当成 zip 而进不了 fb2 转换分支（2026-08-31 补）。
+const DOUBLE_SUFFIX_INPUTS = [
+  { suffix: ".vpr.flac", ext: "vpr" },
+  { suffix: ".mgg2.flac", ext: "mgg2" },
+  { suffix: ".fb2.zip", ext: "fb2" }
+];
+
+function doubleSuffixFor(name = "") {
   const lower = String(name || "").toLowerCase();
-  if (lower.endsWith(".vpr.flac")) return "vpr";
-  if (lower.endsWith(".mgg2.flac")) return "mgg2";
+  return DOUBLE_SUFFIX_INPUTS.find((entry) => lower.endsWith(entry.suffix)) || null;
+}
+
+function extFromName(name = "") {
+  const matched = doubleSuffixFor(name);
+  if (matched) return matched.ext;
   return path.extname(name).replace(".", "").toLowerCase();
 }
 
@@ -102,7 +113,11 @@ function decodeUploadFileName(name = "") {
   // 客户端）会用系统代码页（中文 Windows = GBK/936）编码文件名，multer 按
   // latin1 解码后出现 °×À¼µÄ 这类字符（2026-08-14 实测：中文文件名上传返回
   // 乱码）。仅当文件名含高字节 latin1 字符（≥0x80）时按 GBK 再解一次。
-  if ([...original].some((ch) => ch.charCodeAt(0) >= 0x80)) {
+  // 护栏：只有「高字节成对相邻」时才尝试 GBK。真正的 GBK 中文名每个汉字占两个
+  // ≥0x80 字节，必然出现相邻高字节；真 latin1 西欧名里高字节是孤立的（前后都是
+  // ASCII 字母），无此护栏时 0xF8 0x72（ø + r）恰好是合法 GBK 序列，
+  // Bjørn Åsnes.flac 会被错解成 Bj鴕n 舠nes.flac（2026-08-31 实测并修复）。
+  if (/[\u0080-\u00ff]{2}/.test(original)) {
     try {
       const bytes = Buffer.from(original, "latin1");
       const decoded = new TextDecoder("gbk").decode(bytes);
@@ -255,8 +270,11 @@ function experimentalInputWarning(inputExt) {
 }
 
 function safeBaseName(originalName) {
-  const parsed = path.parse(sanitize(originalName || "file"));
-  return (parsed.name || "converted").trim().slice(0, 180) || "converted";
+  const cleaned = sanitize(originalName || "file");
+  const matched = doubleSuffixFor(cleaned);
+  // 双后缀输入整段剥掉，否则产物名会带残尾（song.vpr.mp3 / book.fb2.txt）。
+  const base = matched ? cleaned.slice(0, -matched.suffix.length) : path.parse(cleaned).name;
+  return (base || "converted").trim().slice(0, 180) || "converted";
 }
 
 function outputExtFor(category, targetExt) {

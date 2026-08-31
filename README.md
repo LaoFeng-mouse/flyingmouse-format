@@ -40,7 +40,7 @@
 - PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
 - PDF → Word（版式还原）：内置 pdf2docx 引擎还原段落、表格、图片、字体与布局；扫描版优先表格线重建（检测表格线→逐格 OCR→可编辑 docx 表格），无表格线或失败回落纯文本 OCR。Windows 10/11 版支持版式还原，Windows 7 版回退到文字提取。
 - PDF 拆分 / 加密 / 解密：PDF 可逐页拆分或每 N 页一组（打包 ZIP），也可用密码加密（AES-256）或解密（需原密码）。
-- 电子书：txt/md/html → EPUB（纯本地生成）；EPUB → TXT/Markdown；MOBI/AZW3 → EPUB/TXT/Markdown；FB2 → TXT/Markdown/HTML/EPUB（MOBI/AZW3/FB2 解析为实验性，复杂版式可能不完整；带 DRM 加密的 MOBI/AZW3 无法转换，会直接报错）。
+- 电子书：txt/md/html → EPUB（纯本地生成）；EPUB → TXT/Markdown；MOBI/AZW3 → EPUB/TXT/Markdown；FB2（含 .fb2.zip 压缩包）→ TXT/Markdown/HTML/EPUB（MOBI/AZW3/FB2 解析为实验性，复杂版式可能不完整；带 DRM 加密的 MOBI/AZW3 无法转换，会直接报错）。
 - 图片合并 PDF 支持调整顺序：多张图片转 PDF 前可在队列中上移/下移，PDF 页序跟随队列顺序。
 - HEIC/HEIF 图片可转换为 JPG/PNG/WebP 等（内置 ffmpeg 解码）。
 - ICO 图标可转换为 PNG/JPG 等，PNG/JPG 也可生成多尺寸 ICO 图标（实验性）。
@@ -138,7 +138,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - PDF → Excel smart table extraction for digital text and scanned pages, including multiple tables, continued pages, merged cells, confidence notes, and Raw fallback.
 - PDF → Word (layout-preserving): the bundled pdf2docx engine restores paragraphs, tables, images, fonts, and layout; scanned PDFs are turned into editable docx tables via table-line detection + per-cell OCR, falling back to plain-text OCR when no table lines are found. Layout restoration is available on Windows 10/11; Windows 7 falls back to text extraction.
 - PDF split / encrypt / decrypt: split a PDF per page or into groups of N pages (packed as a ZIP), or password-protect it (AES-256) and decrypt it (requires the original password).
-- E-books: txt/md/html → EPUB (generated locally); EPUB → TXT/Markdown; MOBI/AZW3 → EPUB/TXT/Markdown; FB2 → TXT/Markdown/HTML/EPUB (MOBI/AZW3/FB2 parsing is experimental; complex layouts may be incomplete, and DRM-protected MOBI/AZW3 files are rejected with an explicit error).
+- E-books: txt/md/html → EPUB (generated locally); EPUB → TXT/Markdown; MOBI/AZW3 → EPUB/TXT/Markdown; FB2 including .fb2.zip archives → TXT/Markdown/HTML/EPUB (MOBI/AZW3/FB2 parsing is experimental; complex layouts may be incomplete, and DRM-protected MOBI/AZW3 files are rejected with an explicit error).
 - Image-to-PDF ordering: when merging multiple images into a PDF, reorder items with up/down controls before converting; PDF page order follows the queue.
 - HEIC/HEIF images convert to JPG/PNG/WebP and more (built-in ffmpeg decoding).
 - ICO icons convert to PNG/JPG and more; PNG/JPG can also produce multi-size ICO icons (experimental).
@@ -204,7 +204,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 |---|---|---|
 | Images / 图片 | jpg, png, webp, avif, tiff, gif, bmp, heic, heif, cr2, cr3, crw, nef, arw, dng, raf, rw2, orf, pef, srw, 3fr, erf, fff, iiq, kdc, mef, mrw, x3f | png, jpg, webp, avif, tiff, gif (动图), pdf, txt (OCR), mp4, webm |
 | Text / 文本 | txt, md, html, json, csv, log, xml, yaml | txt, md, html, json, csv, pdf, docx, epub |
-| E-book / 电子书 | epub, mobi, azw3, fb2 | txt, md, epub, html (fb2 专属) (mobi/azw3/fb2 实验性) |
+| E-book / 电子书 | epub, mobi, azw3, fb2, fb2.zip | txt, md, epub, html (fb2 专属) (mobi/azw3/fb2 实验性) |
 | Word/WPS/OFD | doc, docx, odt, rtf, wps, wpt, wpd, ofd | pdf, docx, odt, rtf, txt, html, md |
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, xls, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html, png, jpg (逐页转图 zip) |

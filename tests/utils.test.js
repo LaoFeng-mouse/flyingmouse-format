@@ -43,8 +43,49 @@ test("decodeUploadFileName 对无效输入回退原值", () => {
   assert.equal(decodeUploadFileName(42), "42");
 });
 
+test("decodeUploadFileName 还原非中文多字节文件名（韩文/阿文/俄文/emoji）", () => {
+  // 2026-08-31：旧实现用「中日文字符白名单」判定，韩文/阿拉伯文/俄文/emoji 全被漏掉，
+  // 上传后显示 íêµ­ì´ / Ø§Ù 这类乱码。现在判据是「latin1→utf8 无 U+FFFD 且结果不同」。
+  const asMojibake = (text) => Buffer.from(text, "utf8").toString("latin1");
+  for (const name of [
+    "한국어 노래.mp3",
+    "الملف العربي.pdf",
+    "русский документ.docx",
+    "🎵 favourite song 🎧.flac",
+    "日本語のファイル.txt",
+    "混合 mixed 한글 عربى.epub"
+  ]) {
+    assert.equal(decodeUploadFileName(asMojibake(name)), name, `未还原：${name}`);
+  }
+});
+
+test("decodeUploadFileName 不动真正的 latin1/西欧文件名", () => {
+  // 这些名字本身就是 latin1 高字节字符，不是 mojibake，二次解码会破坏它。
+  for (const name of ["Café Ambiance.mp3", "Bjørn Åsnes.flac", "Müller Straße.pdf"]) {
+    assert.equal(decodeUploadFileName(name), name, `被误改：${name}`);
+  }
+});
+
 test("extFromName / safeBaseName 对中文名正常", () => {
   assert.equal(extFromName("白兰的-得意的笑.mp3"), "mp3");
   assert.equal(safeBaseName("白兰的-得意的笑.mp3"), "白兰的-得意的笑");
   assert.equal(safeBaseName("Zhen Zhen （半夏水玉）-目瑙纵歌.kwm"), "Zhen Zhen （半夏水玉）-目瑙纵歌");
+});
+
+test("extFromName 识别双后缀输入（含 .fb2.zip 电子书容器）", () => {
+  assert.equal(extFromName("战争与和平.fb2.zip"), "fb2");
+  assert.equal(extFromName("WAR-AND-PEACE.FB2.ZIP"), "fb2");
+  assert.equal(extFromName("book.fb2"), "fb2");
+  assert.equal(extFromName("林俊杰 - 达尔文.vpr.flac"), "vpr");
+  assert.equal(extFromName("song.mgg2.flac"), "mgg2");
+  // 普通压缩包不能被误判成电子书
+  assert.equal(extFromName("photos.zip"), "zip");
+  assert.equal(extFromName("notfb2.zip"), "zip");
+});
+
+test("safeBaseName 剥掉整段双后缀，产物名不带残尾", () => {
+  assert.equal(safeBaseName("战争与和平.fb2.zip"), "战争与和平");
+  assert.equal(safeBaseName("林俊杰 - 达尔文.vpr.flac"), "林俊杰 - 达尔文");
+  assert.equal(safeBaseName("song.mgg2.flac"), "song");
+  assert.equal(safeBaseName("photos.zip"), "photos");
 });
