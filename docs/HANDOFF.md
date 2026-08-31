@@ -1,6 +1,24 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-25（扫描件表格重建 + docstructure 引擎重打修复 + 引擎修复推 main）
+更新时间：2026-08-31（电子书 azw3/fb2 接入 + 保存链路加固 + OFD 文字层修复 + 版本 0.5.4 + Win7 构建）
+
+## 2026-08-31：电子书 azw3/fb2 + 保存链路加固 + OFD 文字层修复 + 版号 0.5.4（本次窗口收尾）
+
+- **提交（full-version，已推 origin，作者 LaoFeng）**：`2f0b7c6` / `55d48b8` / `0535400`，远端 full-version = 0535400。
+- **电子书扩展（2f0b7c6）**：MOBI 解析加 PDB magic（BOOKMOBI/TEXtREAd）+ DRM 加密拒绝（encryption≠0）；azw3 并入 MOBI 分支；新增 FB2（fb2BodyHtml/extractFb2Html/convertFb2ToText/convertFb2ToMarkdown），支持纯 XML 与 ZIP 容器；config/server/utils 同步 azw3/fb2；tests/ebook.test.js 新增 6 例。
+- **保存/下载链路加固（2f0b7c6）**：electron-main.js downloadToFile 重写（response error/aborted、60s 空闲超时、落盘校验 Content-Length、失败删残片+debug.log、404 可行动文案）；批量保存逐项 try/catch 返回 {saved,failed}；public/app.js 区分成功/失败明细。
+- **产物 TTL 1h→24h（2f0b7c6）**：config.js 新增并导出 `PRODUCT_EXPIRY_MS`，server.js cleanupOldFiles 改用；electron-main.js 404 文案同步。
+- **单实例锁 + runtime 按 pid 隔离（2f0b7c6）**：electron-main.js boot() 加 `requestSingleInstanceLock()` 失败即退出并聚焦已有窗口；runtime 目录改为 `flyingmouse-format-runtime-<pid>`（extern 流程若依赖固定 runtime 路径需适配）。
+- **上传文件名解码修复（2f0b7c6）**：utils.js decodeUploadFileName 去字符白名单，改「latin1→utf8 无 U+FFFD 且 ≠ 原串」+ 组合变音符号护栏。
+- **OFD 二次转换文字层失效（55d48b8，产品级）**：@miconvert/ofd-to-pdf 模块级字体状态首次 convert 后被消耗 → 同进程第 2 次起 PDF 文字层失效（0 汉字、45% 变 "?"、体积 81.8KB→84.9KB）。修法：ofd-convert.js 每次转换前清 require 缓存（`purgeOfdConverterCache`，已导出），连续 8 次实测 1136 汉字稳定、rss ~310MB 收敛；回归用例改为连续 3 次逐份校验文字层（修复前 1136/0/0，后 1136/1136/1136）。
+- **OFD「确定性」用例改造（55d48b8）**：原断言两次 sha256 相等是伪 flaky（pdf-lib 写墙上时钟 CreationDate/ModDate 且压进对象流，字节一致天生不可能）。改为断言内容可复现（页数+pdfjs 文字一致+体积差≤64B）+ 插 1.1s 跨秒。
+- **.fb2.zip 路由 + 真 latin1 误解码 + 测试清单缺口（55d48b8）**：utils.js 新增 DOUBLE_SUFFIX_INPUTS（.vpr.flac/.mgg2.flac/.fb2.zip）供 extFromName 与 safeBaseName 共用；GBK 回退加「高字节成对相邻」护栏（修 Bjørn Åsnes.flac 被解成 Bj鴕n 舠nes.flac）；tests/utils.test.js 补进 npm test/test:ci 清单（此前未进 CI）。
+- **版本 bump 0.5.3→0.5.4（0535400）**：package.json + package-lock.json（顶层+packages[""]）+ win7-package-lock.json（同，第 4268 行 0.5.3 是依赖自身版本未动）+ README 中英文下载章节。README 证据声明保持诚实：v0.5.3 门禁结论保留，v0.5.4 的门禁由发布流程执行、未完成前不作通过声明。
+- **测试**：全量 543 项 = 539 pass / 0 fail / 4 skip（fixture 保护，历史既有）。
+- **Win7 构建（已验证，产物在 dist/）**：`FlyingMouse Format-Setup-0.5.4-win7-x64.exe`（551,546,829 字节，SHA256 `b27ac4a9f4afcc7a71a7df26081382eb53cc0f49e93412ec8e2ae32797e497db`）。用便携 Node 22.23.2（`%LOCALAPPDATA%\node22\node-v22.23.2-win-x64`，本机 Node 26 超范设拒绝）；流水线：staging 派生→npm ci 547 包→manifest/lock 字节校验→extraResources 校验→本地 builder 校验→staged Electron 运行时探针→NSIS 打包→产物提升；重签按 signExecutable:false 跳过；内层 EXE PE32+ OS 5.2 ✓。标准版 0.5.3 旧包（dist/）未被覆盖。
+- **依赖审计**：npm audit --omit=dev 2 moderate，全部 @miconvert/ofd-to-pdf→fast-xml-parser（无 5.x 修复版，项目已记录例外：只用 XMLParser 解析方向，advisory 针对 XMLBuilder 写入）。
+- **待办（下一窗口）**：① 跑 Win7 staging 48 项自洽测试（`output/win7-stage` 下 `npm test`，便携 Node 22）；② 标准版 0.5.4 构建（`npm run dist`，当前 dist 标准版仍是 0.5.3）；③ 真实 Win7 SP1 x64 设备验收 / macOS 双架构门禁 / 真实 NCM/AV3A/mflac/KGG 样本回归（发布流程执行）；④ GitHub Release v0.5.4（release notes 用 docs/release-notes-052.md 基线扩展，需新建 053/054）；⑤ 清理 build 残留：`output/win7-stage/`（~2.4G，gitignore 已忽略，待 Win7 收尾后可删）、`%LOCALAPPDATA%\Temp` 下本窗口调试探针（ofd-*.js / win7-stage-sync.js / check-test-list.js，可删）；⑥ 若 AGENTS.md 需补 azw3/fb2 主线格式与 runtime 按 pid 隔离说明（受保护文件，待用户在场确认写入）。
+- **风险（继 08-25 待办）**：std 版 docstructure 引擎备份 `bin/docstructure.bak-20260825` 与打包版 `.bak` 约 3.6G 仍占空间；`resources/docstructure.bak` 同类。均待新引擎长期稳定后删。
 
 ## 2026-08-25：扫描件→docx 表格重建 + docstructure 引擎重打修复（本次窗口收尾）
 
