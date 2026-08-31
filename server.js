@@ -183,7 +183,8 @@ const {
   experimentalInputsByCategory,
   experimentalInputSet,
   allTargets,
-  downloads
+  downloads,
+  PRODUCT_EXPIRY_MS
 } = require("./config");
 
 const app = express();
@@ -209,7 +210,7 @@ const upload = multer({
 });
 
 async function cleanupOldFiles() {
-  const cutoff = Date.now() - 1000 * 60 * 60;
+  const cutoff = Date.now() - PRODUCT_EXPIRY_MS;
   for (const [id, item] of downloads.entries()) {
     if (item.createdAt < cutoff) downloads.delete(id);
   }
@@ -565,7 +566,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     } else if (category === "image") {
       conversionResult = await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
-      if (["epub", "mobi"].includes(inputExt)) {
+      if (["epub", "mobi", "azw3", "fb2"].includes(inputExt)) {
         await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
       } else if (requestedTarget === "epub") {
         await convertTextToEpub(await fsp.readFile(file.path, "utf8"), inputExt, originalName, outputPath);

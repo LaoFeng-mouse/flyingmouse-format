@@ -9,6 +9,11 @@ const {
   convertEpubToText,
   convertEpubToMarkdown,
   convertMobiToText,
+  convertFb2ToText,
+  convertFb2ToMarkdown,
+  extractFb2Html,
+  convertEbook,
+  parseMobiText,
   splitChapters
 } = require("../ebook");
 
@@ -169,6 +174,119 @@ test("MOBI to TXT parses PalmDOC records from a real Gutenberg mobi", async () =
     const text = await fsp.readFile(out, "utf8");
     assert.ok(text.length > 1000, "mobi text must be substantial");
     assert.match(text, /Alice/i);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+// ---- MOBI/KF8 加固 + azw3/fb2 输入（2026-08-31 新增）----
+
+// 构造最小 PalmDOC/MOBI 容器（仅头部 + 空文本记录），用于触发 magic/加密校验错误。
+function buildPalmDocMobi({ encryption = 0, magic = "BOOKMOBI" } = {}) {
+  const numRecords = 1;
+  const r0 = 78 + (numRecords + 1) * 8; // PDB 头 78 + 记录表 (n+1)*8
+  const total = r0 + 16 + 4; // record0 至少有 16 字节 PalmDOC 头 + 若干
+  const buf = Buffer.alloc(total, 0);
+  buf.write(magic, 60, "latin1");
+  buf.writeUInt16BE(numRecords, 76);
+  buf.writeUInt32BE(r0, 78);
+  buf.writeUInt32BE(r0, 78 + 8);
+  buf.writeUInt16BE(2, r0); // compression=2 (zlib)
+  buf.writeUInt16BE(1, r0 + 8); // recordCount=1
+  buf.writeUInt16BE(encryption, r0 + 12); // encryption
+  return buf;
+}
+
+test("parseMobiText rejects a non-MOBI buffer (bad PDB magic)", () => {
+  assert.throws(() => parseMobiText(buildPalmDocMobi({ magic: "XXXXXXXX" })), /不是有效的 MOBI\/AZW3/);
+});
+
+test("parseMobiText rejects a DRM-encrypted MOBI", () => {
+  assert.throws(() => parseMobiText(buildPalmDocMobi({ encryption: 1 })), /DRM|加密/);
+});
+
+test("AZW3 routes through the MOBI parser and converts to TXT", async () => {
+  const mobi = path.join(SAMPLES, "alice.mobi");
+  if (!require("node:fs").existsSync(mobi)) return;
+  const dir = await tmpDir();
+  try {
+    const azw3 = path.join(dir, "alice.azw3");
+    await fsp.copyFile(mobi, azw3);
+    const out = path.join(dir, "alice-azw3.txt");
+    await convertEbook(azw3, out, "azw3", "txt", "alice.azw3");
+    const text = await fsp.readFile(out, "utf8");
+    assert.ok(text.length > 1000, "azw3 text must be substantial");
+    assert.match(text, /Alice/i);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+const FB2_SAMPLE = `<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+<description><title-info><book-title>Test Book</book-title></title-info></description>
+<body>
+<title><p>Chapter One</p></title>
+<section>
+<title><p>Section Title</p></title>
+<p>First paragraph of the body.</p>
+<p>Second paragraph &amp; more text.</p>
+<subtitle>A subtitle</subtitle>
+</section>
+<section><p>Final paragraph.</p></section>
+</body>
+</FictionBook>`;
+
+test("FB2 to TXT extracts body text (excludes description metadata)", async () => {
+  const dir = await tmpDir();
+  try {
+    const fb2 = path.join(dir, "book.fb2");
+    await fsp.writeFile(fb2, FB2_SAMPLE, "utf8");
+    const out = path.join(dir, "book.txt");
+    await convertFb2ToText(fb2, out);
+    const text = await fsp.readFile(out, "utf8");
+    assert.match(text, /Chapter One/);
+    assert.match(text, /First paragraph of the body/);
+    assert.match(text, /Final paragraph/);
+    assert.doesNotMatch(text, /book-title/); // description 被排除
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("FB2 to Markdown emits headings and paragraphs", async () => {
+  const dir = await tmpDir();
+  try {
+    const fb2 = path.join(dir, "book.fb2");
+    await fsp.writeFile(fb2, FB2_SAMPLE, "utf8");
+    const out = path.join(dir, "book.md");
+    await convertFb2ToMarkdown(fb2, out);
+    const md = await fsp.readFile(out, "utf8");
+    assert.match(md, /^#{1,6}\s.*Section Title|^#{1,6}\s.*Chapter One/m);
+    assert.match(md, /First paragraph of the body/);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+test("FB2 in a ZIP container (.fb2.zip) converts to TXT", async () => {
+  const yazl = require("yazl");
+  const dir = await tmpDir();
+  try {
+    const fb2 = path.join(dir, "book.fb2");
+    await fsp.writeFile(fb2, FB2_SAMPLE, "utf8");
+    const zipPath = path.join(dir, "book.fb2.zip");
+    await new Promise((resolve, reject) => {
+      const zip = new yazl.ZipFile();
+      zip.addFile(fb2, path.basename(fb2));
+      zip.outputStream.pipe(require("node:fs").createWriteStream(zipPath)).on("close", resolve).on("error", reject);
+      zip.end();
+    });
+    const out = path.join(dir, "zipped.txt");
+    await convertFb2ToText(zipPath, out);
+    const text = await fsp.readFile(out, "utf8");
+    assert.match(text, /First paragraph of the body/);
+    assert.match(text, /Final paragraph/);
   } finally {
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
   }

@@ -1263,7 +1263,15 @@ async function saveAllConvertedFiles() {
         setStatus(i18n.language === "en-US" ? `${results.length} files converted. Not saved yet.` : `已转换 ${results.length} 个文件，尚未保存。`, "success");
         return;
       }
-      setStatus(i18n.language === "en-US" ? `Saved ${saved.savedCount} files to: ${saved.directory}` : `已保存 ${saved.savedCount} 个文件到：${saved.directory}`, "success");
+      const failList = Array.isArray(saved?.failed) ? saved.failed : [];
+      if (failList.length) {
+        const names = failList.map((f) => f.name).join("、");
+        setStatus(i18n.language === "en-US"
+          ? `Saved ${saved.savedCount}; ${failList.length} failed (${names}). ${failList[0].reason}`
+          : `已保存 ${saved.savedCount} 个，失败 ${failList.length} 个（${names}）。${failList[0].reason}`, "error");
+      } else {
+        setStatus(i18n.language === "en-US" ? `Saved ${saved.savedCount} files to: ${saved.directory}` : `已保存 ${saved.savedCount} 个文件到：${saved.directory}`, "success");
+      }
       return;
     }
 

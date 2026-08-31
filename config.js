@@ -11,6 +11,10 @@ const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir()
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
 const MAX_UPLOAD_BYTES = Number.MAX_SAFE_INTEGER;
+// 转换产物（下载登记 + 磁盘文件）的生存期。超出后 cleanupOldFiles 会删除，
+// 用户点击保存将得到 404。24h 足够用户稍后保存，又不会让临时目录无限膨胀。
+// electron-main.js 的 404 提示文案应与本值保持一致。
+const PRODUCT_EXPIRY_MS = 1000 * 60 * 60 * 24;
 
 function bundledFfmpegPath() {
   const resourcesPath = process.resourcesPath || "";
@@ -144,7 +148,7 @@ const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", 
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
-const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml", "epub", "mobi"]);
+const textInput = new Set(["txt", "md", "markdown", "html", "htm", "json", "csv", "log", "xml", "yaml", "yml", "epub", "mobi", "azw3", "fb2"]);
 const textTargets = ["txt", "md", "html", "json", "csv", "epub"];
 const documentInput = new Set(["doc", "docx", "odt", "rtf", "wps", "wpt", "wpd", "ofd"]);
 // OFD（国标 GB/T 33190）走自有转换链路（ofd-convert.js），仅支持转 PDF，不经 LibreOffice。
@@ -195,6 +199,7 @@ module.exports = {
   UPLOAD_DIR,
   OUTPUT_DIR,
   MAX_UPLOAD_BYTES,
+  PRODUCT_EXPIRY_MS,
   FFMPEG_PATH,
   LIBREOFFICE_PATH,
   PDFTOPPM_PATH,

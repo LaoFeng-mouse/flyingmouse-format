@@ -81,11 +81,17 @@ function decodeUploadFileName(name = "") {
 
   // UTF-8 mojibake：浏览器/Electron 的 FormData 用 UTF-8 编码文件名，
   // multer 的 busboy 按 latin1 解码后会出现 Ã© 这类字符，还原回 UTF-8。
-  // 解码成功直接返回，不再往下走 GBK（避免把正确中文名二次转换）。
+  // 判据改为「latin1→utf8 解码后无 U+FFFD 且 ≠ 原串」：不再用字符白名单，
+  // 因此对所有多字节字符集都成立——中文、日文、韩文、阿拉伯文、俄文、emoji
+  // 全能被还原（2026-08-31 实测：旧白名单漏掉韩文/阿文，出现 íêµ­ì´Ø§Ù 乱码），
+  // 而真正的 GBK 内容解码必产生 U+FFFD，会正确落回下面的 GBK 分支。
   try {
     const decoded = Buffer.from(original, "latin1").toString("utf8");
-    const looksLikeMojibake = /(?:Ã|Â|â|ä|å|æ|ç|è|é|ð|þ|œ|€)/.test(original);
-    if (looksLikeMojibake && decoded && !decoded.includes("\uFFFD")) {
+    const hasHighByte = [...original].some((ch) => ch.charCodeAt(0) >= 0x80);
+    // 组合变音符号（U+0300–U+036F 等）：GBK 字节如 0xD6D0 0xCEC4（"中文"）恰好同时是
+    // 合法 UTF-8（解出希伯来字母+组合音标），无此护栏会把 GBK 内容错误吞进 UTF-8 分支。
+    const combiningMarks = /[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]/;
+    if (hasHighByte && decoded && decoded !== original && !decoded.includes("\uFFFD") && !combiningMarks.test(decoded)) {
       return decoded;
     }
   } catch {
@@ -164,8 +170,11 @@ function targetsForExt(rawExt, tools) {
     if (tools.libreoffice) epubTargets.push("pdf", "docx");
     return [...targets].filter((target) => [...epubTargets, "zip"].includes(target));
   }
-  if (normalizeExt(rawExt) === "mobi") {
+  if (normalizeExt(rawExt) === "mobi" || normalizeExt(rawExt) === "azw3") {
     return [...targets].filter((target) => ["epub", "txt", "md", "zip"].includes(target));
+  }
+  if (normalizeExt(rawExt) === "fb2") {
+    return [...targets].filter((target) => ["txt", "md", "html", "epub", "zip"].includes(target));
   }
 
   if (category === "pdf") {

@@ -393,6 +393,18 @@ function parseMobiText(buffer) {
   }
   const record0 = offsets[0];
   if (record0 + 16 > buffer.length) throw new Error("MOBI 解析失败：PalmDOC 头缺失。");
+  // PDB 容器标识（偏移 60）：标准 MOBI/"azw3"（AZW 新格式复用 MOBI 容器）为 "BOOKMOBI"，
+  // 纯 PalmDoc 为 "TEXtREAd"。不对的文件早失败，避免把任意二进制当 MOBI 解析出乱码。
+  const pdbMagic = buffer.toString("latin1", 60, 68);
+  if (pdbMagic !== "BOOKMOBI" && pdbMagic !== "TEXtREAd") {
+    throw new Error("MOBI 解析失败：文件不是有效的 MOBI/AZW3（PDB 标识不符）。");
+  }
+  // 加密（PalmDOC 头偏移 12）：0=未加密，1/2=Kindle DRM/旧加密。加密文件应明确拒绝，
+  // 而不是静默解出乱码。
+  const encryption = buffer.readUInt16BE(record0 + 12);
+  if (encryption !== 0) {
+    throw new Error(`MOBI 解析失败：该文件受 DRM 加密（encryption=${encryption}），无法解密转换。`);
+  }
   const compression = buffer.readUInt16BE(record0);
   const recordCount = buffer.readUInt16BE(record0 + 8);
   if (recordCount <= 0 || recordCount > numRecords) throw new Error("MOBI 解析失败：文本记录数不合法。");
@@ -450,6 +462,55 @@ async function convertMobiToEpub(inputPath, outputPath, originalName) {
   await convertTextToEpub(text, "txt", originalName || "book", outputPath);
 }
 
+// ---- FB2 解析（FictionBook 2.0：XML 文本，或 .fb2.zip 容器）----
+
+// 把 FB2 XML 正文转成可交给 htmlToText/htmlToMarkdown 的类 HTML 结构。
+function fb2BodyHtml(xml) {
+  let s = String(xml || "");
+  s = s.replace(/<\?xml[\s\S]*?\?>/i, "")
+    .replace(/<!DOCTYPE[\s\S]*?>/i, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
+  // 只取 <body> 正文，排除 <description> 元数据段（书名/作者等）。
+  const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(s);
+  const inner = bodyMatch ? bodyMatch[1] : s;
+  return inner
+    .replace(/<(title|h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi, (_m, tag, c) => `<h2>${c.replace(/<\/?(?:p|br)\b[^>]*>/gi, "").trim()}</h2>`)
+    .replace(/<(p|subtitle|cite|epigraph)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, tag, c) => `<p>${c}</p>`)
+    .replace(/<v\b[^>]*>([\s\S]*?)<\/v>/gi, (_m, c) => `<p>${c}</p>`)
+    .replace(/<\/?(?:section|body)\b[^>]*>/gi, "")
+    .replace(/<image[^>]*\/?>/gi, "")
+    .replace(/<br\s*\/?>/gi, "<br>");
+}
+
+async function extractFb2Html(inputPath) {
+  const buffer = await fsp.readFile(inputPath);
+  // .fb2.zip 容器：ZIP 内含单个 .fb2。
+  if (buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50) {
+    const entries = readZipEntriesSync(inputPath);
+    let fb2Name = null;
+    for (const name of entries.keys()) {
+      if (/\.fb2$/i.test(name)) { fb2Name = name; break; }
+    }
+    if (!fb2Name) throw new Error("FB2 解析失败：ZIP 包内未找到 .fb2 文件。");
+    return fb2BodyHtml(entries.get(fb2Name).toString("utf8"));
+  }
+  return fb2BodyHtml(buffer.toString("utf8"));
+}
+
+async function convertFb2ToText(inputPath, outputPath) {
+  const html = await extractFb2Html(inputPath);
+  const text = htmlToText(html);
+  if (!text.trim()) throw new Error("FB2 解析失败：未提取到任何文本。");
+  await fsp.writeFile(outputPath, `${text.trim()}\n`, "utf8");
+}
+
+async function convertFb2ToMarkdown(inputPath, outputPath) {
+  const html = await extractFb2Html(inputPath);
+  const md = htmlToMarkdown(html);
+  if (!md.trim()) throw new Error("FB2 解析失败：未提取到任何文本。");
+  await fsp.writeFile(outputPath, `${md.trim()}\n`, "utf8");
+}
+
 // 电子书输入分发（EPUB/MOBI 是二进制容器，不能按 utf8 文本读取）
 async function convertEbook(inputPath, outputPath, inputExt, target, originalName) {
   if (inputExt === "epub") {
@@ -471,7 +532,8 @@ async function convertEbook(inputPath, outputPath, inputExt, target, originalNam
     }
     throw new Error("EPUB 暂只支持转换为 TXT、Markdown、HTML、PDF 或 DOCX。");
   }
-  if (inputExt === "mobi") {
+  if (inputExt === "mobi" || inputExt === "azw3") {
+    // AZW3（KF8）复用 MOBI 的 PalmDOC 容器结构，走同一解析器。
     if (target === "epub") {
       await convertMobiToEpub(inputPath, outputPath, originalName);
       return;
@@ -485,7 +547,29 @@ async function convertEbook(inputPath, outputPath, inputExt, target, originalNam
       await fsp.writeFile(outputPath, `${htmlToMarkdown(html).trim()}\n`, "utf8");
       return;
     }
-    throw new Error("MOBI 暂只支持转换为 EPUB、TXT 或 Markdown。");
+    throw new Error(`${inputExt.toUpperCase()} 暂只支持转换为 EPUB、TXT 或 Markdown。`);
+  }
+  if (inputExt === "fb2") {
+    if (target === "txt") {
+      await convertFb2ToText(inputPath, outputPath);
+      return;
+    }
+    if (target === "md") {
+      await convertFb2ToMarkdown(inputPath, outputPath);
+      return;
+    }
+    if (target === "html") {
+      await fsp.writeFile(outputPath, await extractFb2Html(inputPath), "utf8");
+      return;
+    }
+    if (target === "epub") {
+      const html = await extractFb2Html(inputPath);
+      const text = htmlToText(html);
+      if (!text.trim()) throw new Error("FB2 解析失败：未提取到任何文本。");
+      await convertTextToEpub(text, "txt", originalName || "book", outputPath);
+      return;
+    }
+    throw new Error("FB2 暂只支持转换为 TXT、Markdown、HTML 或 EPUB。");
   }
   throw new Error("不支持的电子书格式。");
 }
@@ -498,6 +582,9 @@ module.exports = {
   convertEpubViaLibreOffice,
   convertMobiToText,
   convertMobiToEpub,
+  convertFb2ToText,
+  convertFb2ToMarkdown,
+  extractFb2Html,
   convertEbook,
   parseMobiText,
   splitChapters

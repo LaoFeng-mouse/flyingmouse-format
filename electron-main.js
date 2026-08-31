@@ -172,7 +172,11 @@ function ensureWritableLibreOfficeForStore(bundledSofficePath) {
 }
 
 function configureRuntime() {
-  process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), "flyingmouse-format-runtime");
+  // 每个进程独立的临时工作目录。旧版固定用同一个 %TEMP%\flyingmouse-format-runtime，
+  // 双开实例时各自 server 会在同目录互相清掉对方的产物（cleanupOldFiles 按 mtime 删），
+  // 并共享 downloads 登记表之外的文件——本机日志实证过两实例并行（2026-08-25）。
+  // 以 pid 为后缀后各实例完全隔离，互不干扰。
+  process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), `flyingmouse-format-runtime-${process.pid}`);
   const runtimePaths = resolveRuntimePaths({ resourcesPath: process.resourcesPath });
   process.env.FLYINGMOUSE_FFMPEG_PATH = runtimePaths.ffmpeg;
   if (process.windowsStore) {
@@ -198,6 +202,21 @@ function configureRuntime() {
 
 async function boot() {
   log("Boot started");
+  // 单实例锁：禁止双开（旧版允许并行，两份 server 共享同一 runtime 目录，会互删产物）。
+  // 第二个实例直接退出，聚焦已有窗口。
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    log("Another FlyingMouse Format instance is running; quitting this one");
+    app.quit();
+    return;
+  }
+  app.on("second-instance", () => {
+    log("Second instance launched; focusing existing window");
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
   configureRuntime();
   serverRuntime = require("./server");
 
@@ -253,9 +272,27 @@ ipcMain.handle("install-agent-skill", async (event, payload) => {
   });
 });
 
+// 下载空闲超时：60 秒内 socket 无任何数据视为断链（大文件持续传输会不断重置该计时）。
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60000;
+
+// 保存链路必须可诊断：任何失败都写 debug.log，并删掉残缺文件，避免用户拿到
+// 一个"看起来存在但打不开"的半截产物（2026-08-31 实测：服务端中途断链时旧实现
+// promise 永挂、界面无任何反馈，磁盘留 64KB 残片）。
 function downloadToFile(url, destination) {
   const client = url.startsWith("https:") ? https : http;
   return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      const wrapped = error instanceof Error ? error : new Error(String(error));
+      log(`Save failed: ${destination}`, wrapped);
+      fs.promises.rm(destination, { force: true })
+        .catch((cleanupError) => log(`Failed to remove partial file: ${destination}`, cleanupError))
+        .finally(() => reject(wrapped));
+    };
+
     const request = client.get(url, (response) => {
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
@@ -263,24 +300,54 @@ function downloadToFile(url, destination) {
         try {
           redirectedUrl = trustedDownloadUrl(new URL(response.headers.location, url).toString());
         } catch (error) {
-          reject(error);
+          fail(error);
           return;
         }
+        settled = true;
         downloadToFile(redirectedUrl, destination).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
-        reject(new Error(`保存失败：下载服务返回 ${response.statusCode}`));
         response.resume();
+        // 产物登记表过期（server.js cleanupOldFiles，见 config.js PRODUCT_EXPIRY_MS），
+        // 404 是最常见的失败，直接给可行动的提示，不要甩一个裸状态码给用户。
+        fail(new Error(response.statusCode === 404
+          ? "保存失败：转换产物已过期，请重新转换后再保存。"
+          : `保存失败：下载服务返回 ${response.statusCode}`));
         return;
       }
 
+      const expectedBytes = Number(response.headers["content-length"]);
+      let receivedBytes = 0;
+      response.on("data", (chunk) => { receivedBytes += chunk.length; });
+      response.on("error", (error) => fail(error));
+      response.on("aborted", () => fail(new Error("保存失败：下载连接被中断，文件未完整写入。")));
+
       const file = fs.createWriteStream(destination);
+      file.on("error", (error) => fail(error));
+      file.on("finish", () => {
+        file.close((closeError) => {
+          if (closeError) {
+            fail(closeError);
+            return;
+          }
+          if (Number.isFinite(expectedBytes) && expectedBytes > 0 && receivedBytes !== expectedBytes) {
+            fail(new Error(`保存失败：文件不完整（已写入 ${receivedBytes} 字节，期望 ${expectedBytes} 字节）。`));
+            return;
+          }
+          if (settled) return;
+          settled = true;
+          log(`Saved converted file: ${destination} (${receivedBytes} bytes)`);
+          resolve();
+        });
+      });
       response.pipe(file);
-      file.on("finish", () => file.close(resolve));
-      file.on("error", reject);
     });
-    request.on("error", reject);
+
+    request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+      request.destroy(new Error(`保存失败：下载超时（${DOWNLOAD_IDLE_TIMEOUT_MS / 1000} 秒无数据），文件未完整写入。`));
+    });
+    request.on("error", (error) => fail(error));
   });
 }
 
@@ -410,6 +477,7 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   await downloadAssetsToMdSidecar(assets, result.filePath);
   await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
     .catch((error) => log("Failed to remember save directory", error));
+  log(`Saved converted file: ${result.filePath}`);
   return { canceled: false, filePath: result.filePath };
 });
 
@@ -441,18 +509,29 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
 
   const directory = result.filePaths[0];
   const saved = [];
+  const failed = [];
 
   for (const item of trustedFiles) {
-    const destination = uniqueDestination(directory, item.fileName);
-    await downloadToFile(item.downloadUrl, destination);
-    await downloadAssetsToMdSidecar(item.assets, destination);
-    saved.push(destination);
+    let destination;
+    try {
+      destination = uniqueDestination(directory, item.fileName);
+      await downloadToFile(item.downloadUrl, destination);
+      await downloadAssetsToMdSidecar(item.assets, destination);
+      saved.push(destination);
+    } catch (error) {
+      // 逐项容错：一个文件失败不再打断队列（旧实现整个 IPC reject，后续文件全部不落盘）。
+      // 失败已由 downloadToFile 记录到 debug.log，这里一并汇总返回给渲染器展示。
+      failed.push({ name: item.fileName, reason: error instanceof Error ? error.message : String(error) });
+      log(`Save batch item failed: ${item.fileName}`, error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
-  await writeLastSaveDirectory(settingsPath, directory)
-    .catch((error) => log("Failed to remember save directory", error));
+  if (saved.length) {
+    await writeLastSaveDirectory(settingsPath, directory)
+      .catch((error) => log("Failed to remember save directory", error));
+  }
 
-  return { canceled: false, directory, savedCount: saved.length, files: saved };
+  return { canceled: false, directory, savedCount: saved.length, failed, files: saved };
 });
 
 ipcMain.handle("compress-folder", async (event, payload) => {
