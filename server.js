@@ -360,7 +360,7 @@ app.get("/api/capabilities", async (_req, res) => {
       document: { inputs: [...documentInput].sort(), targets: documentTargets, experimentalInputs: experimentalInputsByCategory.document },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
-      pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
+      pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets.filter((t) => t !== "odt" || tools.libreoffice), ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
       audio: { inputs: [...audioInput].filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext)).sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
       any: { inputs: ["*"], targets: ["zip"] }
@@ -574,12 +574,29 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
         conversionResult = await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
       }
     } else if (category === "pdf") {
-      await convertPdf(file.path, outputPath, requestedTarget, {
-        pdfAction,
-        password: String(req.body?.password || ""),
-        splitMode: String(req.body?.splitMode || "page"),
-        groupSize: String(req.body?.groupSize || "1")
-      });
+      if (requestedTarget === "odt") {
+        // PDF → ODF/ODT：先经 docengine/扫描件链路产出 docx 中间件，再经 LibreOffice 转 ODT。
+        // ODT 是标准开源文档格式（非加密音频等"特殊格式"），商店版不涉及此类阉割。
+        const tmpDocx = path.join(os.tmpdir(), `fm-pdf-odt-${randomUUID()}.docx`);
+        await convertPdf(file.path, tmpDocx, "docx", {
+          pdfAction,
+          password: String(req.body?.password || ""),
+          splitMode: String(req.body?.splitMode || "page"),
+          groupSize: String(req.body?.groupSize || "1")
+        });
+        try {
+          await convertWithLibreOffice(tmpDocx, outputPath, originalName, "odt");
+        } finally {
+          await fsp.rm(tmpDocx, { force: true }).catch(() => {});
+        }
+      } else {
+        await convertPdf(file.path, outputPath, requestedTarget, {
+          pdfAction,
+          password: String(req.body?.password || ""),
+          splitMode: String(req.body?.splitMode || "page"),
+          groupSize: String(req.body?.groupSize || "1")
+        });
+      }
     } else if (category === "zip") {
       await convertZipImagesToPdf(file.path, outputPath);
     } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["txt", "md", "json"].includes(requestedTarget)) {

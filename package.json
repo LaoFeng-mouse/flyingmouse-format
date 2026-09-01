@@ -13,8 +13,8 @@
     "flyingmouse-format": "cli.js"
   },
   "scripts": {
-    "pretest": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-office-xlsx.test.js tests/pdf-structure-score.test.js",
-    "pretest:ci": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-office-xlsx.test.js tests/pdf-structure-score.test.js",
+    "pretest": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-odt-targets.test.js tests/pdf-office-xlsx.test.js tests/pdf-structure-score.test.js",
+    "pretest:ci": "node --test tests/pdf-structure-engine.test.js tests/pdf-office-docx.test.js tests/pdf-odt-targets.test.js tests/pdf-office-xlsx.test.js tests/pdf-structure-score.test.js",
     "start": "node server.js",
     "desktop": "electron .",
     "dist": "electron-builder --win nsis --publish never",

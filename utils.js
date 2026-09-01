@@ -194,6 +194,9 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "pdf") {
     pdfTextTargets.forEach((target) => targets.add(target));
+    // ODT 产物经 LibreOffice 产出（docx 中间件 → odt）。无 LibreOffice（如 win7 构建）时隐藏，
+    // 避免能力面板暴露出一个点了必报错的目标。
+    if (!tools.libreoffice) targets.delete("odt");
     if (tools.poppler) {
       pdfImageTargets.forEach((target) => targets.add(target));
       targets.add("pdf");
