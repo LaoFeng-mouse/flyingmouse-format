@@ -1,6 +1,17 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-31（电子书 azw3/fb2 接入 + 保存链路加固 + OFD 文字层修复 + 版本 0.5.4 + Win7 构建）
+更新时间：2026-09-01（PDF→ODT 新功能 + ci-engines 补 qpdf + 0.5.4 主线构建/装机 + C 盘清理）
+
+## 2026-09-01：PDF→ODT + ci-engines 补 qpdf + 0.5.4 装机（本次窗口收尾）
+
+- **提交（full-version）**：`c26831e`（PDF→ODT，已推 origin）/ `c121374`（ci-engines 补 qpdf，**本地未推**）/ `2a34a1e`（另一并行窗口的 media/pdf 修复，本地未推）。
+- **PDF→ODT/ODF 新功能（c26831e）**：config.js pdfTextTargets 加 odt；server.js PDF 分支 target=odt 时走 `convertPdf→docx 中间件→convertWithLibreOffice→odt`（临时 docx finally 即删）；utils.js targetsForExt 与能力面板以 tools.libreoffice 门控 odt（无 LO/win7 隐藏）；tests/pdf-odt-targets.test.js 5 例进 pretest/pretest:ci。E2E 实测：PDF→docx(36KB)→odt(15.8KB)，产物合法 ODT。ODT 是标准开源格式，不属商店版阉割范围（unlockAudioInputs DRM 隐藏逻辑未动，static 测试 26/26 过）。
+- **ci-engines 补 qpdf（c121374）**：本机用 Python zstandard 重打 `output/ci-engines-v1.tar.zst`（1.54GB，20759 文件，含原 7 引擎+qpdf extracted 布局，排除原始 zip）；ci-engines-v1.json 顶层+win32-x64 requiredFiles 加 `qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe`，sha256 更新 `9eec000929c66cbb2b6a62df76ea65f0fe8ccce4928c9242978b39c1a5549699`；restore-ci-engines.ps1 目录列表加 qpdf。验证：validate-ci-engines 通过、解包 11/11 requiredFiles、qpdf.exe 可运行(12.4.0)、docstructure lock 校验过。
+- **0.5.4 主线构建+装机**：npm run dist 产出 dist/ 0.5.4-x64.exe（1.8GB）+ latest.yml(0.5.4)；本机已 NSIS 静默升级至 0.5.4.0（C:\Users\34615\飞鼠格式\FlyingMouse Format\，桌面/开始菜单 lnk 已核指向）；孤儿 0.5.2（AppData\Local\Programs）已删。**曾误删 0.5.4-win7 包后从 output/win7-stage 恢复**（教训：latest.yml 不刷新单独构建，版本判定只看 package.json）。
+- **磁盘清理**：C: 86%→77%（appx-build 21G、uv 缓存 28GiB、旧版交付 ~4G、docengine .bak 278M 等）。docstructure.bak-20260825 与 resources/.bak **已确认不存在**（08-31 段落对应风险已过期，此为更正）；output/win7-stage 也已清（win7 包已在 dist 恢复）。
+- **审查结论（2026-09-01 整体审查，8.5/10）**：Electron 安全边界扎实（contextIsolation/sandbox/assertTrustedIpc 全 handler 覆盖）；npm audit 2 moderate（fast-xml-parser 传递依赖，已知例外）；未签名安装包；qpdf CI 缺口已由 c121374 修复。
+- **待办（下一窗口）**：① **推送**：`git push origin full-version`（c121374+2a34a1e 两个本地提交，GitHub 直连间歇断，重试即可）；② **上传新 bundle**：`gh release upload ci-engines-v1 output/ci-engines-v1.tar.zst --clobber`（1.54GB，发布前必做，否则 CI 校验 fail-closed）；③ GitHub Release v0.5.4 创建（含 win7 包上传后按政策删本地）；④ Win7 staging 48 项自洽测试（win7-stage 已删，需时重建）；⑤ 商店 APPX 仍是旧提交（v0.3.3）；⑥ 真实 Win7/macOS 物理设备验收。
+- **会话残留（Temp，可删）**：odt_e2e.js / chk_zstd.py / engine_sizes.py / build_ci_bundle.py / verify_bundle.py / install_update.py / chk_narrow.py / check_lnk.py 等。
 
 ## 2026-08-31：电子书 azw3/fb2 + 保存链路加固 + OFD 文字层修复 + 版号 0.5.4（本次窗口收尾）
 
