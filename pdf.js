@@ -543,6 +543,11 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
       });
       return;
     } catch (error) {
+      // 版式引擎失败（含 10 分钟超时/产物校验不过）时静默回退，用户侧表现为「转很久没动静」。
+      // 这里明确记一条可诊断日志：失败原因 + 即将走哪条回退链路。
+      logger.warn(`docengine 版式还原失败，回退到结构化提取链路: ${inputPath} -> ${outputPath}`, {
+        message: String(error?.message || error).slice(0, 500)
+      });
       await (options.convertStructuredPdf || convertStructuredPdf)({
         inputPath, outputPath, target: "docx", options
       });

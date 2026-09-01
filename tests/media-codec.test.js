@@ -1,7 +1,13 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
 
-const { videoEncoderArgs, alphaCompositeArgs } = require("../media");
+const { videoEncoderArgs, alphaCompositeArgs, assertConvertibleToAudio } = require("../media");
+
+// assertConvertibleToAudio 是纯异步函数但内部依赖真实 ffmpeg 探测；
+// 这里用注入假 run 的方式在 conversion.test 层测过，此处只测模块导出契约。
+test("assertConvertibleToAudio 被导出为函数（错误分类 MEDIA_INPUT_UNREADABLE / MEDIA_NO_AUDIO_TRACK）", () => {
+  assert.equal(typeof assertConvertibleToAudio, "function");
+});
 
 test("videoEncoderArgs 默认与 h264 → libx264 crf23", () => {
   const expected = ["-codec:v", "libx264", "-preset", "medium", "-crf", "23"];

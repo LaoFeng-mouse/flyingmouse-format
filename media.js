@@ -4,12 +4,51 @@
 const { FFMPEG_PATH } = require("./config");
 const { run } = require("./utils");
 
+// ffmpeg 探测失败的输入类错误特征：文件打不开/损坏/容器无效。
+// 命中说明「探测不到音轨」不是因为真没音轨，而是文件本身读不了。
+const FFMPEG_INPUT_ERROR_RE = /Invalid data found|Error opening input|No such file|demux|Format .* detected only with low score|moov atom not found|End of file/i;
+
 async function probeAudioTrack(inputPath) {
+  let stderr = "";
   try {
-    const { stderr } = await run(FFMPEG_PATH, ["-hide_banner", "-i", inputPath], { timeout: 30000 });
-    return /Stream #\d+:\d+.*Audio/i.test(stderr);
+    const result = await run(FFMPEG_PATH, ["-hide_banner", "-i", inputPath], { timeout: 30000 });
+    stderr = result.stderr || "";
   } catch (error) {
-    return /Stream #\d+:\d+.*Audio/i.test(String(error.message || ""));
+    // ffmpeg -i 无输出参数必然退出非 0；utils.run 把完整 stderr 塞进 error.message。
+    stderr = String(error.message || "");
+  }
+  return /Stream #\d+:\d+.*Audio/i.test(stderr);
+}
+
+// 区分「文件损坏/无法读取」与「真的没有音频轨道」：
+// 先探测输入是否可解析（ffmpeg stderr 无 Input/Stream 行且带输入错误特征 = 文件读不了），
+// 读不了的抛 MEDIA_INPUT_UNREADABLE；能读但无 Audio 流才是 MEDIA_NO_AUDIO_TRACK。
+async function assertConvertibleToAudio(inputPath) {
+  let stderr = "";
+  try {
+    const result = await run(FFMPEG_PATH, ["-hide_banner", "-i", inputPath], { timeout: 30000 });
+    stderr = result.stderr || "";
+  } catch (error) {
+    stderr = String(error.message || "");
+  }
+  const hasInputStreams = /Stream #\d+:\d+/.test(stderr);
+  if (!hasInputStreams && FFMPEG_INPUT_ERROR_RE.test(stderr)) {
+    const error = new Error("音视频文件无法读取，可能已损坏或格式不受支持。");
+    error.code = "MEDIA_INPUT_UNREADABLE";
+    error.messages = {
+      zhCN: "音视频文件无法读取，可能已损坏或格式不受支持。",
+      enUS: "The media file could not be read. It may be corrupted or in an unsupported format."
+    };
+    throw error;
+  }
+  if (!/Stream #\d+:\d+.*Audio/i.test(stderr)) {
+    const error = new Error("该视频没有音频轨道，无法转换为音频格式。");
+    error.code = "MEDIA_NO_AUDIO_TRACK";
+    error.messages = {
+      zhCN: "该视频没有音频轨道，无法转换为音频格式。",
+      enUS: "This video has no audio track, so it cannot be converted to an audio format."
+    };
+    throw error;
   }
 }
 
@@ -86,15 +125,8 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
   if (["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"].includes(target)) {
     if (!(options.extraInputs || []).length) {
       args.push("-vn");
-      if (!(await probeAudioTrack(inputPath))) {
-        const error = new Error("该视频没有音频轨道，无法转换为音频格式。");
-        error.code = "MEDIA_NO_AUDIO_TRACK";
-        error.messages = {
-          zhCN: "该视频没有音频轨道，无法转换为音频格式。",
-          enUS: "This video has no audio track, so it cannot be converted to an audio format."
-        };
-        throw error;
-      }
+      // 前置校验：区分「文件损坏读不了」与「真没音轨」，避免损坏文件被误报为无音轨。
+      await assertConvertibleToAudio(inputPath);
     }
     if (target === "mp3") args.push("-codec:a", "libmp3lame", "-q:a", "2");
     if (target === "m4a") args.push("-codec:a", "aac", "-b:a", "192k");
@@ -134,6 +166,7 @@ async function convertMedia(inputPath, outputPath, target, category, options = {
 
 module.exports = {
   probeAudioTrack,
+  assertConvertibleToAudio,
   probeVideoInfo,
   videoEncoderArgs,
   alphaCompositeArgs,
