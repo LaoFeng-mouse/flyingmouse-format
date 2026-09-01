@@ -65,7 +65,7 @@ try {
   }
   $binRoot = Join-Path $projectRoot "bin"
   New-Item -ItemType Directory -Path $binRoot -Force | Out-Null
-  $directories = @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw", "docengine")
+  $directories = @("ffmpeg", "poppler", "libreoffice", "tessdata", "dcraw", "docengine", "qpdf")
   if (Test-Path -LiteralPath $docstructureRoot -PathType Container) { $directories += "docstructure" }
   foreach ($directory in $directories) {
     $destination = Join-Path $binRoot $directory
