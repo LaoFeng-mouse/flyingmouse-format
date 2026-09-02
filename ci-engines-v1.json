@@ -1,39 +1,35 @@
 {
   "version": "ci-engines-v1",
-  "repository": "flyingmouse-format",
+  "repository": "LaoFeng-mouse/flyingmouse-format",
   "releaseTag": "ci-engines-v1",
-  "assetName": "ci-engines-v1.tar.zst",
-  "sha256": "9eec000929c66cbb2b6a62df76ea65f0fe8ccce4928c9242978b39c1a5549699",
-  "requiredFiles": [
-    "ffmpeg/ffmpeg.exe",
-    "poppler/Library/bin/pdftoppm.exe",
-    "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
-    "tessdata/eng.traineddata.gz",
-    "tessdata/chi_sim.traineddata.gz",
-    "dcraw/dcraw.exe",
-    "docengine/docengine.exe",
-    "qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe",
-    "docstructure/docstructure-engine.exe",
-    "docstructure/models/layout_detection/inference.pdiparams",
-    "docstructure/models/text_recognition/inference.pdiparams"
-  ],
   "assets": {
     "win32-x64": {
       "available": true,
-      "assetName": "ci-engines-v1.tar.zst",
-      "sha256": "9eec000929c66cbb2b6a62df76ea65f0fe8ccce4928c9242978b39c1a5549699",
-      "requiredFiles": [
-        "ffmpeg/ffmpeg.exe",
-        "poppler/Library/bin/pdftoppm.exe",
-        "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
-        "tessdata/eng.traineddata.gz",
-        "tessdata/chi_sim.traineddata.gz",
-        "dcraw/dcraw.exe",
-        "docengine/docengine.exe",
-        "qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe",
-        "docstructure/docstructure-engine.exe",
-        "docstructure/models/layout_detection/inference.pdiparams",
-        "docstructure/models/text_recognition/inference.pdiparams"
+      "parts": [
+        {
+          "assetName": "ci-engines-v1-win32-core.tar.zst",
+          "sha256": "d4f13034e719760790d75569b2dd9696facb88b15b8322f28d2aa4c3dbe6a835",
+          "requiredFiles": [
+            "ffmpeg/ffmpeg.exe",
+            "poppler/Library/bin/pdftoppm.exe",
+            "libreoffice/LibreOfficePortable/App/libreoffice/program/soffice.com",
+            "tessdata/eng.traineddata.gz",
+            "tessdata/chi_sim.traineddata.gz",
+            "dcraw/dcraw.exe",
+            "docengine/docengine.exe",
+            "avs3/avs3RM0Decoder.exe",
+            "qpdf/extracted/qpdf-12.4.0-msvc64/bin/qpdf.exe"
+          ]
+        },
+        {
+          "assetName": "ci-engines-v1-win32-docstructure.tar.zst",
+          "sha256": "a012b9f7a5dc3a3530beac1545c01f1f976b4fdbf0e4d045bbf5c9a85e8586f5",
+          "requiredFiles": [
+            "docstructure/docstructure-engine.exe",
+            "docstructure/models/layout_detection/inference.pdiparams",
+            "docstructure/models/text_recognition/inference.pdiparams"
+          ]
+        }
       ]
     },
     "darwin-arm64": {
