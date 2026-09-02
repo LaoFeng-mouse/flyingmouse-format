@@ -1,6 +1,16 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-09-01（PDF→ODT 新功能 + ci-engines 补 qpdf + 0.5.4 主线构建/装机 + C 盘清理）
+更新时间：2026-09-02（满血版 0.5.4 重构建+同步装机 + 媒体误报/回退可观测修复落地推送 + ci-engines 核验收口 + C 盘迁移）
+
+## 2026-09-02：0.5.4 满血版修复落地 + 引擎上传核验收口 + C 盘迁移（本次窗口收尾）
+
+- **提交（full-version，均已推 origin）**：`2a34a1e`（media.js 新增 assertConvertibleToAudio：损坏/读不了的媒体报 MEDIA_INPUT_UNREADABLE「文件无法读取，可能已损坏」，与真无音轨的 MEDIA_NO_AUDIO_TRACK 分开；pdf.js docengine 版式还原失败回退时记 WARN 日志）/ `c121374`（qpdf 进引擎包）/ `6cadf3a`（09-01 交接）/ `2d8045a`（ci-engines-v1.json 同步 main 分卷版：repository 带 owner + parts 布局，full-version 线跑 restore 不再报格式错）。测试：定向 28/28，全量 538 pass / 5 skip / 0 fail。
+- **09-01 待办收口**：① 推送 ✅；② 引擎包上传 → **核验后确认无需上传**：CI（main 线）用分卷布局，远端 ci-engines-v1 Release 4 资产齐全（win32-core sha256 d4f13034… 与 manifest 逐字节一致、含 qpdf），f6243aa 已重发过；full-version 本地单包 output/ci-engines-v1.tar.zst（1.61GB）系旧布局无消费者，经用户确认已删；③ GitHub Release v0.5.4 仍未创建（等用户发布决策，release notes 053/054 也待建）。
+- **满血版 0.5.4 重构建+同步**：npm run dist 重出 dist/FlyingMouse Format-Setup-0.5.4-x64.exe（1,711,988,034 字节，含 2a34a1e）+ latest.yml + blockmap；win-unpacked 的 EXE/app.asar/app.asar.unpacked 覆盖 C:\Users\34615\飞鼠格式\FlyingMouse Format\（asar 内 package.json 提取验证 0.5.4、assertConvertibleToAudio 在位）。软件左上角版本号经 main→IPC(app.getVersion)→asar 内 package.json 链路核实显示 v0.5.4；商店版 0.6.5 为独立版本线，两线不同步属既有格局。
+- **商店版诊断报告（小兵张嘎 20 集 mkv→mp4）结论**：全部 Convert succeeded，日志中「Command failed: …At least one output file must be specified」是 ffmpeg -i 探测流的固有退出行为（老逻辑记 WARN，新包不受影响），非转换错误；产物音轨实测正常（eac3→aac 在位）。真正故障仅 LibreOffice OFFICE_ENGINE_START_FAILED（商店沙箱环境），待单独排查。
+- **C 盘迁移（用户指令）**：删 Temp 垃圾 5.85G（NSIS 安装器残留；另一 1.56G UUID 目录被 lghub_updater 锁着，其更新完自释）；Documents\Codex 23.9G→D:\Codex、Documents\ChatGPT 15.8G→D:\ChatGPT，均 robocopy /MOVE + mklink /J junction（老路径全通，config.toml 引用实测可达）。**robocopy 跨盘打碎 pnpm 符号链接的坑**：wo-x 项目（含 3 个 worktree）node_modules 顶层链接变空壳 1280 个——已删空壳并按 lockfile pnpm install 重建 4 处，tsc 5.9.3 / vitest 3.2.7 实跑验证。教训：pnpm 项目跨盘移动用 `git mv`/同盘移动或事后强制 reinstall，勿直接 robocopy /MOVE。C 盘可用 117G→160G。
+- **遗留（AGENTS.md 死引用，受保护文件待用户批准改）**：Conversion boundaries 段「PDF → DOCX 优先用内置 pdf2docx 引擎（spawn `bin/pdf2docx/pdf2docx.exe`）」过期——现役为统一文档引擎 `bin/docengine/docengine.exe convert`（config.js DOCENGINE_PATH 四候选路径 + package.json extraResources 均为 docengine；bin/pdf2docx/ 只是本地历史残留，未进包）。正确表述已拟好：「优先用统一文档引擎 docengine（spawn bin/docengine/docengine.exe convert，内部基于 pdf2docx 库）…引擎缺失或转换失败时记录 WARN 并回退到 PDF.js 文字提取」。
+- **待办（下一窗口）**：① AGENTS.md 上述死引用改写（用户在场批准）；② GitHub Release v0.5.4 创建（含 win7 包上传策略按既有纪律，release notes 053/054 待建）；③ 商店版 LibreOffice 启动失败单独排查；④ 09-01 遗留不变：扫描件表格进公开版决策 / Win7 staging 测试 / 真实 Win7·macOS 设备验收 / %TEMP% odt_e2e.js 等会话残留可删；⑤ `Documents\飞鼠格式`（9.7G）与 `C:\Users\34615\飞鼠格式`（4.2G）迁 D 盘为用户已知晓的暂缓项（避开并行窗口，安装版建议改用 0.5.4 安装包重装到 D）。
 
 ## 2026-09-01：PDF→ODT + ci-engines 补 qpdf + 0.5.4 装机（本次窗口收尾）
 
