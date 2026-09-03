@@ -97,6 +97,7 @@ npm audit --omit=dev --prefix output\win7-stage
 
 ## Packaging and release
 
+- **双轨策略（2026-09-02 用户定调）**：`full-version`（满血版）为母版分支，一切新功能与修复先落此分支；公开/商店发布线（main）是其**阉割派生**——特殊音频格式解锁（ncm/kgg/mgg/mflac/kgma/mmp4/kwm）不发布，同步只允许 cherry-pick 合规提交，禁止整支合并或 `git push full-version:main`。满血版发布走 prerelease 通道，不占 GitHub Latest。
 - `build.files` 是显式白名单；新增被服务端引用的根目录 JS 模块时必须同步加入。
 - `extraResources` 必须包含 FFmpeg、AVS3、LibreOffice、Poppler、tessdata、Tesseract core 和 docengine（PDF→Word/Excel 文档引擎，Windows 标准版专用；win7 版与 macOS 排除，回退纯 JS）。
 - 保持 `signExecutable: false`，不要使用 `signAndEditExecutable: false`，后者会跳过图标嵌入。
