@@ -140,7 +140,7 @@ const DOCSTRUCTURE_MODEL_DIR = bundledDocstructureModelDir();
 const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
 const rawInput = new Set(["cr2", "cr3", "crw", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "3fr", "erf", "fff", "iiq", "kdc", "mef", "mrw", "x3f"]);
-const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "pdf"];
+const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];

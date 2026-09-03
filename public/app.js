@@ -62,6 +62,8 @@ const pdfSplitModeField = document.querySelector("#pdfSplitModeField");
 const pdfSplitMode = document.querySelector("#pdfSplitMode");
 const pdfGroupSizeField = document.querySelector("#pdfGroupSizeField");
 const pdfGroupSize = document.querySelector("#pdfGroupSize");
+const imagePdfModeField = document.querySelector("#imagePdfModeField");
+const imagePdfMode = document.querySelector("#imagePdfMode");
 const convertButton = document.querySelector("#convertButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
@@ -133,6 +135,7 @@ const messages = {
     "pdfAction.split": "拆分 PDF（默认）", "pdfAction.encrypt": "加密 PDF", "pdfAction.decrypt": "解密 PDF",
     "pdfSplitMode.label": "拆分方式", "pdfSplitMode.page": "逐页拆分（每页一个 PDF）", "pdfSplitMode.group": "每 N 页一组",
     "pdfGroupSize.label": "每几页一组",
+    "imagePdfMode.label": "多图转 PDF", "imagePdfMode.merge": "合并为一个 PDF（默认）", "imagePdfMode.separate": "每张图片单独生成 PDF",
     "settings.aria": "转换设置", "progress.label": "转换进度", "status.ready": "选择文件后会显示可用的转换格式。",
     "formats.aria": "支持格式", "formats.title": "当前支持",
     "formats.description": "文档转换会尽量保留排版；PDF 可导出页面图片，图片和扫描版 PDF 可 OCR 转 TXT。音频仅支持普通格式转换（MP3/WAV/FLAC/AAC/OGG 等），不支持其他音乐平台的加密特殊格式。",
@@ -180,6 +183,7 @@ const messages = {
     "pdfAction.split": "Split PDF (default)", "pdfAction.encrypt": "Encrypt PDF", "pdfAction.decrypt": "Decrypt PDF",
     "pdfSplitMode.label": "Split mode", "pdfSplitMode.page": "Split into single pages", "pdfSplitMode.group": "Group every N pages",
     "pdfGroupSize.label": "Pages per group",
+    "imagePdfMode.label": "Multiple images to PDF", "imagePdfMode.merge": "Merge into one PDF (default)", "imagePdfMode.separate": "One PDF per image",
     "settings.aria": "Conversion settings", "progress.label": "Conversion progress", "status.ready": "Available target formats appear after you select files.",
     "formats.aria": "Supported formats", "formats.title": "Supported now",
     "formats.description": "Document conversion preserves layout where possible; PDFs can export page images, and images and scanned PDFs can be OCRed to TXT. Audio supports only ordinary formats (MP3/WAV/FLAC/AAC/OGG etc.); encrypted formats from music platforms are not supported.",
@@ -618,6 +622,29 @@ function syncAlphaBackgroundField() {
   alphaBackgroundField.hidden = !["mp4", "mov", "mkv", "webm"].includes(targetSelect.value);
 }
 
+// 多图转 PDF 的合并/单独选项：仅在「多张图片 + 目标 PDF」时显示。
+// 单独模式 = 每张图各出一个 PDF，直接落回单文件逐个转换队列。
+// 空白页占位条目只在合并模式有意义（单独模式没有可插入的页面流），有空白页时强制合并。
+function syncImagePdfModeField() {
+  if (!imagePdfModeField) return;
+  const isMultiImagePdf = targetSelect.value === "pdf"
+    && state.files.length > 1
+    && state.fileInfos.length === state.files.length
+    && state.fileInfos.every((info) => info.category === "image");
+  const hasBlankPage = isMultiImagePdf && state.files.some((file) => file?.isBlankPage);
+  if (hasBlankPage && imagePdfMode?.value === "separate") {
+    imagePdfMode.value = "merge";
+    setStatus(i18n.language === "en-US"
+      ? "Blank pages are only available in merge mode. Switched back to merge."
+      : "空白页仅在合并模式可用，已切回合并为一个 PDF。", "");
+  }
+  if (imagePdfMode) {
+    const separateOption = imagePdfMode.querySelector('option[value="separate"]');
+    if (separateOption) separateOption.disabled = hasBlankPage;
+  }
+  imagePdfModeField.hidden = !isMultiImagePdf;
+}
+
 function syncPdfActionFields() {
   if (!pdfPasswordField || !pdfActionField) return;
   const isPdfToPdf = targetSelect.value === "pdf"
@@ -697,6 +724,7 @@ async function acceptFiles(fileList) {
       syncZipCompressionField();
       syncVideoCodecField();
       syncPdfActionFields();
+      syncImagePdfModeField();
       setMouseState("error");
       return;
     }
@@ -725,6 +753,7 @@ async function acceptFiles(fileList) {
     syncZipCompressionField();
     syncVideoCodecField();
     syncPdfActionFields();
+    syncImagePdfModeField();
     syncPdfExcelHint();
     setMouseState(files.length > 1 ? "batch" : "idle");
     if (files.length === 1) {
@@ -808,6 +837,8 @@ async function convertOneFile(file, targetFormat) {
 }
 
 function isMergedImagePdfConversion(targetFormat) {
+  // 单独模式（每张图各出一个 PDF）不合并，落回单文件逐个转换队列。
+  if (imagePdfMode?.value === "separate") return false;
   return targetFormat === "pdf"
     && state.files.length > 1
     && state.fileInfos.length === state.files.length
@@ -1343,6 +1374,7 @@ targetSelect.addEventListener("change", async () => {
   syncZipCompressionField();
   syncVideoCodecField();
   syncPdfActionFields();
+  syncImagePdfModeField();
   syncPdfExcelHint();
   renderBatchList();
   const targetBySource = rememberTarget(

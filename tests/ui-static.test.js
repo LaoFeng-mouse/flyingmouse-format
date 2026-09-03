@@ -132,7 +132,27 @@ test("video targets expose a transparent background color selector", () => {
   assert.match(app, /form\.append\("alphaBackground"/);
 });
 
+test("multiple images to PDF expose a merge/separate mode selector", () => {
+  const html = readPublic("index.html");
+  const app = readPublic("app.js");
+  assert.match(html, /id="imagePdfModeField"[^>]*hidden/);
+  assert.match(html, /id="imagePdfMode"/);
+  assert.match(app, /"imagePdfMode\.label"/);
+  assert.match(app, /"imagePdfMode\.merge"/);
+  assert.match(app, /"imagePdfMode\.separate"/);
+  assert.match(app, /imagePdfModeField\.hidden/);
+  assert.match(app, /imagePdfMode\?\.value === "separate"/);
+});
 
+test("image targets include BMP output (imageFormatTargets)", () => {
+  const { imageFormatTargets } = require("../config");
+  assert.ok(imageFormatTargets.includes("bmp"), "bmp should be an image output target");
+  // 顺序无关，但 bmp 必须与 png/jpg 等并列出现
+  const targets = new Set(imageFormatTargets);
+  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "pdf"]) {
+    assert.ok(targets.has(expected), `${expected} missing from imageFormatTargets`);
+  }
+});
 
 test("renderer no longer enforces a batch size limit and localizes resource errors", () => {
   const app = readPublic("app.js");
