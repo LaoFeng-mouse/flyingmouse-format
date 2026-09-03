@@ -23,7 +23,7 @@
 
 | 你的系统 | 下载这个文件 |
 |---|---|
-| **Windows 10 / 11（64 位）** | `FlyingMouse-Format-Setup-0.5.4-x64.exe` |
+| **Windows 10 / 11（64 位）** | `FlyingMouse.Format-Setup-0.5.4-x64.exe` |
 
 > ⚠️ 提示：
 > - `latest.yml` 和 `*.blockmap` 是自动更新内部文件，**不要手动下载**。
