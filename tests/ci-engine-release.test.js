@@ -7,23 +7,29 @@ const { test } = require("node:test");
 
 const root = path.join(__dirname, "..");
 
-test("ci-engines-v1 pins one immutable bundle and required engine files", () => {
+test("ci-engines-v1 pins immutable bundle volumes and required engine files", () => {
   const manifest = require("../ci-engines-v1.json");
   assert.equal(manifest.version, "ci-engines-v1");
   assert.equal(manifest.releaseTag, "ci-engines-v1");
-  assert.equal(manifest.assetName, "ci-engines-v1.tar.zst");
-  assert.match(manifest.sha256, /^[0-9a-f]{64}$/);
+  const windows = manifest.assets["win32-x64"];
+  assert.ok(Array.isArray(windows.parts) && windows.parts.length >= 2, "win32 engine must split into multiple volumes (2GB asset limit)");
+  const allRequired = windows.parts.flatMap((part) => part.requiredFiles);
+  for (const part of windows.parts) {
+    assert.match(part.sha256, /^[0-9a-f]{64}$/, `${part.assetName} must pin SHA-256`);
+    assert.ok(part.assetName.endsWith(".tar.zst"));
+  }
   for (const fragment of ["ffmpeg.exe", "pdftoppm.exe", "soffice.com", "eng.traineddata.gz", "chi_sim.traineddata.gz"]) {
-    assert.ok(manifest.requiredFiles.some((entry) => entry.endsWith(fragment)), `missing ${fragment}`);
+    assert.ok(allRequired.some((entry) => entry.endsWith(fragment)), `missing ${fragment}`);
   }
 });
 
-test("engine restore validates SHA-256 before extracting and checks every required file", () => {
+test("engine restore validates SHA-256 per volume before extracting and checks every required file", () => {
   const source = fs.readFileSync(path.join(root, "scripts", "restore-ci-engines.ps1"), "utf8");
   assert.match(source, /Get-FileHash[\s\S]*SHA256/);
-  assert.match(source, /actualHash[\s\S]*expectedHash/);
+  assert.match(source, /actualHash[\s\S]*[Ee]xpectedHash/);
   assert.ok(source.indexOf("SHA-256 mismatch") < source.indexOf("& tar -xf"));
-  assert.match(source, /manifest\.requiredFiles/);
+  assert.match(source, /parts/);
+  assert.match(source, /RequiredFiles/);
   assert.match(source, /ci-engines-v1-stage/);
   assert.match(source, /Test-Path[\s\S]*gh release download/);
 });
@@ -64,8 +70,9 @@ test("Windows release restores and validates docstructure before probe, conversi
 test("CI engine manifest and restore script include the locked docstructure one-folder tree", () => {
   const manifest = require("../ci-engines-v1.json");
   const windows = manifest.assets["win32-x64"];
-  assert.ok(windows.requiredFiles.includes("docstructure/docstructure-engine.exe"));
-  assert.ok(windows.requiredFiles.some((entry) => entry.startsWith("docstructure/models/")));
+  const allRequired = windows.parts.flatMap((part) => part.requiredFiles);
+  assert.ok(allRequired.includes("docstructure/docstructure-engine.exe"));
+  assert.ok(allRequired.some((entry) => entry.startsWith("docstructure/models/")));
 
   const restore = fs.readFileSync(path.join(root, "scripts", "restore-ci-engines.ps1"), "utf8");
   assert.match(restore, /"docstructure"/);

@@ -2,6 +2,11 @@ name: Release validation
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release/tag name (e.g. v0.6.1) — used when dispatching manually"
+        required: false
+        default: "v0.6.1"
   push:
     tags:
       - "v*"
@@ -41,12 +46,18 @@ jobs:
         run: node scripts/lock-docstructure-engine.js --verify --root bin/docstructure --lock docstructure-engine-lock.json
 
       - name: Probe document structure engine
-        shell: powershell
+        shell: bash
         run: |
-          $status = & .\bin\docstructure\docstructure-engine.exe 2>&1
-          if ($LASTEXITCODE -ne 20 -or ($status -join "`n") -notmatch '"code":"MODEL_MISSING"') {
-            throw 'Document structure engine startup probe failed.'
-          }
+          # 引擎 MODEL_MISSING 启动探针退出码 20，JSON 写到 stderr。
+          # runner 的 bash 默认 -e（set -e）——引擎退出码非 0 会直接终止脚本，
+          # 需先 set +e 捕获退出码再判断（powershell/cmd 方式另有 stderr 问题，均弃用）。
+          set +e
+          output=$(./bin/docstructure/docstructure-engine.exe 2>&1)
+          code=$?
+          set -e
+          echo "engine probe exit=$code"
+          echo "$output" | grep -q '"code":"MODEL_MISSING"' || { echo "missing MODEL_MISSING marker: $output"; exit 1; }
+          test "$code" -eq 20 || { echo "unexpected exit code: $code"; exit 1; }
 
       - name: Stage locked Thai OCR data for Windows tests
         shell: powershell
@@ -70,7 +81,7 @@ jobs:
         run: npm test
 
       - name: Production dependency audit
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build Windows 10 and 11 installer
         run: npm run dist
@@ -153,7 +164,7 @@ jobs:
           "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
 
       - name: Production dependency audit
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Build unsigned macOS DMG
         run: npm run dist:mac:${{ matrix.arch }}
@@ -225,17 +236,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${{ github.ref_name }}"
+          TAG="${{ inputs.release_tag || github.ref_name }}"
           # 标准版 x64 exe/blockmap 重命名为连字符，匹配 latest.yml 的 url
           # （空格会被 GitHub 显示成点，electron-updater 按 url 下载会 404）
           cd release-assets
-          for f in *Setup-*-x64.exe; do
-            [ -e "$f" ] || continue
-            case "$(basename "$f")" in *win7*) continue;; esac
-            n="$(basename "$f" | tr ' ' '-')"
-            [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
-          done
-          for f in *.blockmap; do
+          # 把所有资产名里的空格统一换成连字符（exe/blockmap/dmg/win7），
+          # 否则 GitHub 资产上传会因文件名含空格返回 400（v0.6.5 发布事故根因），
+          # 且 electron-updater 按 latest.yml 的 url 下载也会 404。
+          for f in *; do
             [ -e "$f" ] || continue
             n="$(basename "$f" | tr ' ' '-')"
             [ "$(basename "$f")" = "$n" ] || mv "$f" "$n"
@@ -248,8 +256,13 @@ jobs:
           VER="${VER//./}"
           NOTES="docs/release-notes-${VER}.md"
           [ -f "$NOTES" ] || NOTES="docs/RELEASE.md"
-          gh release create "$TAG" --repo "${{ github.repository }}" \
-            --title "FlyingMouse Format $TAG" \
-            --notes-file "$NOTES" --draft
+          # release 已存在（如手动预上传资产）时跳过 create，仅补传/覆盖资产
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "release $TAG already exists; uploading assets only"
+          else
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "FlyingMouse Format $TAG" \
+              --notes-file "$NOTES" --draft
+          fi
           gh release upload "$TAG" release-assets/* --repo "${{ github.repository }}" --clobber
           gh release edit "$TAG" --draft=false --latest
