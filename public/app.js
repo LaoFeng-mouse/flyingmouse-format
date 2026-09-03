@@ -242,6 +242,7 @@ const labels = {
   text: "文本",
   document: "Word/WPS 文档",
   spreadsheet: "Excel/WPS 表格",
+  caj: "知网 CAJ 文献",
   presentation: "PPT/WPS 演示",
   pdf: "PDF",
   audio: "音频",
@@ -258,7 +259,7 @@ const statusLabels = {
 };
 
 const englishLabels = {
-  image: "Image", text: "Text", document: "Word/WPS document", spreadsheet: "Excel/WPS spreadsheet",
+  image: "Image", text: "Text", document: "Word/WPS document", spreadsheet: "Excel/WPS spreadsheet", caj: "CNKI CAJ document",
   presentation: "PPT/WPS presentation", pdf: "PDF", audio: "Audio", video: "Video", any: "Any file", unknown: "Unknown type"
 };
 const englishStatusLabels = { pending: "Waiting", converting: "Converting", success: "Complete", error: "Failed" };

@@ -33,6 +33,7 @@ const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-
 const { convertOfdToPdf } = require("./ofd-convert");
 const { OfficeEngineError, probeLibreOffice, runLibreOffice } = require("./office-engine");
 const { inspectXlsxForCsv } = require("./office-quality");
+const { CajConversionError, convertCajToPdf } = require("./caj-convert");
 const logger = require("./logger");
 
 // Prefer the Electron main process's debug.log (set via FLYINGMOUSE_LOG_FILE
@@ -162,6 +163,8 @@ const {
   documentTargets,
   spreadsheetInput,
   spreadsheetTargets,
+  cajInput,
+  cajTargets,
   presentationInput,
   presentationTargets,
   pdfInput,
@@ -350,6 +353,7 @@ app.get("/api/capabilities", async (_req, res) => {
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
       document: { inputs: [...documentInput].sort(), targets: documentTargets, experimentalInputs: experimentalInputsByCategory.document },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
+      caj: { inputs: [...cajInput], targets: cajTargets, experimentalInputs: [] },
       presentation: { inputs: [...presentationInput].sort(), targets: presentationTargets, experimentalInputs: experimentalInputsByCategory.presentation },
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets, ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
       audio: { inputs: [...audioInput].sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
@@ -573,6 +577,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       });
     } else if (category === "zip") {
       await convertZipImagesToPdf(file.path, outputPath);
+    } else if (category === "caj") {
+      conversionResult = await convertCajToPdf(file.path, outputPath);
     } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["txt", "md", "json"].includes(requestedTarget)) {
       conversionResult = await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
     } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["epub", "xlsx", "html", "pdf"].includes(requestedTarget)) {
@@ -667,6 +673,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     ].includes(error?.code);
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
+    const isCajConversionError = error instanceof CajConversionError;
     if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);
     else logger.error(`Convert failed: "${originalName}" -> ${requestedTarget}`, error);
     await fsp.rm(file.path, { force: true }).catch(() => {});
@@ -678,7 +685,8 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       payload.messages = error.messages;
       payload.details = error.details;
     }
-    res.status(isResourceLimitError ? 413 : (isClientConversionError ? 422 : 500)).json(payload);
+    if (isCajConversionError && error.details) payload.details = error.details;
+    res.status(isResourceLimitError || error?.code === "CAJ_TOO_LARGE" ? 413 : (isClientConversionError || isCajConversionError ? 422 : 500)).json(payload);
   }
 });
 

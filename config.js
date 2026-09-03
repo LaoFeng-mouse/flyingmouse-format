@@ -152,6 +152,8 @@ const ofdOnlyPdfTargets = ["pdf"];
 const documentTargets = ["pdf", "docx", "odt", "rtf", "txt", "html", "md"];
 const spreadsheetInput = new Set(["xls", "xlsx", "xlsm", "ods", "csv", "tsv", "et", "ett"]);
 const spreadsheetTargets = ["pdf", "xlsx", "xls", "ods", "csv", "html"];
+const cajInput = new Set(["caj"]);
+const cajTargets = ["pdf"];
 const presentationInput = new Set(["ppt", "pptx", "odp", "dps", "dpt"]);
 const presentationTargets = ["pdf", "pptx", "odp", "html", "png", "jpg"];
 const pdfInput = new Set(["pdf"]);
@@ -180,6 +182,7 @@ const allTargets = new Set([
   ...textTargets,
   ...documentTargets,
   ...spreadsheetTargets,
+  ...cajTargets,
   ...presentationTargets,
   ...pdfTargets,
   ...mediaTargets,
@@ -218,6 +221,8 @@ module.exports = {
   ofdOnlyPdfTargets,
   spreadsheetInput,
   spreadsheetTargets,
+  cajInput,
+  cajTargets,
   presentationInput,
   presentationTargets,
   pdfInput,
