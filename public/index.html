@@ -132,6 +132,14 @@
               <input id="pdfGroupSize" type="number" min="2" max="999" value="2" inputmode="numeric">
             </label>
 
+            <label class="field" id="imagePdfModeField" hidden>
+              <span data-i18n="imagePdfMode.label">多图转 PDF</span>
+              <select id="imagePdfMode">
+                <option value="merge" selected data-i18n="imagePdfMode.merge">合并为一个 PDF（默认）</option>
+                <option value="separate" data-i18n="imagePdfMode.separate">每张图片单独生成 PDF</option>
+              </select>
+            </label>
+
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
 
             <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>

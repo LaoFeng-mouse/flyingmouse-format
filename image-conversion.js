@@ -1,4 +1,5 @@
 const sharp = require("sharp");
+const { encodeBmpFromRaw } = require("./bmp-output");
 
 const WARNING_MESSAGES = {
   ANIMATION_FLATTENED: {
@@ -65,6 +66,26 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
         "Animated GIF output did not preserve the input frame count."
       );
     }
+    return { warnings };
+  }
+
+  // BMP 输出：sharp 无 BMP 编码器，取第一帧（动图压平，与其它静态目标一致）
+  // 转 raw RGB 后走自研 24 位编码器（bmp-output.js）。
+  if (normalizedTarget === "bmp") {
+    if (animated) warnings.push(warning("ANIMATION_FLATTENED"));
+    const { data, info } = await sharp(inputPath, {
+      page: 0,
+      pages: 1,
+      limitInputPixels: maxPixels
+    }).rotate().raw().toBuffer({ resolveWithObject: true });
+    const bmp = encodeBmpFromRaw({
+      width: info.width,
+      height: info.height,
+      data,
+      channels: info.channels >= 3 ? info.channels : 3
+    });
+    const fsp = require("fs/promises");
+    await fsp.writeFile(outputPath, bmp);
     return { warnings };
   }
 
