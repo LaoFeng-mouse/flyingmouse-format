@@ -59,12 +59,16 @@ function parseIco(buffer) {
   return { count, entries };
 }
 
-// 挑最清晰的一帧：PNG 帧优先（带 alpha），再按面积降序。
+// 挑最清晰的一帧：面积最大优先，PNG 帧只在同尺寸时作为加分项（带 alpha、无需 DIB 转换）。
+// 历史缺陷（2026-09-04 修）：原实现无条件 PNG 优先——混合 ICO（16px PNG + 256px BMP DIB，
+// 常见于老图标工具产物）会只选中 16×16 小帧，转出的 PNG 被拉大后必然模糊（用户反馈「ico 太糊」的根因）。
 function selectBestEntry(entries) {
   if (!entries.length) throw unsupported("ICO 文件不包含任何图像帧。");
   const ranked = [...entries].sort((a, b) => {
+    const areaDiff = (b.width * b.height) - (a.width * a.height);
+    if (areaDiff !== 0) return areaDiff;
     if (a.png !== b.png) return a.png ? -1 : 1;
-    return (b.width * b.height) - (a.width * a.height);
+    return 0;
   });
   return ranked[0];
 }

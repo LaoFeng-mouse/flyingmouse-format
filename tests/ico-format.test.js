@@ -9,6 +9,7 @@ const {
   isIcoBuffer,
   isIcoFileSync,
   parseIco,
+  selectBestEntry,
   extractBestFrame,
   extractAllFrames,
   encodeIco
@@ -90,7 +91,7 @@ test("extractBestFrame picks the largest PNG frame", async () => {
   assert.equal(frame.data.readUInt32BE(0), 0x89504e47);
 });
 
-test("extractBestFrame prefers a PNG frame over a larger BMP frame", async () => {
+test("extractBestFrame prefers the larger frame even when it is a BMP DIB (2026-09-04 fix)", async () => {
   const png = await makePng(48, 48);
   // 构造一个 64x64 的 BMP DIB 帧（biHeight 含 AND mask 双倍）
   const dibW = 64, dibH = 64;
@@ -108,9 +109,19 @@ test("extractBestFrame prefers a PNG frame over a larger BMP frame", async () =>
   writeIcoEntry(dir, 1, 64, dib.length, 6 + 2 * 16 + png.length, 24);
   const ico = Buffer.concat([dir, png, dib]);
 
+  // 历史缺陷：无条件 PNG 优先 → 混合 ICO（小 PNG + 大 BMP）只取 16/48px 小帧，
+  // 转出结果必然模糊。修复后按面积优先：64x64 BMP DIB 帧胜出。
   const frame = extractBestFrame(ico);
-  assert.equal(frame.png, true, "PNG frame must be preferred even if smaller");
-  assert.equal(frame.width, 48);
+  assert.equal(frame.png, false, "larger BMP frame must win over smaller PNG frame");
+  assert.equal(frame.width, 64);
+});
+
+test("selectBestEntry breaks same-size ties in favor of PNG frames", () => {
+  // 同尺寸时 PNG 优先（带 alpha、免 DIB 转换）
+  const mk = (png, size, len) => ({ width: size, height: size, png, bytes: len, offset: 0, data: Buffer.alloc(len) });
+  const entries = [mk(false, 32, 100), mk(true, 32, 50)];
+  const best = selectBestEntry(entries);
+  assert.equal(best.png, true);
 });
 
 test("extractBestFrame decodes a BMP DIB frame (no PNG frame present)", async () => {
