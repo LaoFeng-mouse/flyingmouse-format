@@ -155,7 +155,7 @@ function categoryForExt(rawExt) {
 
 function targetsForExt(rawExt, tools) {
   const category = categoryForExt(rawExt);
-  const targets = new Set(["zip"]);
+  const targets = new Set();
 
   if (category === "image") {
     imageFormatTargets.forEach((target) => targets.add(target));
@@ -183,13 +183,13 @@ function targetsForExt(rawExt, tools) {
   if (normalizeExt(rawExt) === "epub") {
     const epubTargets = ["txt", "md", "html"];
     if (tools.libreoffice) epubTargets.push("pdf", "docx");
-    return [...targets].filter((target) => [...epubTargets, "zip"].includes(target));
+    return [...targets].filter((target) => epubTargets.includes(target));
   }
   if (normalizeExt(rawExt) === "mobi" || normalizeExt(rawExt) === "azw3") {
-    return [...targets].filter((target) => ["epub", "txt", "md", "zip"].includes(target));
+    return [...targets].filter((target) => ["epub", "txt", "md"].includes(target));
   }
   if (normalizeExt(rawExt) === "fb2") {
-    return [...targets].filter((target) => ["txt", "md", "html", "epub", "zip"].includes(target));
+    return [...targets].filter((target) => ["txt", "md", "html", "epub"].includes(target));
   }
 
   if (category === "pdf") {
@@ -248,7 +248,7 @@ function targetsForExt(rawExt, tools) {
     const normalizedInput = normalizeExt(rawExt);
     if (category === "pdf" && target === "pdf") return true;
     if (category === "image" && ["gif", "webp"].includes(normalizedInput) && target === "tiff") return false;
-    return target !== normalizedInput || target === "zip";
+    return target !== normalizedInput;
   });
 }
 

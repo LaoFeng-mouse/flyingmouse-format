@@ -165,7 +165,7 @@ const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
 const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma", "ncm", "kgg", "mflac", "mgg", "mgg2", "kgma", "mmp4", "kwm", "vpr"]);
 // 加密音频解锁格式（DRM 规避）。商店版（Microsoft Store）构建时隐藏这些入口，降低法律风险。
 const unlockAudioInputs = new Set(["ncm", "kgg", "mflac", "mgg", "mgg2", "kgma", "mmp4", "kwm", "vpr"]);
-const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
+const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "m4s", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
@@ -185,8 +185,7 @@ const allTargets = new Set([
   ...spreadsheetTargets,
   ...presentationTargets,
   ...pdfTargets,
-  ...mediaTargets,
-  "zip"
+  ...mediaTargets
 ]);
 
 // 运行时下载登记表（downloadUrlFor 写入 / 路由读取，跨模块共享同一实例）。

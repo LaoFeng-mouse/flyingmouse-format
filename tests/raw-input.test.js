@@ -32,9 +32,10 @@ test("categoryForExt 把 RAW 扩展名归为 image", () => {
 test("targetsForExt 对 RAW 输入暴露图片类目标（与普通图片一致）", () => {
   const noEngines = { ffmpeg: false, ocr: false, poppler: false, libreoffice: false };
   const targets = targetsForExt("nef", noEngines);
-  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf", "zip"]) {
+  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "pdf"]) {
     assert.ok(targets.includes(expected), `nef 应可转 ${expected}`);
   }
+  assert.ok(!targets.includes("zip"), "zip 压缩目标已于 2026-09-04 移除");
   assert.ok(!targets.includes("mp4"), "无 ffmpeg 时不应暴露视频目标");
   const withEngines = targetsForExt("cr2", { ffmpeg: true, ocr: true, poppler: false, libreoffice: false });
   assert.ok(withEngines.includes("mp4") && withEngines.includes("txt"), "有 ffmpeg/ocr 时应暴露视频与 OCR 目标");

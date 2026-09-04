@@ -68,7 +68,7 @@ const {
   escapeHtml
 } = require("./utils");
 const { convertMedia, probeAudioTrack } = require("./media");
-const { zipFile, zipFiles, openZipEntries, readZipEntryToFile, listZipEntries } = require("./zip-util");
+const { zipFiles, openZipEntries, readZipEntryToFile, listZipEntries } = require("./zip-util");
 const {
   convertPdfDecrypt,
   assertPdfTableOcrQuality,
@@ -280,8 +280,7 @@ async function getTools() {
       poppler: await commandExists(PDFTOPPM_PATH, ["-v"]),
       ocr: ocrAvailable(),
       pdf: true,
-      sharp: true,
-      zip: true
+      sharp: true
     };
   }
   return cachedTools;
@@ -363,7 +362,7 @@ app.get("/api/capabilities", async (_req, res) => {
       pdf: { inputs: [...pdfInput].sort(), targets: [...pdfTextTargets.filter((t) => t !== "odt" || tools.libreoffice), ...(tools.poppler ? [...pdfImageTargets, "pdf"] : [])] },
       audio: { inputs: [...audioInput].filter((ext) => !process.windowsStore || !unlockAudioInputs.has(ext)).sort(), targets: mediaAudioTargets, experimentalInputs: experimentalInputsByCategory.audio },
       video: { inputs: [...videoInput].sort(), targets: mediaTargets },
-      any: { inputs: ["*"], targets: ["zip"] }
+      any: { inputs: ["*"], targets: [] }
     },
     optional: [
       { name: "LibreOffice", enabled: tools.libreoffice, formats: ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "wps", "pdf"] },
@@ -559,11 +558,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
   let conversionResult = { warnings: [] };
 
   try {
-    if (requestedTarget === "zip") {
-      const levelNum = Number(req.body?.compressionLevel);
-      const level = Number.isFinite(levelNum) ? Math.min(9, Math.max(0, levelNum)) : 6;
-      await zipFile(file.path, outputPath, originalName, level);
-    } else if (category === "image") {
+    if (category === "image") {
       conversionResult = await convertImage(file.path, outputPath, requestedTarget);
     } else if (category === "text") {
       if (["epub", "mobi", "azw3", "fb2"].includes(inputExt)) {
@@ -689,15 +684,6 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     }
     if (experimentalInputSet.has(inputExt)) {
       payload.warnings = [...(payload.warnings || []), experimentalInputWarning(inputExt)];
-    }
-    if (requestedTarget === "zip") {
-      const originalBytes = file.size || 0;
-      const compressedBytes = (await fsp.stat(outputPath)).size;
-      payload.originalBytes = originalBytes;
-      payload.compressedBytes = compressedBytes;
-      payload.compressionRatio = compressedBytes >= originalBytes
-        ? 0
-        : Math.round((1 - compressedBytes / originalBytes) * 100);
     }
     logger.info(`Convert succeeded: "${originalName}" -> ${downloadName} (${requestedTarget})`);
     res.json(payload);

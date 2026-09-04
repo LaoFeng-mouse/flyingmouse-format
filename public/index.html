@@ -79,16 +79,6 @@
             </label>
             <p class="format-hint" id="pdfExcelHint" data-i18n="pdfExcel.hint" hidden>适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。</p>
 
-            <label class="field" id="zipCompressionField" hidden>
-              <span data-i18n="zip.label">ZIP 压缩级别（0=不压缩，9=最大）</span>
-              <select id="zipCompression">
-                <option value="0" data-i18n="zip.0">0 不压缩（最快）</option>
-                <option value="1" data-i18n="zip.1">1 最快</option>
-                <option value="6" selected data-i18n="zip.6">6 标准（默认）</option>
-                <option value="9" data-i18n="zip.9">9 最大压缩（最慢）</option>
-              </select>
-            </label>
-
             <label class="field" id="videoCodecField" hidden>
               <span data-i18n="videoCodec.label">视频编码</span>
               <select id="videoCodec">
@@ -141,8 +131,6 @@
             </label>
 
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
-
-            <button class="ghost-button compress-folder-button" id="compressFolderButton" type="button" data-i18n="action.compressFolder">压缩文件夹</button>
 
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">

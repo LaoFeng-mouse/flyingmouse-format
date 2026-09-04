@@ -251,16 +251,16 @@ test("PDF split mode exposes page/group options and a group-size field bilingual
   assert.match(app, /pdfSplitMode\.addEventListener\("change", syncPdfActionFields\)/);
 });
 
-test("folder compression is exposed through the trusted bridge bilingually", () => {
+test("folder compression is removed from the UI (2026-09-04 feature removal)", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
-  assert.match(html, /id="compressFolderButton"/);
-  assert.match(app, /"action\.compressFolder": "压缩文件夹"/);
-  assert.match(app, /"action\.compressFolder": "Compress folder"/);
-  assert.match(app, /"compressFolder\.saved": "已压缩 \{count\} 个文件到：\{path\}"/);
-  assert.match(app, /"compressFolder\.saved": "Compressed \{count\} files to: \{path\}"/);
-  assert.match(app, /logBridge\.compressFolder/);
-  assert.match(app, /compressFolderButton\.addEventListener\("click"/);
+  const css = readPublic("styles.css");
+  assert.doesNotMatch(html, /compressFolderButton/);
+  assert.doesNotMatch(html, /zipCompressionField/);
+  assert.doesNotMatch(app, /compressFolder/);
+  assert.doesNotMatch(app, /zipCompression/);
+  assert.doesNotMatch(app, /"zip\./);
+  assert.doesNotMatch(css, /compress-folder-button/);
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
