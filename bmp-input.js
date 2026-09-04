@@ -68,16 +68,34 @@ function decodeBmpToRaw(buffer) {
     }
   }
 
+  // 32bpp 且存在非零 alpha 字节时按 BGRA 输出 4 通道（ICO 内嵌 DIB / 带透明的 BMP）；
+  // 全零 alpha 的 32bpp BMP 是主流写法（alpha 未使用），保持 RGB 输出避免整图透明。
+  // 扫描严格限制在每行的 width*4 像素区内：跳过行尾 padding，也绝不越过像素区
+  // （ICO DIB 帧的 buffer 末尾还有 AND mask，非零 mask 位不能误触发 alpha 检测）。
+  let useAlpha = false;
+  if (bitCount === 32) {
+    outer: for (let row = 0; row < height; row += 1) {
+      const rowStart = pixelOffset + row * rowBytes;
+      for (let col = 0; col < width; col += 1) {
+        if (buffer[rowStart + col * 4 + 3] !== 0) {
+          useAlpha = true;
+          break outer;
+        }
+      }
+    }
+  }
+  const channels = useAlpha ? 4 : 3;
+
   const required = pixelOffset + rowBytes * height;
   if (buffer.length < required) throw new Error("BMP 像素数据不完整。");
 
-  const output = Buffer.alloc(width * height * 3);
+  const output = Buffer.alloc(width * height * channels);
   const pixelsPerRow = Math.ceil((width * bitCount) / 8);
 
   for (let row = 0; row < height; row += 1) {
     const sourceRow = topDown ? row : height - 1 - row;
     const srcStart = pixelOffset + sourceRow * rowBytes;
-    const dstStart = row * width * 3;
+    const dstStart = row * width * channels;
     let srcIndex = srcStart;
     let dstIndex = dstStart;
 
@@ -94,8 +112,9 @@ function decodeBmpToRaw(buffer) {
         output[dstIndex] = buffer[srcIndex + 2];
         output[dstIndex + 1] = buffer[srcIndex + 1];
         output[dstIndex + 2] = buffer[srcIndex];
+        if (useAlpha) output[dstIndex + 3] = buffer[srcIndex + 3];
         srcIndex += 4;
-        dstIndex += 3;
+        dstIndex += channels;
       }
     } else if (bitCount === 8) {
       for (let col = 0; col < width; col += 1) {
@@ -129,7 +148,7 @@ function decodeBmpToRaw(buffer) {
     }
   }
 
-  return { width, height, channels: 3, data: output };
+  return { width, height, channels, data: output };
 }
 
 async function readBmpAsRaw(inputPath) {

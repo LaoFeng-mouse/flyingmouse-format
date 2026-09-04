@@ -94,14 +94,35 @@ test("negative height BMP is top-down and keeps row order", () => {
   assert.deepEqual(pixelAt(raw.data, 2, 1, 0), [0, 255, 0]);
 });
 
-test("32-bit BMP decodes BGRA pixels as RGB", () => {
+test("32-bit BMP with non-zero alpha decodes as RGBA (4 channels)", () => {
   const rowBytes = 8; // 2 pixels x 4 bytes
   const pixels = Buffer.alloc(rowBytes * 2);
-  Buffer.from([0, 0, 255, 0, 0, 255, 0, 0]).copy(pixels, 0);
-  Buffer.from([255, 0, 0, 255, 255, 255, 255, 255]).copy(pixels, rowBytes);
+  Buffer.from([0, 0, 255, 128, 0, 255, 0, 255]).copy(pixels, 0);
+  Buffer.from([255, 0, 0, 255, 255, 255, 255, 64]).copy(pixels, rowBytes);
   const bmp = makeBmp({ width: 2, height: 2, bitCount: 32, pixels });
 
   const raw = decodeBmpToRaw(bmp);
+  assert.equal(raw.channels, 4, "non-zero alpha must switch to 4 channels");
+  const px = (x, y) => {
+    const start = (y * 2 + x) * 4;
+    return [raw.data[start], raw.data[start + 1], raw.data[start + 2], raw.data[start + 3]];
+  };
+  // 文件底行在前（bottom-up）：底行 = 红(a=128)/绿(a=255)，顶行 = 蓝(a=255)/白(a=64)
+  assert.deepEqual(px(0, 0), [0, 0, 255, 255]);
+  assert.deepEqual(px(1, 0), [255, 255, 255, 64]);
+  assert.deepEqual(px(0, 1), [255, 0, 0, 128]);
+  assert.deepEqual(px(1, 1), [0, 255, 0, 255]);
+});
+
+test("32-bit BMP with all-zero alpha stays RGB (legacy files unaffected)", () => {
+  const rowBytes = 8; // 2 pixels x 4 bytes
+  const pixels = Buffer.alloc(rowBytes * 2);
+  Buffer.from([0, 0, 255, 0, 0, 255, 0, 0]).copy(pixels, 0);
+  Buffer.from([255, 0, 0, 0, 255, 255, 255, 0]).copy(pixels, rowBytes);
+  const bmp = makeBmp({ width: 2, height: 2, bitCount: 32, pixels });
+
+  const raw = decodeBmpToRaw(bmp);
+  assert.equal(raw.channels, 3, "all-zero alpha must stay 3 channels");
   assert.deepEqual(pixelAt(raw.data, 2, 0, 1), [255, 0, 0]);
   assert.deepEqual(pixelAt(raw.data, 2, 1, 1), [0, 255, 0]);
   assert.deepEqual(pixelAt(raw.data, 2, 0, 0), [0, 0, 255]);

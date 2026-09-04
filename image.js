@@ -97,8 +97,8 @@ async function prepareImageInput(inputPath) {
     if (frame.png) {
       await fsp.writeFile(pngPath, frame.data);
     } else {
-      const { width, height, data } = decodeBmpToRaw(frame.data);
-      await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
+      const { width, height, channels, data } = decodeBmpToRaw(frame.data);
+      await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
         .png()
         .toFile(pngPath);
     }
@@ -106,10 +106,10 @@ async function prepareImageInput(inputPath) {
   }
 
   if (isBmpFileSync(inputPath)) {
-    const { width, height, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
+    const { width, height, channels, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
     const pngPath = path.join(tempDir, "decoded.png");
-    await sharp(data, { raw: { width, height, channels: 3 }, limitInputPixels: LIMITS.maxImagePixels })
+    await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
       .png()
       .toFile(pngPath);
     return { inputPath: pngPath, tempDir };
@@ -259,10 +259,20 @@ async function readImageForPdf(inputPath) {
   // 先读文件头判断，避免把非 BMP 大图整读进内存。
   if (isBmpFileSync(inputPath)) {
     const rawBmp = decodeBmpToRaw(fs.readFileSync(inputPath));
+    let data = rawBmp.data;
+    // PDF 位图流按 RGB 三通道写入：带 alpha 的 32bpp BMP（decodeBmpToRaw 输出 4 通道）
+    // 必须先剥掉 alpha 拍平为 RGB，否则每行多一字节导致整图错位。
+    if (rawBmp.channels === 4) {
+      const rgb = Buffer.alloc(rawBmp.width * rawBmp.height * 3);
+      for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+        rgb[j] = data[i]; rgb[j + 1] = data[i + 1]; rgb[j + 2] = data[i + 2];
+      }
+      data = rgb;
+    }
     return {
       width: rawBmp.width,
       height: rawBmp.height,
-      data: zlib.deflateSync(rawBmp.data)
+      data: zlib.deflateSync(data)
     };
   }
 
