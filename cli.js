@@ -11,7 +11,6 @@ const VALUE_OPTIONS = new Map([
   ["--to", "to"],
   ["--output", "output"],
   ["--output-dir", "outputDir"],
-  ["--compression-level", "compressionLevel"],
   ["--video-codec", "videoCodec"],
   ["--pdf-action", "pdfAction"],
   ["--password", "password"]
@@ -29,7 +28,6 @@ Usage:
 Options:
   --output <file>             Single-result output path
   --output-dir <directory>    Output directory for one or more results
-  --compression-level <0-9>   ZIP compression level
   --video-codec <h264|h265|av1>
   --pdf-action <encrypt|decrypt>
   --password <password>       PDF password (never printed in JSON output)
@@ -283,7 +281,6 @@ async function executeCli(parsed, runtime) {
       for (const file of parsed.files) {
         results.push(await postMultipart(`${baseUrl}/api/convert`, {
           targetFormat: parsed.options.to,
-          compressionLevel: parsed.options.compressionLevel,
           videoCodec: parsed.options.videoCodec,
           pdfAction: parsed.options.pdfAction,
           password: parsed.options.password

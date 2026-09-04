@@ -481,10 +481,6 @@ select {
   color: var(--muted);
 }
 
-.compress-folder-button {
-  width: 100%;
-}
-
 button:focus-visible,
 a:focus-visible,
 select:focus-visible,

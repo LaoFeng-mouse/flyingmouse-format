@@ -775,7 +775,7 @@ test("audio files must not offer video container targets", async () => {
   assert.ok(!body.targets.includes("mkv"), `mp3 must not offer mkv, got ${body.targets.join(",")}`);
   assert.ok(!body.targets.includes("mov"), `mp3 must not offer mov, got ${body.targets.join(",")}`);
   assert.ok(body.targets.includes("wav"), "mp3 must still offer wav");
-  assert.ok(body.targets.includes("zip"), "mp3 must still offer zip");
+  assert.ok(!body.targets.includes("zip"), "mp3 must no longer offer zip (feature removed)");
 });
 
 test("video files keep both audio and video targets", async () => {
@@ -1398,39 +1398,14 @@ test("converts a DOCX to PDF via LibreOffice", async () => {
 
 
 
-test("zip conversion honors compression level and reports sizes", async () => {
-  const sourcePath = path.join(scratchRoot, "压缩样本.txt");
-  await fsp.writeFile(sourcePath, "compress me ".repeat(4000), "utf8");
-  const beforeHash = hashFile(sourcePath);
-
-  async function convertZip(level) {
-    const form = new FormData();
-    form.append("file", new Blob([await fsp.readFile(sourcePath)], { type: "text/plain" }), "压缩样本.txt");
-    form.append("targetFormat", "zip");
-    if (level != null) form.append("compressionLevel", String(level));
-    const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
-    const body = await parseBody(response);
-    assert.strictEqual(response.status, 200, body.error);
-    return body;
-  }
-
-  const store = await convertZip(0);
-  const max = await convertZip(9);
-
-  assert.ok(store.originalBytes > 0, "zip response must report originalBytes");
-  assert.ok(store.compressedBytes > 0, "zip response must report compressedBytes");
-  assert.ok(typeof store.compressionRatio === "number", "zip response must report compressionRatio");
-
-  const storePath = await downloadResult(store, "store.zip");
-  const maxPath = await downloadResult(max, "max.zip");
-  const storeSize = (await fsp.stat(storePath)).size;
-  const maxSize = (await fsp.stat(maxPath)).size;
-  assert.ok(maxSize < storeSize, `level 9 (${maxSize}) must be smaller than level 0 (${storeSize}) for text`);
-  assert.ok(max.compressionRatio > store.compressionRatio, "level 9 ratio must exceed level 0 ratio");
-  assert.strictEqual(hashFile(sourcePath), beforeHash);
-
-  const defaultZip = await convertZip(null);
-  assert.strictEqual(defaultZip.fileName, "压缩样本.zip");
+test("zip is no longer offered as a conversion target (2026-09-04 removal)", async () => {
+  const form = new FormData();
+  form.append("file", new Blob(["compress me ".repeat(100)], { type: "text/plain" }), "压缩样本.txt");
+  form.append("targetFormat", "zip");
+  const response = await fetch(`${baseUrl}/api/convert`, { method: "POST", body: form });
+  assert.strictEqual(response.status, 400);
+  const body = await parseBody(response);
+  assert.strictEqual(body.errorCode, "UNSUPPORTED_TARGET");
 });
 
 // ---- v0.3.5 审计修复回归：BMP/CSV-MD/XML/YAML/HTML-DOCX/XLSX-CSV/扫描PDF-DOCX ----

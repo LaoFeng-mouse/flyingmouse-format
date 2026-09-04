@@ -128,7 +128,7 @@ function categoryForExt(rawExt) {
 
 function targetsForExt(rawExt, tools) {
   const category = categoryForExt(rawExt);
-  const targets = new Set(["zip"]);
+  const targets = new Set();
 
   if (category === "image") {
     imageFormatTargets.forEach((target) => targets.add(target));
@@ -152,7 +152,7 @@ function targetsForExt(rawExt, tools) {
 
   // 电子书输入（EPUB/MOBI）是二进制容器，仅支持文本类目标；MOBI 只支持 EPUB/TXT/MD。
   if (["epub", "mobi"].includes(normalizeExt(rawExt))) {
-    return [...targets].filter((target) => ["epub", "txt", "md", "zip"].includes(target));
+    return [...targets].filter((target) => ["epub", "txt", "md"].includes(target));
   }
 
   if (category === "pdf") {
@@ -208,7 +208,7 @@ function targetsForExt(rawExt, tools) {
     const normalizedInput = normalizeExt(rawExt);
     if (category === "pdf" && target === "pdf") return true;
     if (category === "image" && ["gif", "webp"].includes(normalizedInput) && target === "tiff") return false;
-    return target !== normalizedInput || target === "zip";
+    return target !== normalizedInput;
   });
 }
 

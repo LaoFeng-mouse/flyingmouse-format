@@ -162,7 +162,7 @@ const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "
 // 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
 // （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
 // DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。
-const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "wmv", "flv"]);
+const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "m4s", "wmv", "flv"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
@@ -182,8 +182,7 @@ const allTargets = new Set([
   ...spreadsheetTargets,
   ...presentationTargets,
   ...pdfTargets,
-  ...mediaTargets,
-  "zip"
+  ...mediaTargets
 ]);
 
 // 运行时下载登记表（downloadUrlFor 写入 / 路由读取，跨模块共享同一实例）。

@@ -49,17 +49,17 @@ test("ofd 注册为 document 输入类别", () => {
   assert.equal(extFromName("某电子发票.ofd"), "ofd");
 });
 
-test("ofd 目标格式仅限 pdf（+通用 zip）", () => {
+test("ofd 目标格式仅限 pdf（zip 目标已于 2026-09-04 移除）", () => {
   const targets = targetsForExt("ofd", {});
   assert.ok(targets.includes("pdf"));
-  assert.ok(targets.includes("zip"));
+  assert.ok(!targets.includes("zip"), "zip 压缩目标已删除，不应再暴露");
   // 不依赖 LibreOffice，也不会暴露 LO 的 docx/odt/rtf/txt/html/md 等无效目标
   for (const forbidden of ["docx", "odt", "rtf", "txt", "html", "md", "png", "jpg"]) {
     assert.ok(!targets.includes(forbidden), `ofd 不应支持目标 ${forbidden}`);
   }
   // 即使 LO 可用也不多给目标
   const withLo = targetsForExt("ofd", { libreoffice: true });
-  assert.deepEqual([...withLo].sort(), ["pdf", "zip"]);
+  assert.deepEqual([...withLo].sort(), ["pdf"]);
 });
 
 // ---------- 转换模块 ----------

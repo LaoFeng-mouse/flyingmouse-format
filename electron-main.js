@@ -13,7 +13,6 @@ const logger = require("./logger");
 const { buildDiagnosticsReport } = require("./diagnostics");
 const { discoverSkillRoots, installAgentSkill } = require("./agent-skill-installer");
 const { resolveRuntimePaths } = require("./runtime-paths");
-const { zipDirectory } = require("./zip-util");
 const {
   mergeLegacySettings,
   readLastSaveDirectory,
@@ -383,39 +382,6 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
     .catch((error) => log("Failed to remember save directory", error));
 
   return { canceled: false, directory, savedCount: saved.length, files: saved };
-});
-
-ipcMain.handle("compress-folder", async (event, payload) => {
-  assertTrustedIpc(event);
-  const level = Math.min(9, Math.max(0, Number.isFinite(Number(payload?.compressionLevel)) ? Number(payload.compressionLevel) : 6));
-
-  const openResult = await dialog.showOpenDialog(mainWindow, {
-    title: "选择要压缩的文件夹",
-    buttonLabel: "选择这个文件夹",
-    properties: ["openDirectory"]
-  });
-  const folderPath = openResult.filePaths?.[0];
-  if (openResult.canceled || !folderPath) {
-    return { canceled: true };
-  }
-
-  const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
-  const folderName = path.basename(folderPath) || "folder";
-  const saveResult = await dialog.showSaveDialog(mainWindow, {
-    title: "保存压缩包",
-    defaultPath: path.join(lastSaveDirectory, `${folderName}.zip`),
-    buttonLabel: "保存",
-    filters: [{ name: "ZIP 压缩包", extensions: ["zip"] }]
-  });
-  if (saveResult.canceled || !saveResult.filePath) {
-    return { canceled: true };
-  }
-
-  const fileCount = await zipDirectory(folderPath, saveResult.filePath, level);
-  await writeLastSaveDirectory(settingsPath, path.dirname(saveResult.filePath))
-    .catch((error) => log("Failed to remember save directory", error));
-
-  return { canceled: false, filePath: saveResult.filePath, fileCount };
 });
 
 // Renderer forwards uncaught errors / console diagnostics here so they land

@@ -48,8 +48,6 @@ const fileName = document.querySelector("#fileName");
 const fileMeta = document.querySelector("#fileMeta");
 const targetSelect = document.querySelector("#targetSelect");
 const pdfExcelHint = document.querySelector("#pdfExcelHint");
-const zipCompressionField = document.querySelector("#zipCompressionField");
-const zipCompression = document.querySelector("#zipCompression");
 const videoCodecField = document.querySelector("#videoCodecField");
 const videoCodec = document.querySelector("#videoCodec");
 const alphaBackgroundField = document.querySelector("#alphaBackgroundField");
@@ -88,7 +86,6 @@ const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
-const compressFolderButton = document.querySelector("#compressFolderButton");
 const agentInstallButton = document.querySelector("#agentInstallButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
 const {
@@ -117,15 +114,11 @@ const messages = {
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
-    "action.save": "保存", "action.saveAll": "保存全部", "action.compressFolder": "压缩文件夹",
-    "compressFolder.saved": "已压缩 {count} 个文件到：{path}",
-    "compressFolder.canceled": "已取消压缩文件夹。", "compressFolder.failed": "压缩文件夹失败：{message}",
+    "action.save": "保存", "action.saveAll": "保存全部",
     "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
     "pdfExcel.hint": "适合电子版规则表格；扫描件、复杂表头和合并单元格可能不完整。",
     "formats.experimental": "实验性/尚未完整验证的输入：{formats}",
-    "zip.label": "ZIP 压缩级别（0=不压缩，9=最大）", "zip.0": "0 不压缩（最快）",
-    "zip.1": "1 最快", "zip.6": "6 标准（默认）", "zip.9": "9 最大压缩（最慢）",
     "videoCodec.label": "视频编码", "videoCodec.h264": "H.264（兼容性最好，默认）",
     "videoCodec.h265": "H.265（体积更小）", "videoCodec.av1": "AV1（压缩率最高）",
     "alphaBackground.label": "透明背景色（带透明通道的视频转码时合成）",
@@ -165,15 +158,11 @@ const messages = {
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
-    "action.save": "Save", "action.saveAll": "Save all", "action.compressFolder": "Compress folder",
-    "compressFolder.saved": "Compressed {count} files to: {path}",
-    "compressFolder.canceled": "Folder compression canceled.", "compressFolder.failed": "Folder compression failed: {message}",
+    "action.save": "Save", "action.saveAll": "Save all",
     "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
     "pdfExcel.hint": "Best for digital PDFs with regular tables. Scans, complex headers, and merged cells may be incomplete.",
     "formats.experimental": "Experimental/unverified inputs: {formats}",
-    "zip.label": "ZIP compression level (0=none, 9=maximum)", "zip.0": "0 None (fastest)",
-    "zip.1": "1 Fastest", "zip.6": "6 Standard (default)", "zip.9": "9 Maximum (slowest)",
     "videoCodec.label": "Video codec", "videoCodec.h264": "H.264 (best compatibility, default)",
     "videoCodec.h265": "H.265 (smaller size)", "videoCodec.av1": "AV1 (highest compression)",
     "alphaBackground.label": "Transparent background (composited when transcoding videos with alpha)",
@@ -605,11 +594,6 @@ function setBatchResult(index, patch) {
   renderBatchList();
 }
 
-function syncZipCompressionField() {
-  if (!zipCompressionField || !zipCompression) return;
-  zipCompressionField.hidden = targetSelect.value !== "zip";
-}
-
 function syncVideoCodecField() {
   if (!videoCodecField || !videoCodec) return;
   videoCodecField.hidden = !["mp4", "mov", "mkv"].includes(targetSelect.value);
@@ -721,7 +705,6 @@ async function acceptFiles(fileList) {
         ? (i18n.language === "en-US" ? "No target format is available for this file." : "这个文件当前没有可用转换格式。")
         : (i18n.language === "en-US" ? "These files have no common target format. Batch files of the same type or select fewer files." : "这些文件没有共同的目标格式。请分成同类型文件批量转换，或减少选择的文件。"),
       "error");
-      syncZipCompressionField();
       syncVideoCodecField();
       syncPdfActionFields();
       syncImagePdfModeField();
@@ -750,7 +733,6 @@ async function acceptFiles(fileList) {
 
     targetSelect.disabled = false;
     convertButton.disabled = false;
-    syncZipCompressionField();
     syncVideoCodecField();
     syncPdfActionFields();
     syncImagePdfModeField();
@@ -808,9 +790,6 @@ async function convertOneFile(file, targetFormat) {
   const form = new FormData();
   form.append("file", file);
   form.append("targetFormat", targetFormat);
-  if (targetFormat === "zip") {
-    form.append("compressionLevel", zipCompression?.value || "6");
-  }
   if (["mp4", "mov", "mkv"].includes(targetFormat)) {
     form.append("videoCodec", videoCodec?.value || "h264");
   }
@@ -1039,9 +1018,6 @@ async function convertCurrentFiles() {
       const result = await convertOneFile(file, targetFormat);
       successCount += 1;
       let detail = result.fileName;
-      if (targetFormat === "zip" && result.compressionRatio != null) {
-        detail += `（${formatSize(result.originalBytes || 0)} → ${formatSize(result.compressedBytes || 0)}，压缩 ${result.compressionRatio}%）`;
-      }
       const warnings = localizedWarnings(result);
       if (warnings.length) detail += ` — ${warnings.join("；")}`;
       setBatchResult(index, { status: "success", detail, result });
@@ -1371,7 +1347,6 @@ languageSelect.addEventListener("change", async () => {
   refreshLanguage();
 });
 targetSelect.addEventListener("change", async () => {
-  syncZipCompressionField();
   syncVideoCodecField();
   syncPdfActionFields();
   syncImagePdfModeField();
@@ -1442,27 +1417,6 @@ diagnosticsButton.addEventListener("click", async () => {
     rendererLog("error", "导出诊断失败", error);
   } finally {
     diagnosticsButton.disabled = false;
-  }
-});
-
-compressFolderButton.addEventListener("click", async () => {
-  if (typeof logBridge.compressFolder !== "function") {
-    setStatus(t("compressFolder.failed", { message: "compression is only available in the desktop app" }), "error");
-    return;
-  }
-  compressFolderButton.disabled = true;
-  try {
-    const result = await logBridge.compressFolder({ compressionLevel: 6 });
-    if (result?.canceled) {
-      setStatus(t("compressFolder.canceled"));
-    } else {
-      setStatus(t("compressFolder.saved", { count: result.fileCount, path: result.filePath }), "success");
-    }
-  } catch (error) {
-    setStatus(t("compressFolder.failed", { message: error.message || "unknown" }), "error");
-    rendererLog("error", "压缩文件夹失败", error);
-  } finally {
-    compressFolderButton.disabled = false;
   }
 });
 

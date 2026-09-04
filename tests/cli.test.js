@@ -13,14 +13,13 @@ const {
 test("CLI parses conversion, merge, JSON, and engine options", () => {
   const parsed = parseCliArgs([
     "convert", "一.txt", "二.txt", "--to", "md", "--output-dir", "out",
-    "--compression-level", "9", "--video-codec", "h265", "--pdf-action", "decrypt",
+    "--video-codec", "h265", "--pdf-action", "decrypt",
     "--password", "secret", "--json"
   ]);
   assert.equal(parsed.command, "convert");
   assert.deepEqual(parsed.files, ["一.txt", "二.txt"]);
   assert.equal(parsed.options.to, "md");
   assert.equal(parsed.options.outputDir, "out");
-  assert.equal(parsed.options.compressionLevel, "9");
   assert.equal(parsed.options.videoCodec, "h265");
   assert.equal(parsed.options.pdfAction, "decrypt");
   assert.equal(parsed.options.password, "secret");
