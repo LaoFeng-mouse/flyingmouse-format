@@ -89,6 +89,7 @@
       "runtime-paths.js",
       "image-conversion.js",
       "bmp-input.js",
+      "bmp-output.js",
       "ico-format.js",
       "xml-json.js",
       "ebook.js",
