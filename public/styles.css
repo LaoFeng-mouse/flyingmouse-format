@@ -1239,3 +1239,18 @@ input:focus-visible {
   border-radius: 8px;
   border: 1px solid #eee2c8;
 }
+
+.sponsor-adapter-label {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #8a7248;
+  font-weight: 600;
+}
+
+.sponsor-qr-adapter {
+  width: 190px;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #eee2c8;
+  margin-top: 4px;
+}
