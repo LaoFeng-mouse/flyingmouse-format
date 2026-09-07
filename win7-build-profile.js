@@ -42,7 +42,8 @@ const REQUIRED_RUNTIME_FILES = [
   "pdf-table.js",
   "pdf.js",
   "text-docx.js",
-  "office-convert.js"
+  "office-convert.js",
+  "caj-convert.js"
 ];
 
 function cloneJson(value) {

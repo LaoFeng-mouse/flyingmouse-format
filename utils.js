@@ -21,6 +21,8 @@ const {
   ofdOnlyPdfTargets,
   spreadsheetInput,
   spreadsheetTargets,
+  cajInput,
+  cajTargets,
   presentationInput,
   presentationTargets,
   pdfInput,
@@ -128,6 +130,7 @@ function categoryForExt(rawExt) {
   if (pdfInput.has(ext) || pdfInput.has(rawExt)) return "pdf";
   if (documentInput.has(ext) || documentInput.has(rawExt)) return "document";
   if (spreadsheetInput.has(ext) || spreadsheetInput.has(rawExt)) return "spreadsheet";
+  if (cajInput.has(ext) || cajInput.has(rawExt)) return "caj";
   if (presentationInput.has(ext) || presentationInput.has(rawExt)) return "presentation";
   if (textInput.has(ext) || textInput.has(rawExt)) return "text";
   if (audioInput.has(ext) || audioInput.has(rawExt)) return "audio";
@@ -187,6 +190,8 @@ function targetsForExt(rawExt, tools) {
   if (category === "spreadsheet" && tools.libreoffice) {
     spreadsheetTargets.forEach((target) => targets.add(target));
   }
+
+  if (category === "caj") cajTargets.forEach((target) => targets.add(target));
 
   if (["csv", "tsv"].includes(normalizeExt(rawExt))) {
     textTargets.forEach((target) => targets.add(target));

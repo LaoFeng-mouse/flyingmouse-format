@@ -21,7 +21,7 @@
 
 - 鼠鼠原版界面：鼠鼠会跟随上传、识别、批量、OCR、转换成功或失败切换状态。
 - 本地离线转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器。
-- 支持图片、文本、Word/WPS、Excel/WPS、PPT/WPS、PDF、音频、视频和 ZIP。
+- 支持图片、文本、Word/WPS、Excel/WPS、PPT/WPS、PDF、CAJ、音频、视频和 ZIP。
 - 音频转换：支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA 等普通格式互转；**不支持其他音乐平台的加密特殊格式**（如 NCM / KGG / mflac / kgma / kwm 等）。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
@@ -190,6 +190,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 | Excel/WPS | xls, xlsx, xlsm, ods, csv, tsv, et, ett | pdf, xlsx, xls, ods, csv, html |
 | PPT/WPS | ppt, pptx, odp, dps, dpt | pdf, pptx, odp, html, png, jpg (逐页转图 zip) |
 | PDF | pdf | xlsx, docx, txt, html, png, jpg, split/解密 PDF |
+| CAJ（知网） | caj | pdf（标准 CAJ；HN/C8/KDH/TEB 暂不支持） |
 | Audio / 音频 | mp3, wav, flac, m4a, aac, ogg, opus, wma | mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | Video / 视频 | mp4, mov, mkv, webm, avi, m4v, wmv, flv | mp4, webm, mkv, mov, gif, mp3, wav, flac, m4a, ogg, aac, opus, wma |
 | ZIP / 压缩包 | zip | pdf (图片合并) |
