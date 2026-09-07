@@ -96,8 +96,11 @@ function decodeUploadFileName(name = "") {
   // GBK mojibake：命令行/某些上传场景（curl -F filename、微信传输文件名、老
   // 客户端）会用系统代码页（中文 Windows = GBK/936）编码文件名，multer 按
   // latin1 解码后出现 °×À¼µÄ 这类字符（2026-08-14 实测：中文文件名上传返回
-  // 乱码）。仅当文件名含高字节 latin1 字符（≥0x80）时按 GBK 再解一次。
-  if ([...original].some((ch) => ch.charCodeAt(0) >= 0x80)) {
+  // 乱码）。护栏：只有「高字节成对相邻」时才尝试 GBK。真正的 GBK 中文名每个汉字占两个
+  // ≥0x80 字节，必然出现相邻高字节；真 latin1 西欧名里高字节是孤立的（前后都是
+  // ASCII 字母），无此护栏时 0xF8 0x72（ø + r）恰好是合法 GBK 序列，
+  // Bjørn Åsnes.flac 会被错解成 Bj鴕n 舠nes.flac（2026-08-31 实测并修复）。
+  if (/[\u0080-\u00ff]{2}/.test(original)) {
     try {
       const bytes = Buffer.from(original, "latin1");
       const decoded = new TextDecoder("gbk").decode(bytes);

@@ -48,3 +48,24 @@ test("extFromName / safeBaseName 对中文名正常", () => {
   assert.equal(safeBaseName("白兰的-得意的笑.mp3"), "白兰的-得意的笑");
   assert.equal(safeBaseName("Zhen Zhen （半夏水玉）-目瑙纵歌.kwm"), "Zhen Zhen （半夏水玉）-目瑙纵歌");
 });
+
+test("decodeUploadFileName 还原非中文多字节文件名（韩文/阿文/俄文/emoji）", () => {
+  // 2026-08-31（满血线 2f0b7c6 同步）：旧「白名单」判据漏韩/阿/俄文，上传后成乱码。
+  const asMojibake = (text) => Buffer.from(text, "utf8").toString("latin1");
+  for (const name of [
+    "한국어 노래.mp3",
+    "الملف العربي.pdf",
+    "русский документ.docx",
+    "🎵 favourite song 🎧.flac",
+    "混合 mixed 한글 عربى.epub"
+  ]) {
+    assert.equal(decodeUploadFileName(asMojibake(name)), name, `未还原：${name}`);
+  }
+});
+
+test("decodeUploadFileName 不动真正的 latin1/西欧文件名", () => {
+  // 真 latin1 高字节是孤立出现的；成对相邻才算 GBK（Bjørn Åsnes 回归护栏）。
+  for (const name of ["Café Ambiance.mp3", "Bjørn Åsnes.flac", "Müller Straße.pdf"]) {
+    assert.equal(decodeUploadFileName(name), name, `被误改：${name}`);
+  }
+});
