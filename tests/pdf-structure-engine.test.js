@@ -122,6 +122,26 @@ for (const [name, failure] of [
   });
 }
 
+// 2026-09-07：引擎 segfault（SIGSEGV，重跑可成功）与 10 分钟超时（需拆文件）
+// 的用户动作不同，文案必须区分；两者错误码保持 PDF_STRUCTURE_PARSE_FAILED 不变。
+test("separates timeout and engine-crash user messages", async (t) => {
+  const harness = await createHarness(t);
+  const cases = [
+    [Object.assign(new Error("timed out"), { code: "ETIMEDOUT", killed: true }), "超时"],
+    [Object.assign(new Error("crashed"), { code: null, signal: "SIGSEGV", killed: false }), "意外退出"]
+  ];
+  for (const [failure, needle] of cases) {
+    await assert.rejects(
+      withStructuredPdf(harness.inputPath, options(harness, async () => { throw failure; }), async () => {}),
+      (error) => {
+        assert.equal(error.code, "PDF_STRUCTURE_PARSE_FAILED");
+        assert.ok(String(error.messages?.zhCN || "").includes(needle), `expected "${needle}" in ${error.messages?.zhCN}`);
+        return true;
+      }
+    );
+  }
+});
+
 test("collapses engine exit status and output without retaining a cause", async (t) => {
   const harness = await createHarness(t);
   const privateFailure = Object.assign(new Error("private source path"), {

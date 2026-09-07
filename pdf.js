@@ -201,13 +201,32 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
   if (target === "docx" || target === "xlsx") {
     const classification = await (options.classifyPdf || classifyPdf)(inputPath);
     if (classification.kind !== "native") {
-      await (options.convertStructuredPdf || convertStructuredPdf)({
-        inputPath,
-        outputPath,
-        target,
-        classification,
-        options
-      });
+      try {
+        await (options.convertStructuredPdf || convertStructuredPdf)({
+          inputPath,
+          outputPath,
+          target,
+          classification,
+          options
+        });
+      } catch (error) {
+        // 图片型 PDF（无文字层，含「图片→PDF」的产物）走结构化引擎可能失败/崩溃。
+        // docx 回落纯 OCR 段落（与 txt/html 的扫描件链路同源），不阻断转换；
+        // xlsx 无可靠回落（宁可不给也不给错表），只补一条可行动的指引文案。
+        if (target === "docx" && error?.code === "PDF_STRUCTURE_PARSE_FAILED") {
+          logger.warn(`扫描件结构化 docx 失败，回落 OCR 段落：${inputPath}`, error);
+          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath);
+          return;
+        }
+        if (target === "xlsx" && error?.code === "PDF_TABLE_NOT_DETECTED") {
+          throw structureError(
+            "PDF_TABLE_NOT_DETECTED",
+            "未在该 PDF 中检测到表格，无法生成 Excel。若它是由图片合成的 PDF 或扫描件，请改用「PDF 转 Word」或「PDF 转 TXT」（走 OCR 识别文字）。",
+            "No editable table was detected in this PDF. If it was assembled from images or is a scan, convert it to Word or TXT instead (OCR path)."
+          );
+        }
+        throw error;
+      }
       return;
     }
   }

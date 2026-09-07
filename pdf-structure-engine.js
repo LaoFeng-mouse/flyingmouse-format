@@ -5,6 +5,7 @@ const { promisify } = require("node:util");
 
 const { RUNTIME_DIR, DOCSTRUCTURE_ENGINE_PATH, DOCSTRUCTURE_MODEL_DIR } = require("./config");
 const { structureError, validateStructureManifest } = require("./pdf-structure-contract");
+const logger = require("./logger");
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024;
@@ -66,9 +67,25 @@ function createStructuredPdfBoundary(dependencies = {}) {
         maxBuffer: DEFAULT_MAX_BUFFER_BYTES,
         windowsHide: true
       });
-    } catch {
-      // Engine status/stdout/stderr/cause are intentionally collapsed and discarded.
-      throw stableError("PDF_STRUCTURE_PARSE_FAILED");
+    } catch (cause) {
+      // 引擎崩溃/超时以前被压成一句无信息量的失败文案（2026-09-07 实测 docstructure
+      // 引擎对无文字层 PDF 偶发 segfault exit 139，重跑又能成功）。保留折叠语义
+      // （不透传 stderr 给界面），但把退出码/信号写进 debug.log 供诊断，并按
+      // 超时 vs 崩溃给出可区分的用户文案。超时=SIGTERM/SIGKILL 且 ETIMEDOUT；
+      // 崩溃=SIGSEGV 等其他信号（killed 标志两种都可能为 true，不作判据）。
+      const exitCode = cause?.code;
+      const timedOut = cause?.code === "ETIMEDOUT"
+        || (cause?.signal === "SIGTERM" || cause?.signal === "SIGKILL");
+      logger.warn(`docstructure engine failed: exit=${String(exitCode)} signal=${String(cause?.signal)} input=${inputPath}`, cause);
+      throw structureError(
+        "PDF_STRUCTURE_PARSE_FAILED",
+        timedOut
+          ? "PDF 结构识别超时，请重试或拆分成较小的文件。"
+          : "PDF 结构识别引擎意外退出，请重试转换（再次失败请重新生成该 PDF 或改用「PDF 转文本/Word（OCR）」）。",
+        timedOut
+          ? "PDF structure recognition timed out. Retry or split the file."
+          : "The PDF structure engine exited unexpectedly. Retry the conversion."
+      );
     }
 
     let serialized;

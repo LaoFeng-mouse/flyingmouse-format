@@ -136,6 +136,76 @@ test("structured conversion preserves low-quality and invalid errors without cre
   }
 });
 
+// 2026-09-07：图片合成的 PDF（无文字层）转 Word 时 docstructure 引擎偶发崩溃
+// （实测 segfault exit 139，同参数重跑成功），界面只有一句「PDF 结构识别失败」。
+// 修复：docx 在 PDF_STRUCTURE_PARSE_FAILED 时回落纯 OCR 段落；xlsx 的
+// PDF_TABLE_NOT_DETECTED 换成含行动指引的文案；其余错误码语义不变。
+test("scanned DOCX falls back to OCR paragraphs when the structure engine fails", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structure-fallback-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const outputPath = path.join(scratch, "out.docx");
+  const classification = { kind: "scanned", pages: [{ pageNumber: 1, kind: "scanned" }] };
+  let fallbackCalls = 0;
+  await convertPdf("input.pdf", outputPath, "docx", {
+    classifyPdf: async () => classification,
+    convertStructuredPdf: async () => {
+      throw Object.assign(new Error("engine crashed"), { code: "PDF_STRUCTURE_PARSE_FAILED" });
+    },
+    convertScannedPdfToOcrDocx: async (_input, output) => {
+      fallbackCalls += 1;
+      await fsp.writeFile(output, "ocr-docx");
+    }
+  });
+  assert.equal(fallbackCalls, 1, "expected one OCR fallback call");
+  assert.equal(await fsp.readFile(outputPath, "utf8"), "ocr-docx");
+});
+
+test("scanned DOCX rethrows OCR fallback failure itself (no double fallback loop)", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structure-fallback-ocrfail-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const classification = { kind: "scanned", pages: [{ pageNumber: 1, kind: "scanned" }] };
+  await assert.rejects(convertPdf("input.pdf", path.join(scratch, "out.docx"), "docx", {
+    classifyPdf: async () => classification,
+    convertStructuredPdf: async () => {
+      throw Object.assign(new Error("engine crashed"), { code: "PDF_STRUCTURE_PARSE_FAILED" });
+    },
+    convertScannedPdfToOcrDocx: async () => {
+      throw Object.assign(new Error("ocr unavailable"), { code: "PDF_OCR_REQUIRED" });
+    }
+  }), (error) => error.code === "PDF_OCR_REQUIRED");
+});
+
+test("other structure error codes are not swallowed by the DOCX fallback", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structure-fallback-passthru-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const classification = { kind: "scanned", pages: [{ pageNumber: 1, kind: "scanned" }] };
+  let fallbackCalls = 0;
+  await assert.rejects(convertPdf("input.pdf", path.join(scratch, "out.docx"), "docx", {
+    classifyPdf: async () => classification,
+    convertStructuredPdf: async () => {
+      throw Object.assign(new Error("low quality"), { code: "PDF_TABLE_OCR_LOW_QUALITY" });
+    },
+    convertScannedPdfToOcrDocx: async () => { fallbackCalls += 1; }
+  }), (error) => error.code === "PDF_TABLE_OCR_LOW_QUALITY");
+  assert.equal(fallbackCalls, 0);
+});
+
+test("XLSX table-not-detected error tells image-PDF users to use the OCR path", async () => {
+  const failure = Object.assign(new Error("no table"), {
+    code: "PDF_TABLE_NOT_DETECTED",
+    messages: { zhCN: "未检测到可可靠编辑的表格，无法生成 Excel。", enUS: "old" }
+  });
+  await assert.rejects(convertPdf("input.pdf", "out.xlsx", "xlsx", {
+    classifyPdf: async () => ({ kind: "scanned", pages: [] }),
+    convertStructuredPdf: async () => { throw failure; }
+  }), (error) => {
+    assert.equal(error.code, "PDF_TABLE_NOT_DETECTED");
+    assert.ok(error.messages.zhCN.includes("PDF 转 Word"), "must point at the Word/OCR route");
+    assert.ok(error.messages.zhCN.includes("PDF 转 TXT"), "must point at the TXT/OCR route");
+    return true;
+  });
+});
+
 test("structured failures preserve a pre-existing destination byte-for-byte", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-preserve-structured-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
