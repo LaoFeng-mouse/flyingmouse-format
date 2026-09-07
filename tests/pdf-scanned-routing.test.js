@@ -151,8 +151,10 @@ test("scanned DOCX falls back to OCR paragraphs when the structure engine fails"
     convertStructuredPdf: async () => {
       throw Object.assign(new Error("engine crashed"), { code: "PDF_STRUCTURE_PARSE_FAILED" });
     },
-    convertScannedPdfToOcrDocx: async (_input, output) => {
+    convertScannedPdfToOcrDocx: async (_input, output, fallbackOptions) => {
       fallbackCalls += 1;
+      // 结构化引擎失败后二次回落必须跳过表格重建（E2E 实证假表格线→整页乱码）
+      assert.equal(fallbackOptions?.skipTableRebuild, true);
       await fsp.writeFile(output, "ocr-docx");
     }
   });

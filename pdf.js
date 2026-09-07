@@ -215,7 +215,7 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
         // xlsx 无可靠回落（宁可不给也不给错表），只补一条可行动的指引文案。
         if (target === "docx" && error?.code === "PDF_STRUCTURE_PARSE_FAILED") {
           logger.warn(`扫描件结构化 docx 失败，回落 OCR 段落：${inputPath}`, error);
-          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath);
+          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath, { skipTableRebuild: true });
           return;
         }
         if (target === "xlsx" && error?.code === "PDF_TABLE_NOT_DETECTED") {
@@ -755,17 +755,22 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
 
 // 扫描版 PDF -> Word：优先尝试扫描件表格重建（检测表格线→逐格OCR→docx表格），
 // 无表格线或异常时回落纯文本段落（原行为）。
-async function convertScannedPdfToOcrDocx(inputPath, outputPath) {
-  try {
-    const outPath = await tryBuildScannedTableDocx(inputPath);
-    if (outPath) {
-      await fsp.copyFile(outPath, outputPath);
-      await fsp.rm(outPath, { force: true }).catch(() => {});
-      return;
+// skipTableRebuild：结构化引擎失败后的二次回落必须跳过表格重建——2026-09-07 E2E
+// 实证无框线图片 PDF 会被 300DPI 网格检测误判出假表格线，逐格 OCR 产出整页乱码
+// （不如直接走 200DPI 整页 OCR 纯文本，与 txt 链路同源、已验证识别正确）。
+async function convertScannedPdfToOcrDocx(inputPath, outputPath, fallbackOptions = {}) {
+  if (!fallbackOptions.skipTableRebuild) {
+    try {
+      const outPath = await tryBuildScannedTableDocx(inputPath);
+      if (outPath) {
+        await fsp.copyFile(outPath, outputPath);
+        await fsp.rm(outPath, { force: true }).catch(() => {});
+        return;
+      }
+    } catch (error) {
+      // 表格重建失败（OCR 异常、图片处理等）→ 回落纯文本，不阻断转换；但记录原因供排查
+      logger.warn(`扫描件表格重建失败，回落纯文本 OCR：${error?.message || error}`);
     }
-  } catch (error) {
-    // 表格重建失败（OCR 异常、图片处理等）→ 回落纯文本，不阻断转换；但记录原因供排查
-    logger.warn(`扫描件表格重建失败，回落纯文本 OCR：${error?.message || error}`);
   }
   const pages = await ocrScannedPdfPages(inputPath);
   const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n");
