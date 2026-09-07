@@ -238,10 +238,10 @@ function downloadToFile(url, destination) {
       }
       if (response.statusCode !== 200) {
         response.resume();
-        // 产物登记表过期（server.js cleanupOldFiles，见 config.js PRODUCT_EXPIRY_MS），
-        // 404 是最常见的失败，直接给可行动的提示，不要甩一个裸状态码给用户。
+        // 产物登记表在内存里且运行期间不再过期（2026-09-07 决策）。404 如今只可能
+        // 来自服务重启/窗口会话更替，给可行动提示而不是裸状态码。
         fail(new Error(response.statusCode === 404
-          ? "保存失败：转换产物已过期，请重新转换后再保存。"
+          ? "保存失败：该转换结果已失效（程序可能重启过），请重新转换后再保存。"
           : `保存失败：下载服务返回 ${response.statusCode}`));
         return;
       }
@@ -534,6 +534,15 @@ app.on("before-quit", () => {
   log("Before quit");
   if (server?.listening) {
     server.close();
+  }
+  // 退出即清理本实例 runtime：产物登记表在内存里，进程结束后再无保存机会，
+  // 因此运行期间不再让产物过期（2026-09-07 决策），残骸在退出/下次启动时回收。
+  try {
+    serverRuntime?.purgeRuntimeDirsSync?.({
+      dirs: [require("./config").UPLOAD_DIR, require("./config").OUTPUT_DIR]
+    });
+  } catch (error) {
+    log("Failed to purge runtime dirs on quit", error);
   }
 });
 

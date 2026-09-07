@@ -201,21 +201,71 @@ const upload = multer({
   limits: { fileSize: MAX_UPLOAD_BYTES }
 });
 
-async function cleanupOldFiles() {
-  const cutoff = Date.now() - PRODUCT_EXPIRY_MS;
-  for (const [id, item] of downloads.entries()) {
-    if (item.createdAt < cutoff) downloads.delete(id);
+// 只清理「孤儿」临时文件：不在 downloads 登记表里、且超过 PRODUCT_EXPIRY_MS 未修改
+// 的（上传残留/崩溃残片）。已登记产物在程序运行期间永不过期（2026-09-07 决策：
+// 「转换出来的文件放在里面不该过期」），全量清理由退出时 purge + 启动时对历史
+// 实例目录的回收负责。dirs/registry 参数化供单测注入。
+function registeredFilePaths(registry) {
+  const paths = new Set();
+  for (const item of registry.values()) {
+    if (item.filePath) paths.add(path.resolve(item.filePath));
+    if (item.assetsDir) paths.add(path.resolve(item.assetsDir));
   }
-  for (const dir of [UPLOAD_DIR, OUTPUT_DIR]) {
+  return paths;
+}
+
+async function cleanupOldFiles({ dirs = [UPLOAD_DIR, OUTPUT_DIR], registry = downloads } = {}) {
+  const cutoff = Date.now() - PRODUCT_EXPIRY_MS;
+  const registered = registeredFilePaths(registry);
+  for (const dir of dirs) {
     const files = await fsp.readdir(dir).catch(() => []);
     await Promise.all(files.map(async (file) => {
       const filePath = path.join(dir, file);
+      if (registered.has(path.resolve(filePath))) return;
       const stat = await fsp.stat(filePath).catch(() => null);
       if (stat && stat.mtimeMs < cutoff) {
-        await fsp.rm(filePath, { force: true }).catch(() => {});
+        await fsp.rm(filePath, { recursive: true, force: true }).catch(() => {});
       }
     }));
   }
+}
+
+// 退出前清空本实例的上传/产物目录（downloads 表随进程消失，产物再无保存机会）。
+async function purgeRuntimeDirs({ dirs = [UPLOAD_DIR, OUTPUT_DIR] } = {}) {
+  for (const dir of dirs) {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await fsp.mkdir(dir, { recursive: true }).catch(() => {});
+  }
+}
+
+// 同步版：electron-main before-quit 里用，避免异步 purge 与进程退出抢时间。
+function purgeRuntimeDirsSync({ dirs = [UPLOAD_DIR, OUTPUT_DIR], fsModule = fs } = {}) {
+  for (const dir of dirs) {
+    try { fsModule.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    try { fsModule.mkdirSync(dir, { recursive: true }); } catch { /* best effort */ }
+  }
+}
+
+// 启动时回收历史实例遗留的 runtime 目录（旧 pid 后缀目录 / 上次崩溃残留），
+// 只保留本实例正在使用的 RUNTIME_DIR。超过 PRODUCT_EXPIRY_MS 的才删，防止误删
+// 另一实例刚写入的文件（pid 隔离后各用各的目录，这里只是兜底回收）。
+async function purgeStaleRuntimeDirs({ runtimeDir = RUNTIME_DIR } = {}) {
+  const parent = path.dirname(runtimeDir);
+  const base = path.basename(runtimeDir);
+  const prefix = base.replace(/-\d+$/, "-");
+  const cutoff = Date.now() - PRODUCT_EXPIRY_MS;
+  const entries = await fsp.readdir(parent, { withFileTypes: true }).catch(() => []);
+  await Promise.all(entries
+    .filter((entry) => entry.isDirectory()
+      && entry.name.startsWith(prefix)
+      && path.join(parent, entry.name) !== runtimeDir)
+    .map(async (entry) => {
+      const dirPath = path.join(parent, entry.name);
+      const stat = await fsp.stat(dirPath).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) {
+        await fsp.rm(dirPath, { recursive: true, force: true }).catch(() => {});
+      }
+    }));
 }
 
 // md 转换产物若带图片外置目录（<下载名>.assets/），返回该目录路径；否则 null。
@@ -751,9 +801,11 @@ function startServer(port = DEFAULT_PORT) {
   ensureDirs();
   logger.info(`Server starting (runtime dir: ${RUNTIME_DIR}, engines: ffmpeg=${FFMPEG_PATH}, libreoffice=${LIBREOFFICE_PATH}, poppler=${PDFTOPPM_PATH}, tessdata=${TESSDATA_PATH})`);
   if (!cleanupTimer) {
-    cleanupTimer = setInterval(cleanupOldFiles, 1000 * 60 * 20);
+    cleanupTimer = setInterval(() => cleanupOldFiles(), 1000 * 60 * 20);
     cleanupTimer.unref();
   }
+  // 启动时回收历史实例遗留的 runtime 目录（fire-and-forget，失败不影响启动）。
+  purgeStaleRuntimeDirs().catch(() => {});
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, "127.0.0.1", () => {
@@ -782,4 +834,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality };
+module.exports = { app, startServer, createPdfjsLoader, getToolDiagnostics, isMissingPdfjsEntry, loadPdfjsModule, platformCapabilities, assertPdfTableOcrQuality, cleanupOldFiles, purgeRuntimeDirs, purgeRuntimeDirsSync, purgeStaleRuntimeDirs };

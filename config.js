@@ -11,9 +11,10 @@ const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir()
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
 const MAX_UPLOAD_BYTES = Number.MAX_SAFE_INTEGER;
-// 转换产物（下载登记 + 磁盘文件）的生存期。超出后 cleanupOldFiles 会删除，
-// 用户点击保存将得到 404。24h 足够用户稍后保存，又不会让临时目录无限膨胀。
-// electron-main.js 的 404 提示文案应与本值保持一致。
+// 运行时临时目录中「孤儿文件」的宽限期：cleanupOldFiles 只删不在 downloads 登记表、
+// 且超过该时长未修改的文件；启动时超过该时长的历史实例目录也按此清理。
+// 已登记产物在程序运行期间永不过期（2026-09-07 产品决策：用户指出「转换的文件
+// 放在里面不该过期」，改为退出时 purge + 启动时清历史残留），本值不再是保存期限。
 const PRODUCT_EXPIRY_MS = 1000 * 60 * 60 * 24;
 
 function bundledFfmpegPath() {
