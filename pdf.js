@@ -214,7 +214,7 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
         // xlsx 无可靠回落（宁可不给也不给错表），只补一条可行动的指引文案。
         if (target === "docx" && error?.code === "PDF_STRUCTURE_PARSE_FAILED") {
           logger.warn(`扫描件结构化 docx 失败，回落 OCR 段落：${inputPath}`, error);
-          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath);
+          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath, { skipTableRebuild: true });
           return;
         }
         if (target === "xlsx" && error?.code === "PDF_TABLE_NOT_DETECTED") {
@@ -748,7 +748,9 @@ async function convertScannedPdfToOcrText(inputPath, outputPath) {
 }
 
 // 扫描版 PDF -> Word：OCR 识别每页文字，生成可编辑 DOCX（纯文本段落）。
-async function convertScannedPdfToOcrDocx(inputPath, outputPath) {
+// fallbackOptions 参数为与满血线保持签名兼容（公开线无表格重建分支，忽略之）；
+// skipTableRebuild 语义见 full-version fb2eba9。
+async function convertScannedPdfToOcrDocx(inputPath, outputPath, fallbackOptions = {}) {
   const pages = await ocrScannedPdfPages(inputPath);
   const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n");
   const { convertTextToDocx } = require("./text-docx");
