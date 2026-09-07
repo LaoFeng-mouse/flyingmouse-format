@@ -32,6 +32,7 @@ const { structureError } = require("./pdf-structure-contract");
 const { writePdfOfficeDocx } = require("./pdf-office-docx");
 const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
 const { parseXmlToJson } = require("./xml-json");
+const logger = require("./logger");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const pwd = String(password || "");
