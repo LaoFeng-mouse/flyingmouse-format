@@ -175,7 +175,8 @@ const {
   experimentalInputsByCategory,
   experimentalInputSet,
   allTargets,
-  downloads
+  downloads,
+  PRODUCT_EXPIRY_MS
 } = require("./config");
 
 const app = express();
@@ -201,7 +202,7 @@ const upload = multer({
 });
 
 async function cleanupOldFiles() {
-  const cutoff = Date.now() - 1000 * 60 * 60;
+  const cutoff = Date.now() - PRODUCT_EXPIRY_MS;
   for (const [id, item] of downloads.entries()) {
     if (item.createdAt < cutoff) downloads.delete(id);
   }

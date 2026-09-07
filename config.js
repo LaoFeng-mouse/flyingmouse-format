@@ -11,6 +11,10 @@ const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir()
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
 const MAX_UPLOAD_BYTES = Number.MAX_SAFE_INTEGER;
+// 转换产物（下载登记 + 磁盘文件）的生存期。超出后 cleanupOldFiles 会删除，
+// 用户点击保存将得到 404。24h 足够用户稍后保存，又不会让临时目录无限膨胀。
+// electron-main.js 的 404 提示文案应与本值保持一致。
+const PRODUCT_EXPIRY_MS = 1000 * 60 * 60 * 24;
 
 function bundledFfmpegPath() {
   const resourcesPath = process.resourcesPath || "";
@@ -195,6 +199,7 @@ module.exports = {
   UPLOAD_DIR,
   OUTPUT_DIR,
   MAX_UPLOAD_BYTES,
+  PRODUCT_EXPIRY_MS,
   FFMPEG_PATH,
   LIBREOFFICE_PATH,
   PDFTOPPM_PATH,
