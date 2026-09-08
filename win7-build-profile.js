@@ -25,6 +25,7 @@ const REQUIRED_RUNTIME_FILES = [
   "diagnostics.js",
   "runtime-paths.js",
   "image-conversion.js",
+  "design-export.js",
   "ico-format.js",
   "pdf-table-extractor.js",
   "pdf-table-runtime.js",

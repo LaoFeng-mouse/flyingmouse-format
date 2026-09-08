@@ -144,12 +144,14 @@ test("multiple images to PDF expose a merge/separate mode selector", () => {
   assert.match(app, /imagePdfMode\?\.value === "separate"/);
 });
 
-test("image targets include BMP output (imageFormatTargets)", () => {
-  const { imageFormatTargets } = require("../config");
-  assert.ok(imageFormatTargets.includes("bmp"), "bmp should be an image output target");
-  // 顺序无关，但 bmp 必须与 png/jpg 等并列出现
+test("image capabilities include design inputs and expanded output formats", () => {
+  const { imageInput, designInput, imageFormatTargets } = require("../config");
+  const inputs = new Set([...imageInput, ...designInput]);
+  for (const expected of ["svg", "ai", "psd", "jp2", "j2k", "jxl", "qoi", "ppm"]) {
+    assert.ok(inputs.has(expected), `${expected} missing from image inputs`);
+  }
   const targets = new Set(imageFormatTargets);
-  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "pdf"]) {
+  for (const expected of ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "tga", "jp2", "jxl", "qoi", "ppm", "pdf"]) {
     assert.ok(targets.has(expected), `${expected} missing from imageFormatTargets`);
   }
 });

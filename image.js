@@ -11,6 +11,7 @@ const zlib = require("zlib");
 const sharp = require("sharp");
 const { FFMPEG_PATH, DCRAW_PATH, rawInput } = require("./config");
 const RAW_EXTENSIONS = rawInput;
+const FFMPEG_IMAGE_EXTENSIONS = new Set(["tga", "jp2", "j2k", "jxl", "qoi", "ppm"]);
 const { run } = require("./utils");
 const {
   LIMITS,
@@ -49,8 +50,8 @@ async function convertToIco(inputPath, outputPath) {
   return { warnings };
 }
 
-async function convertImage(inputPath, outputPath, target) {
-  const prepared = await prepareImageInput(inputPath);
+async function convertImage(inputPath, outputPath, target, options = {}) {
+  const prepared = await prepareImageInput(inputPath, options.inputName);
   try {
     if (target === "pdf") {
       await convertImagesToPdf([{ inputPath: prepared.inputPath, originalName: path.basename(prepared.inputPath) }], outputPath);
@@ -65,6 +66,16 @@ async function convertImage(inputPath, outputPath, target) {
 
     if (target === "ico") {
       return await convertToIco(prepared.inputPath, outputPath);
+    }
+
+    // 专业/新式位图输出：sharp 的预编译编码器不全，统一走打包内置 ffmpeg。
+    // jxl 显式指定 libjxl，其余按扩展名选 muxer；五种格式均已做编码→解码闭环实测。
+    if (FFMPEG_IMAGE_EXTENSIONS.has(target)) {
+      const args = ["-hide_banner", "-y", "-i", prepared.inputPath, "-frames:v", "1"];
+      if (target === "jxl") args.push("-c:v", "libjxl");
+      args.push(outputPath);
+      await run(FFMPEG_PATH, args, { timeout: 1000 * 60 * 5 });
+      return { warnings: [] };
     }
 
     if (target === "mp4" || target === "webm") {
@@ -87,7 +98,16 @@ async function convertImage(inputPath, outputPath, target) {
 //   - BMP   -> 纯 JS 解码成 PNG
 //   - HEIC  -> 打包内置 ffmpeg（含 hevc 解码器）转 PNG
 // 让下游统一走 PNG。
-async function prepareImageInput(inputPath) {
+async function prepareImageInput(inputPath, inputName) {
+  // 设计稿（.ai/.psd）：先统一栅格化成 PNG 再走通用图片链路。
+  // multer 临时文件无扩展名，按上传原始名（inputName）识别；多页 .ai 只取第 1 页
+  // （包装稿典型为单页；实验性输入已附提示复核产物）。
+  const designExt = path.extname(String(inputName || inputPath)).toLowerCase().replace(/^\./, "");
+  if (designExt === "ai" || designExt === "psd") {
+    const { designToPng } = require("./design-export");
+    return await designToPng(inputPath, designExt);
+  }
+
   // 先读文件头判断（不整读大图）；只有需要中转的格式才解码进内存。
   if (isIcoFileSync(inputPath)) {
     // ICO 容器：提取最清晰帧（PNG 帧直接落盘；BMP DIB 帧解码成 raw 再转 PNG）。
@@ -126,21 +146,25 @@ async function prepareImageInput(inputPath) {
     return { inputPath: pngPath, tempDir };
   }
 
-  if (isTgaFileSync(inputPath)) {
-    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-tga-input-"));
+  // 专业/新式位图输入在 Electron 上传后临时路径没有扩展名；这类容器的探测并非都
+  // 稳定，先按 inputName 补回扩展名，再用 ffmpeg 解码成 PNG 供下游统一处理。
+  if (FFMPEG_IMAGE_EXTENSIONS.has(designExt) || isTgaFileSync(inputPath)) {
+    const sourceExt = FFMPEG_IMAGE_EXTENSIONS.has(designExt) ? designExt : "tga";
+    const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ffmpeg-image-input-"));
+    const namedInput = path.join(tempDir, `input.${sourceExt}`);
     const pngPath = path.join(tempDir, "decoded.png");
-    // -frames:v 1 确保只输出单帧（避免 image2 序列名警告，也防止多帧 TGA 撑爆输出）。
-    await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5 });
+    await fsp.copyFile(inputPath, namedInput);
+    await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", namedInput, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5 });
     if (!fs.existsSync(pngPath)) {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new Error("TGA 图片解码失败：无法从该文件提取像素数据。");
+      throw new Error(`${sourceExt.toUpperCase()} 图片解码失败：无法从该文件提取像素数据。`);
     }
     return { inputPath: pngPath, tempDir };
   }
 
   // 相机 RAW 原片（CR2/NEF/ARW/DNG 等）：sharp/libvips 无 dcraw delegate，用打包内置
   // dcraw.exe 解出 16-bit TIFF（sRGB）让下游统一走 sharp。
-  if (isRawFileSync(inputPath)) {
+  if (RAW_EXTENSIONS.has(designExt) || isRawFileSync(inputPath)) {
     if (!DCRAW_PATH) {
       throw new Error("RAW 解码引擎（dcraw）不可用：未找到 dcraw.exe。");
     }
@@ -148,7 +172,7 @@ async function prepareImageInput(inputPath) {
     // dcraw 不支持 -O（部分版本报 Unknown option），输出 <basename>.tiff 固定生成在输入
     // 所在目录。先把输入复制到临时目录再解码：源目录可能只读（U 盘/系统目录），
     // 且避免在用户目录残留 .tiff。
-    const tempInput = path.join(tempDir, path.basename(inputPath));
+    const tempInput = path.join(tempDir, `input.${designExt || path.extname(inputPath).replace(/^\./, "") || "raw"}`);
     await fsp.copyFile(inputPath, tempInput);
     // dcraw -T 输出 16-bit TIFF；-o 1 = sRGB 色彩空间（默认 ACES 线性会偏灰，勿去掉）
     await run(DCRAW_PATH, ["-T", "-o", "1", tempInput], { timeout: 1000 * 60 * 5 });

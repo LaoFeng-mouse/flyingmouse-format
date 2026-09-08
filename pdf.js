@@ -727,6 +727,35 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
   }
 }
 
+// PDF 页面 → 散图集合（不再无脑打 zip）。命名按源文件名区分：
+// 单页 = <base>.<target>（直接可存），多页 = <base>-第N页.<target> 打包 zip。
+// webp 目标：poppler 只出 png/jpg，先渲 png 再 sharp 二跳（实测编码器可用）。
+async function emitPdfPageImages(inputPath, baseName, target) {
+  const renderTarget = target === "webp" ? "png" : target;
+  const rendered = await renderPdfPages(inputPath, renderTarget, 300);
+  try {
+    const files = [];
+    const single = rendered.files.length === 1;
+    for (let index = 0; index < rendered.files.length; index += 1) {
+      let filePath = rendered.files[index];
+      if (target === "webp") {
+        const sharp = require("sharp");
+        const webpPath = path.join(rendered.tempDir, `page-${index + 1}.webp`);
+        await sharp(filePath).webp({ quality: 90 }).toFile(webpPath);
+        filePath = webpPath;
+      }
+      files.push({
+        filePath,
+        name: single ? `${baseName}.${target}` : `${baseName}-第${index + 1}页.${target}`
+      });
+    }
+    return { tempDir: rendered.tempDir, files, single };
+  } catch (error) {
+    await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
   const rendered = await renderPdfPages(inputPath, target, 300);
   try {
@@ -816,13 +845,23 @@ async function ocrScannedPdfPages(inputPath) {
 }
 
 // 演示文稿 -> 图片：LibreOffice 转 PDF 后按页渲染为 PNG/JPG（依赖第四批 office-convert.js）。
+// 包内文件按源文件名前缀命名（<源名>-第N页.<格式>），不同 PPT 解压不再互相撞名。
 async function convertPresentationToImages(inputPath, outputPath, originalName, target) {
   const { convertWithLibreOffice } = require("./office-convert");
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ppt-images-"));
   try {
     const pdfPath = path.join(tempDir, "slides.pdf");
     await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf");
-    await convertPdfPagesToImagesZip(pdfPath, outputPath, target);
+    const base = safeBaseName(originalName);
+    const emitted = await emitPdfPageImages(pdfPath, base, target);
+    try {
+      await zipFiles(
+        emitted.files.map((item) => ({ inputPath: item.filePath, archiveName: item.name })),
+        outputPath
+      );
+    } finally {
+      await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
+    }
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -920,6 +959,7 @@ module.exports = {
   mergePdfFiles,
   renderPdfPages,
   convertPdfPagesToImagesZip,
+  emitPdfPageImages,
   convertScannedPdfToOcrText,
   convertScannedPdfToOcrDocx,
   convertScannedPdfToOcrHtml,

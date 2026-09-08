@@ -142,10 +142,14 @@ const QPDF_PATH = bundledQpdfPath();
 const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
 const DOCSTRUCTURE_MODEL_DIR = bundledDocstructureModelDir();
 
-const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga"]);
+const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga", "svg", "jp2", "j2k", "jxl", "qoi", "ppm"]);
+// 设计稿输入：.ai 本质是 PDF 封装（poppler 可直接栅格化，实测泰文包装稿无缺字），
+// .psd 走 LibreOffice Draw 解码（实测图层合成完整）。统一归入 image 分类。
+const designInput = new Set(["ai", "psd"]);
 // 相机 RAW 原片（dcraw/libraw 可解码的常见扩展名）
 const rawInput = new Set(["cr2", "cr3", "crw", "nef", "arw", "dng", "raf", "rw2", "orf", "pef", "srw", "3fr", "erf", "fff", "iiq", "kdc", "mef", "mrw", "x3f"]);
-const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "pdf"];
+// tga/jp2/jxl/qoi/ppm 输出：sharp 的预编译编码器不全，统一走打包内置 ffmpeg。
+const imageFormatTargets = ["png", "jpg", "webp", "gif", "avif", "tiff", "ico", "bmp", "tga", "jp2", "jxl", "qoi", "ppm", "pdf"];
 const imageVideoTargets = ["mp4", "webm"];
 const imageOcrTargets = ["txt"];
 const imageTargets = [...imageFormatTargets, ...imageVideoTargets, ...imageOcrTargets];
@@ -161,7 +165,8 @@ const presentationInput = new Set(["ppt", "pptx", "odp", "dps", "dpt"]);
 const presentationTargets = ["pdf", "pptx", "odp", "html", "png", "jpg"];
 const pdfInput = new Set(["pdf"]);
 const pdfTextTargets = ["xlsx", "txt", "html", "docx"];
-const pdfImageTargets = ["png", "jpg"];
+// webp 输出经 png 二跳（poppler 只出 png/jpg；sharp 有 webp 编码器）
+const pdfImageTargets = ["png", "jpg", "webp"];
 const pdfTargets = [...pdfTextTargets, ...pdfImageTargets, "pdf"];
 const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "wma"]);
 // 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
@@ -172,7 +177,7 @@ const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "w
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
-  image: ["heic", "heif", "ico", "tga"],
+  image: ["heic", "heif", "ico", "tga", "ai", "psd", "jp2", "j2k", "jxl", "qoi", "ppm"],
   raw: [...rawInput],
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
@@ -211,6 +216,7 @@ module.exports = {
   DOCSTRUCTURE_ENGINE_PATH,
   DOCSTRUCTURE_MODEL_DIR,
   imageInput,
+  designInput,
   rawInput,
   imageFormatTargets,
   imageVideoTargets,
