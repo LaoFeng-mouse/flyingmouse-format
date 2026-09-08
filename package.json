@@ -82,6 +82,7 @@
       "diagnostics.js",
       "runtime-paths.js",
       "image-conversion.js",
+      "design-export.js",
       "bmp-input.js",
       "bmp-output.js",
       "ico-format.js",

@@ -10,6 +10,7 @@ const logger = require("./logger");
 const {
   OUTPUT_DIR,
   imageInput,
+  designInput,
   rawInput,
   imageFormatTargets,
   imageVideoTargets,
@@ -141,7 +142,8 @@ function normalizeExt(ext) {
 
 function categoryForExt(rawExt) {
   const ext = normalizeExt(rawExt);
-  if (imageInput.has(ext) || imageInput.has(rawExt) || rawInput.has(ext) || rawInput.has(rawExt)) return "image";
+  // designInput（.ai/.psd）归入图片分类：前端/路由与 jpg 等一致，解码在 prepareImageInput 中转。
+  if (imageInput.has(ext) || imageInput.has(rawExt) || designInput.has(ext) || rawInput.has(ext) || rawInput.has(rawExt)) return "image";
   if (pdfInput.has(ext) || pdfInput.has(rawExt)) return "pdf";
   if (documentInput.has(ext) || documentInput.has(rawExt)) return "document";
   if (spreadsheetInput.has(ext) || spreadsheetInput.has(rawExt)) return "spreadsheet";
@@ -281,9 +283,10 @@ function safeBaseName(originalName) {
 }
 
 function outputExtFor(category, targetExt) {
-  if (category === "pdf" && pdfImageTargets.includes(targetExt)) return "zip";
+  // PDF/PPT 转图片不再默认 zip：单页直接出图（server 里按页数决定是否回退打包装配）。
+  // 旧行为「jpg→jpg.zip」让用户 4 个文件解压出 4 个同名 page-001.jpg（2026-09-08 投诉）。
   if (category === "pdf" && targetExt === "pdf") return "zip";
-  if (category === "presentation" && ["png", "jpg"].includes(targetExt)) return "zip";
+  if (category === "presentation" && ["png", "jpg", "webp"].includes(targetExt)) return "zip";
   return targetExt;
 }
 

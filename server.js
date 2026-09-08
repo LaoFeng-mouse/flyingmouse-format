@@ -76,7 +76,7 @@ const {
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,
-  convertPdfPagesToImagesZip,
+  emitPdfPageImages,
   convertScannedPdfToOcrText,
   convertScannedPdfToOcrDocx,
   convertScannedPdfToOcrHtml,
@@ -158,6 +158,7 @@ const {
   TESSDATA_PATH,
   DCRAW_PATH,
   imageInput,
+  designInput,
   rawInput,
   imageFormatTargets,
   imageVideoTargets,
@@ -404,7 +405,7 @@ app.get("/api/capabilities", async (_req, res) => {
     maxUploadBytes: MAX_UPLOAD_BYTES,
     limits: LIMITS,
     groups: {
-      image: { inputs: [...imageInput, ...(DCRAW_PATH ? rawInput : [])].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])], experimentalInputs: [...(experimentalInputsByCategory.image || []), ...(DCRAW_PATH ? rawInput : [])].sort() },
+      image: { inputs: [...imageInput, ...designInput, ...(DCRAW_PATH ? rawInput : [])].sort(), targets: [...imageFormatTargets, ...(tools.ffmpeg ? imageVideoTargets : []), ...(tools.ocr ? imageOcrTargets : [])], experimentalInputs: [...(experimentalInputsByCategory.image || []), ...(DCRAW_PATH ? rawInput : [])].sort() },
       text: { inputs: [...textInput].sort(), targets: [...textTargets, ...(tools.libreoffice ? ["pdf"] : []), "docx"] },
       document: { inputs: [...documentInput].sort(), targets: documentTargets, experimentalInputs: experimentalInputsByCategory.document },
       spreadsheet: { inputs: [...spreadsheetInput].sort(), targets: spreadsheetTargets, experimentalInputs: experimentalInputsByCategory.spreadsheet },
@@ -604,12 +605,12 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
     ? "pdf"
     : outputExt;
   const outputPath = outputPathFor(originalName, requestedTarget, effectiveOutputExt);
-  const downloadName = outputNameFor(originalName, requestedTarget, effectiveOutputExt);
+  let downloadName = outputNameFor(originalName, requestedTarget, effectiveOutputExt);
   let conversionResult = { warnings: [] };
 
   try {
     if (category === "image") {
-      conversionResult = await convertImage(file.path, outputPath, requestedTarget);
+      conversionResult = await convertImage(file.path, outputPath, requestedTarget, { inputName: originalName });
     } else if (category === "text") {
       if (["epub", "mobi", "azw3", "fb2"].includes(inputExt)) {
         await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
@@ -633,6 +634,23 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           await convertWithLibreOffice(tmpDocx, outputPath, originalName, "odt");
         } finally {
           await fsp.rm(tmpDocx, { force: true }).catch(() => {});
+        }
+      } else if (pdfImageTargets.includes(requestedTarget)) {
+        // PDF→图片不再无脑打 zip（2026-09-08 用户投诉：4 个 PDF 转 jpg 得到 4 个 zip、
+        // 解压出 4 个同名 page-001.jpg，桌面放不下）。单页直接出 <源名>.<格式>；
+        // 多页才打包，且包内文件按 <源名>-第N页.<格式> 命名，解压不撞名。
+        const base = safeBaseName(originalName);
+        const emitted = await emitPdfPageImages(file.path, base, requestedTarget);
+        try {
+          if (emitted.single) {
+            await fsp.copyFile(emitted.files[0].filePath, outputPath);
+            downloadName = `${base}.${requestedTarget}`;
+          } else {
+            await zipFiles(emitted.files.map((item) => ({ inputPath: item.filePath, archiveName: item.name })), outputPath);
+            downloadName = `${base}.${requestedTarget}.zip`;
+          }
+        } finally {
+          await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
         }
       } else {
         await convertPdf(file.path, outputPath, requestedTarget, {

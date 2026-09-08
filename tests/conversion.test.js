@@ -19,7 +19,7 @@ if (!process.env.FLYINGMOUSE_FORMAT_BASE_URL) {
 const serverModule = process.env.FLYINGMOUSE_FORMAT_BASE_URL ? null : require("../server");
 const FFMPEG_BIN = process.env.FLYINGMOUSE_FFMPEG_PATH
   || path.join(__dirname, "..", "bin", "ffmpeg", "ffmpeg.exe");
-const { QPDF_PATH } = require("../config");
+const { QPDF_PATH, LIBREOFFICE_PATH } = require("../config");
 const qpdfAvailable = (() => {
   try {
     execFileSync(QPDF_PATH, ["--version"], { timeout: 5000, windowsHide: true });
@@ -160,6 +160,27 @@ async function createTextPdf(filePath) {
   }
   const trailer = `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${body.length}\n%%EOF\n`;
   await fsp.writeFile(filePath, Buffer.concat([body, pdfObject(xref + trailer)]));
+}
+
+// 2×2、RGB、8-bit、无压缩的最小合法 PSD，用于真实 LibreOffice 解码回归；
+// 三个颜色通道按平面排列，不依赖外部样本或新增 npm 包。
+async function createMinimalPsd(filePath) {
+  const header = Buffer.alloc(26);
+  header.write("8BPS", 0, "ascii");
+  header.writeUInt16BE(1, 4);
+  header.writeUInt16BE(3, 12);
+  header.writeUInt32BE(2, 14);
+  header.writeUInt32BE(2, 18);
+  header.writeUInt16BE(8, 22);
+  header.writeUInt16BE(3, 24);
+  const emptySections = Buffer.alloc(12);
+  const compression = Buffer.alloc(2);
+  const rgbPlanes = Buffer.from([
+    255, 0, 0, 255,
+    0, 255, 0, 255,
+    0, 0, 255, 255
+  ]);
+  await fsp.writeFile(filePath, Buffer.concat([header, emptySections, compression, rgbPlanes]));
 }
 
 async function createCroppedTablePdf(filePath) {
@@ -605,7 +626,7 @@ test("rejects an unknown target with a stable error code", async () => {
   assert.strictEqual(body.errorCode, "UNSUPPORTED_TARGET");
 });
 
-test("renders PDF pages to a PNG zip without changing the source PDF", async () => {
+test("renders a single-page PDF directly to PNG without changing the source PDF", async () => {
   const sourcePath = path.join(scratchRoot, "报价单.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -613,13 +634,14 @@ test("renders PDF pages to a PNG zip without changing the source PDF", async () 
   const { response, body } = await uploadConvert(sourcePath, "报价单.pdf", "png", "application/pdf");
 
   assert.strictEqual(response.status, 200, body.error);
-  assert.strictEqual(body.fileName, "报价单.png.zip");
-  const outputPath = await downloadResult(body, "pdf-pages.zip");
-  assertZipWithEntry(outputPath, /page-001\.png/);
+  assert.strictEqual(body.fileName, "报价单.png");
+  const outputPath = await downloadResult(body, "报价单.png");
+  const metadata = await sharp(outputPath).metadata();
+  assert.strictEqual(metadata.format, "png");
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
-test("renders PDF pages to a JPG zip without changing the source PDF", async () => {
+test("renders a single-page PDF directly to JPG without changing the source PDF", async () => {
   const sourcePath = path.join(scratchRoot, "picture-export.pdf");
   await createTextPdf(sourcePath);
   const beforeHash = hashFile(sourcePath);
@@ -627,10 +649,73 @@ test("renders PDF pages to a JPG zip without changing the source PDF", async () 
   const { response, body } = await uploadConvert(sourcePath, "picture-export.pdf", "jpg", "application/pdf");
 
   assert.strictEqual(response.status, 200, body.error);
-  assert.strictEqual(body.fileName, "picture-export.jpg.zip");
-  const outputPath = await downloadResult(body, "pdf-pages-jpg.zip");
-  assertZipWithEntry(outputPath, /page-001\.jpg/);
+  assert.strictEqual(body.fileName, "picture-export.jpg");
+  const outputPath = await downloadResult(body, "picture-export.jpg");
+  const metadata = await sharp(outputPath).metadata();
+  assert.strictEqual(metadata.format, "jpeg");
   assert.strictEqual(hashFile(sourcePath), beforeHash);
+});
+
+test("renders a single-page PDF directly to WebP", async () => {
+  const sourcePath = path.join(scratchRoot, "webp-export.pdf");
+  await createTextPdf(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "webp-export.pdf", "webp", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "webp-export.webp");
+  const outputPath = await downloadResult(body, "webp-export.webp");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "webp");
+});
+
+test("renders multi-page PDF to a source-prefixed image zip", async () => {
+  const document = await PDFDocument.create();
+  document.addPage([120, 80]);
+  document.addPage([120, 80]);
+  const sourcePath = path.join(scratchRoot, "两页报价单.pdf");
+  await fsp.writeFile(sourcePath, await document.save());
+  const { response, body } = await uploadConvert(sourcePath, "两页报价单.pdf", "png", "application/pdf");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "两页报价单.png.zip");
+  const outputPath = await downloadResult(body, "两页报价单.png.zip");
+  assertZipWithEntry(outputPath, /两页报价单-第1页\.png/);
+  assertZipWithEntry(outputPath, /两页报价单-第2页\.png/);
+});
+
+test("accepts PDF-compatible AI input and exports a direct JPG", async () => {
+  const sourcePath = path.join(scratchRoot, "packaging.ai");
+  await createTextPdf(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "泰国包装稿.ai", "jpg");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "泰国包装稿.jpg");
+  assert.ok((body.warnings || []).some((item) => item.code === "EXPERIMENTAL_INPUT"));
+  const outputPath = await downloadResult(body, "泰国包装稿.jpg");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "jpeg");
+});
+
+test("accepts PSD input and exports PNG through LibreOffice", { skip: !fs.existsSync(LIBREOFFICE_PATH) }, async () => {
+  const sourcePath = path.join(scratchRoot, "design.psd");
+  await createMinimalPsd(sourcePath);
+  const { response, body } = await uploadConvert(sourcePath, "design.psd", "png");
+  assert.strictEqual(response.status, 200, body.error);
+  assert.strictEqual(body.fileName, "design.png");
+  const outputPath = await downloadResult(body, "design.png");
+  assert.strictEqual((await sharp(outputPath).metadata()).format, "png");
+});
+
+test("round-trips ffmpeg-backed image formats through uploaded extensionless temp files", { skip: !fs.existsSync(FFMPEG_BIN) }, async () => {
+  const pngPath = path.join(scratchRoot, "format-source.png");
+  await createImage(pngPath, { r: 230, g: 80, b: 20, alpha: 1 }, 32, 32);
+  for (const target of ["tga", "jp2", "jxl", "qoi", "ppm"]) {
+    const first = await uploadConvert(pngPath, "format-source.png", target, "image/png");
+    assert.strictEqual(first.response.status, 200, `${target} output: ${first.body.error || ""}`);
+    const encodedPath = await downloadResult(first.body, `format-source.${target}`);
+    const second = await uploadConvert(encodedPath, `format-source.${target}`, "png");
+    assert.strictEqual(second.response.status, 200, `${target} input: ${second.body.error || ""}`);
+    const roundTrip = await downloadResult(second.body, `${target}-roundtrip.png`);
+    const metadata = await sharp(roundTrip).metadata();
+    assert.strictEqual(metadata.format, "png");
+    assert.strictEqual(metadata.width, 32);
+    assert.strictEqual(metadata.height, 32);
+  }
 });
 
 test("OCR converts an image containing text to TXT without changing the source", async () => {
