@@ -40,7 +40,8 @@ test("renderer uses the mouse brand and favicon", () => {
 
 test("original mouse visual theme classes are present", () => {
   const css = readPublic("styles.css");
-  assert.match(css, /--accent:\s*#e95f6d/);
+  assert.match(css, /background:\s*var\(--accent\)/);
+  assert.match(css, /:root\[data-theme="dark"\]/);
   assert.match(css, /\.workflow-steps/);
   assert.match(css, /\.mouse-stage/);
   assert.match(css, /\.mouse-mascot/);

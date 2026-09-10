@@ -35,6 +35,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Restore locked Markdown engine
+        run: npm run restore:pandoc
+
       - name: Restore fixed conversion engines
         shell: powershell
         env:
@@ -134,6 +137,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Restore locked Markdown engine
+        run: npm run restore:pandoc
 
       - name: Restore SHA-pinned native engines
         shell: bash

@@ -55,6 +55,7 @@ async function readSettings(settingsPath) {
   if (stored.language === "zh-CN" || stored.language === "en-US") {
     settings.language = stored.language;
   }
+  if (["system", "light", "dark"].includes(stored.theme)) settings.theme = stored.theme;
   return settings;
 }
 
@@ -90,6 +91,9 @@ function updateSettings(settingsPath, patch = {}) {
     if (Object.prototype.hasOwnProperty.call(patch, "language")) {
       if (patch.language === "zh-CN" || patch.language === "en-US") next.language = patch.language;
       else delete next.language;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "theme")) {
+      next.theme = ["system", "light", "dark"].includes(patch.theme) ? patch.theme : "system";
     }
     if (Object.prototype.hasOwnProperty.call(patch, "lastSaveDirectory")) {
       if (!await isDirectory(patch.lastSaveDirectory)) {

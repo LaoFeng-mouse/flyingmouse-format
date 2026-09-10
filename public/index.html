@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FlyingMouse Format</title>
     <link rel="icon" href="/assets/mouse-format/mouse-idle.png">
+    <script src="/theme.js"></script>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -23,6 +24,14 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <label class="language-field theme-field">
+              <span data-i18n="theme.label">外观</span>
+              <select id="themeSelect" data-i18n-aria="theme.label" aria-label="外观">
+                <option value="system" data-i18n="theme.system">跟随系统</option>
+                <option value="light" data-i18n="theme.light">浅色</option>
+                <option value="dark" data-i18n="theme.dark">深色</option>
+              </select>
+            </label>
             <button class="ghost-button diagnostics-button" id="agentInstallButton" type="button" data-i18n="agent.install">接入 Agent</button>
             <button class="ghost-button diagnostics-button" id="diagnosticsButton" type="button" data-i18n="diagnostics.export">导出诊断</button>
             <label class="language-field">
@@ -184,6 +193,7 @@
 
     <script src="/i18n.js"></script>
     <script src="/conversion-preferences.js"></script>
+    <script src="/settings-sync.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

@@ -9,6 +9,12 @@
 5. PDF 智能表格固定样本必须满足：电子 PDF 单元格准确率不低于 95%，扫描 PDF 不低于 85%，表格数量、页签和明确合并区域 100% 正确。
 6. 任一测试、审计、构建、架构、PE、包结构或安装包门禁失败，不得公开 Release。
 
+## Windows 10/11 Store APPX（0.7.0 起）
+
+先恢复 `bin/` 固定引擎并执行 `npm run restore:pandoc`，再执行 `npm run dist:appx`。脚本每次整体构建到独立目录，从当前 package.json 生成身份和四段版本，复制四张鼠鼠商店图标，扫描 PE 证书边界并调用 MakeAppx。`check-appx.py` 检查失败必须非零退出；最终包内 ASAR 必须与同次完整构建一致。禁止只替换旧 EXE 旁的 app.asar。
+
+Windows 与 macOS beforePack 都验证 Pandoc 固定归档安装凭据、可执行文件哈希及许可证；Windows 还自动生成非空 LibreOffice 关键文件清单。APPX 完成后仍须对实际包内程序运行 Markdown→DOCX、PDF→DOCX、Word/Excel/PPT→PDF 和 Store 引擎缓存冒烟；未签名包的本地结构校验不代表商店安装或认证通过。
+
 ## Windows 10/11 x64
 
 ```powershell

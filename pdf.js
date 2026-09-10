@@ -20,6 +20,7 @@ const { loadPdfjs } = require("./pdfjs");
 const { classifyPdf } = require("./pdf-classifier");
 const {
   extractPdfRowsByPage,
+  renderPdfTablePage,
   extractComplexPdfTableModel,
   writePdfTableWorkbook
 } = require("./pdf-table");
@@ -28,7 +29,7 @@ const { mergeCnSpaces } = require("./pdf-table-runtime");
 const { OfficeQualityError } = require("./office-quality");
 const { withStructuredPdf } = require("./pdf-structure-engine");
 const { chooseTableCandidate } = require("./pdf-structure-score");
-const { structureError } = require("./pdf-structure-contract");
+const { structureError, validateStructureManifest } = require("./pdf-structure-contract");
 const { writePdfOfficeDocx } = require("./pdf-office-docx");
 const { writePdfOfficeXlsx } = require("./pdf-office-xlsx");
 const { parseXmlToJson } = require("./xml-json");
@@ -74,6 +75,106 @@ async function convertPdfEncrypt(inputPath, outputPath, password) {
 }
 
 const OCR_QUALITY_THRESHOLD = 0.65;
+
+function normalizedPdfText(value) {
+  return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function missingPdfText(pages, editableText) {
+  const actual = normalizedPdfText(editableText);
+  return pages.flatMap((page) => (page.rows || []).flatMap((row) => row)
+    .filter((text) => {
+      const expected = normalizedPdfText(text);
+      return expected.length > 1 && !actual.includes(expected);
+    }).map((text) => ({ pageNumber: page.pageNumber, text })));
+}
+
+async function sourcePdfPages(inputPath, options = {}) {
+  return options.pdfTextPages || (options.extractPdfRowsByPage || extractPdfRowsByPage)(inputPath);
+}
+
+async function fillMissingPdfPageText(inputPath, pages, options = {}) {
+  const missing = pages.filter((page) => !page.rows?.some((row) => row.some((cell) => String(cell).trim())));
+  if (!missing.length) return pages;
+  if (!(options.ocrAvailable || ocrAvailable)()) {
+    throw structureError("PDF_OCR_REQUIRED", "PDF 中有缺少文字层的页面，需要启用 OCR 引擎才能完整转换。",
+      "Some PDF pages have no text layer. OCR is required for a complete conversion.");
+  }
+  assertPdfPages(pages.length, { ocr: true });
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-page-ocr-"));
+  let worker;
+  try {
+    worker = await (options.createOcrWorker || createOcrWorker)();
+    const completed = new Map();
+    for (const page of missing) {
+      const pageNumber = page.pageNumber || pages.indexOf(page) + 1;
+      const rendered = await (options.renderPdfTablePage || renderPdfTablePage)(inputPath, pageNumber, tempDir, 200);
+      const text = String(mergeCnSpaces(await (options.recognizeImageTextWithWorker || recognizeImageTextWithWorker)(worker, rendered.outputPath)) || "").trim();
+      completed.set(page, { ...page, ocr: true, rows: text ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => [line]) : [] });
+    }
+    const result = pages.map((page) => completed.get(page) || page);
+    if (!result.some((page) => page.rows.length)) {
+      throw structureError("PDF_OCR_NO_TEXT", "OCR 没有识别出文字，请确认扫描页清晰、方向正确。",
+        "OCR found no text. Check that the scanned pages are clear and correctly oriented.");
+    }
+    return result;
+  } finally {
+    if (worker) await worker.terminate().catch(() => {});
+    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function restoreNativeStructureText(manifest, nativePages) {
+  let restored = 0;
+  for (const page of manifest.pages || []) {
+    const native = nativePages.find((candidate, index) => (candidate.pageNumber || index + 1) === page.pageNumber);
+    if (!native?.lines?.length) continue;
+    const sx = page.width / native.width;
+    const sy = page.height / native.height;
+    const editable = () => (page.blocks || []).map((block) => block.text || "")
+      .concat((page.tables || []).flatMap((table) => (table.cells || []).map((cell) => cell.text || ""))).join(" ");
+    for (const line of native.lines) {
+      if (!missingPdfText([{ rows: [line.cells] }], editable()).length) continue;
+      const bbox = line.bbox.map((value, index) => Math.max(0,
+        Math.min(index % 2 ? page.height : page.width, value * (index % 2 ? sy : sx))));
+      // Replace a single OCR line in the same location when its text was corrupted.
+      // Never remove a table, figure, or a larger paragraph just to insert native text.
+      const overlapping = (page.blocks || []).filter((block) =>
+        ["paragraph", "heading"].includes(block.type) && Array.isArray(block.bbox)
+        && block.bbox[3] - block.bbox[1] <= (bbox[3] - bbox[1]) * 2
+        && Math.abs((block.bbox[1] + block.bbox[3] - bbox[1] - bbox[3]) / 2) < (bbox[3] - bbox[1])
+        && Math.min(block.bbox[2], bbox[2]) > Math.max(block.bbox[0], bbox[0]));
+      if (overlapping.length === 1) {
+        overlapping[0].text = line.text;
+        overlapping[0].confidence = 1;
+      } else {
+        page.blocks = [...(page.blocks || []), { type: "paragraph", bbox, text: line.text, confidence: 1 }];
+        page.blocks.sort((a, b) => (a.bbox?.[1] || 0) - (b.bbox?.[1] || 0)
+          || (a.bbox?.[0] || 0) - (b.bbox?.[0] || 0));
+      }
+      restored += 1;
+    }
+  }
+  return restored;
+}
+
+function pdfLayoutFallbackWarning(reason) {
+  return { code: "PDF_DOCX_LAYOUT_FALLBACK", messages: {
+    zhCN: reason === "content" ? "版式引擎输出存在缺字，已改用原生文字重建可编辑文档；复杂版式可能变化。"
+      : "版式引擎不可用，已重建可编辑文字及简单表格；复杂版式可能变化。",
+    enUS: reason === "content" ? "The layout engine omitted source text. Editable text was rebuilt; complex layout may change."
+      : "The layout engine is unavailable. Editable text and simple tables were rebuilt; complex layout may change."
+  } };
+}
+
+function pdfOcrWarnings(pages) {
+  const recognized = pages.filter((page) => page.ocr).map((page, index) => page.pageNumber || index + 1);
+  if (!recognized.length) return [];
+  return [{ code: "PDF_PAGES_OCR", messages: {
+    zhCN: `已对 ${recognized.length} 个缺少文字层的页面进行 OCR；识别出的字符、标点需要复核。`,
+    enUS: `OCR was applied to ${recognized.length} pages without a text layer. Review recognized characters and punctuation.`
+  } }];
+}
 
 function selectedStructureManifest(manifest) {
   const copy = structuredClone(manifest);
@@ -154,10 +255,27 @@ async function convertStructuredPdf({ inputPath, outputPath, target, options = {
           }));
       }
       if (target === "docx") {
-        return withAttemptOutput(outputPath, (attemptPath) =>
-          (options.writePdfOfficeDocx || writePdfOfficeDocx)({
-            manifest: selected, assetRoot, outputPath: attemptPath
-          }));
+        const nativePages = await sourcePdfPages(inputPath, options);
+        const restored = restoreNativeStructureText(selected, nativePages);
+        const repaired = restored ? validateStructureManifest(selected, assetRoot) : selected;
+        const result = await withAttemptOutput(outputPath, async (attemptPath) => {
+          const written = await (options.writePdfOfficeDocx || writePdfOfficeDocx)({
+            manifest: repaired, assetRoot, outputPath: attemptPath
+          });
+          // The writer already validates assets and tables. Also compare editable
+          // text with the actual PDF text layer so a reference image cannot hide lost text.
+          if (!options.writePdfOfficeDocx) {
+            const validation = await validateNativePdfDocx(attemptPath);
+            if (missingPdfText(nativePages, validation.editableText).length) {
+              throw structureError("PDF_DOCX_TEXT_COVERAGE_FAILED", "生成的 Word 缺少原生文字，已阻止不完整输出。",
+                "The generated Word document omitted native text; incomplete output was rejected.");
+            }
+          }
+          return written;
+        });
+        return { ...result, warnings: restored ? [{ code: "PDF_NATIVE_TEXT_RESTORED", messages: {
+          zhCN: "已使用 PDF 原生文字补回结构识别遗漏的内容。", enUS: "Native PDF text was restored where structure recognition omitted it."
+        } }] : [] };
       }
       throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
         "不支持该结构化输出格式。", "Unsupported structured PDF target.");
@@ -202,7 +320,7 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
     const classification = await (options.classifyPdf || classifyPdf)(inputPath);
     if (classification.kind !== "native") {
       try {
-        await (options.convertStructuredPdf || convertStructuredPdf)({
+        return await (options.convertStructuredPdf || convertStructuredPdf)({
           inputPath,
           outputPath,
           target,
@@ -213,10 +331,11 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
         // 图片型 PDF（无文字层，含「图片→PDF」的产物）走结构化引擎可能失败/崩溃。
         // docx 回落纯 OCR 段落（与 txt/html 的扫描件链路同源），不阻断转换；
         // xlsx 无可靠回落（宁可不给也不给错表），只补一条可行动的指引文案。
-        if (target === "docx" && error?.code === "PDF_STRUCTURE_PARSE_FAILED") {
+        if (target === "docx" && ["PDF_STRUCTURE_PARSE_FAILED", "PDF_STRUCTURE_ENGINE_MISSING",
+          "PDF_STRUCTURE_MODEL_MISSING", "PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_DOCX_TEXT_COVERAGE_FAILED"].includes(error?.code)) {
           logger.warn(`扫描件结构化 docx 失败，回落 OCR 段落：${inputPath}`, error);
-          await (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath, { skipTableRebuild: true });
-          return;
+          return (options.convertScannedPdfToOcrDocx || convertScannedPdfToOcrDocx)(inputPath, outputPath,
+            { ...options, skipTableRebuild: true });
         }
         if (target === "xlsx" && error?.code === "PDF_TABLE_NOT_DETECTED") {
           throw structureError(
@@ -238,37 +357,38 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
     return;
   }
 
-  const pages = await extractPdfRowsByPage(inputPath);
+  const pages = await sourcePdfPages(inputPath, options);
   const hasExtractableRows = pages.some((page) => page.rows.length);
 
   if (!hasExtractableRows) {
     if (target === "txt") {
-      await convertScannedPdfToOcrText(inputPath, outputPath);
-      return;
+      return convertScannedPdfToOcrText(inputPath, outputPath, options);
     }
     if (target === "docx") {
-      await convertScannedPdfToOcrDocx(inputPath, outputPath);
-      return;
+      return convertScannedPdfToOcrDocx(inputPath, outputPath, options);
     }
     if (target === "html") {
-      await convertScannedPdfToOcrHtml(inputPath, outputPath);
-      return;
+      return convertScannedPdfToOcrHtml(inputPath, outputPath, options);
     }
     throw new Error("这个 PDF 没有可提取的文字，可能是扫描版图片 PDF。");
   }
 
   if (target === "txt") {
-    const text = pages
+    const completePages = await fillMissingPdfPageText(inputPath, pages, options);
+    const text = completePages
       .map((page) => [`## ${page.name}`, ...page.rows.map((row) => row.join("\t"))].join("\n"))
       .join("\n\n");
     await fsp.writeFile(outputPath, text, "utf8");
-    return;
+    return { warnings: pdfOcrWarnings(completePages) };
   }
 
   if (target === "html") {
-    const body = pages.map((page) => {
-      const rows = page.rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("\n");
-      return `<h2>${escapeHtml(page.name)}</h2><table>${rows}</table>`;
+    const completePages = await fillMissingPdfPageText(inputPath, pages, options);
+    const body = completePages.map((page) => {
+      const rows = page.rows.map((row) => row.length > 1
+        ? `<table><tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr></table>`
+        : `<p>${escapeHtml(row[0] || "")}</p>`).join("\n");
+      return `<h2>${escapeHtml(page.name)}</h2>${rows}`;
     }).join("\n");
     await fsp.writeFile(outputPath, `<!doctype html>
 <html lang="zh-CN">
@@ -283,12 +403,11 @@ td{border:1px solid #999;padding:4px 8px;vertical-align:top}
 </head>
 <body>${body}</body>
 </html>`, "utf8");
-    return;
+    return { warnings: pdfOcrWarnings(completePages) };
   }
 
   if (target === "docx") {
-    await convertPdfToDocx(inputPath, outputPath, pages, options);
-    return;
+    return convertPdfToDocx(inputPath, outputPath, pages, options);
   }
 
   throw new Error("PDF 暂时只支持转换为 XLSX、TXT、HTML、DOCX、PNG、JPG，或拆分为单页 PDF。");
@@ -538,13 +657,13 @@ async function validateNativePdfDocx(outputPath) {
     }
 
     const editableText = elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "t")
-      .some((element) => String(element.text).trim().length > 0);
-    if (!editableText) {
+      .map((element) => String(element.text)).join(" ");
+    if (!editableText.trim()) {
       const error = new Error("Native PDF conversion produced no editable content.");
       error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
       throw error;
     }
-    return { hasEditableContent: true };
+    return { hasEditableContent: true, editableText };
   } catch (error) {
     if (["PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_OFFICE_OUTPUT_INVALID"].includes(error?.code)) throw error;
     throw nativeDocxInvalid();
@@ -554,53 +673,76 @@ async function validateNativePdfDocx(outputPath) {
 async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
   const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
+  const source = pages || await sourcePdfPages(inputPath, options);
+  let fallbackReason = "engine";
   if (docenginePath) {
     try {
       await withAttemptOutput(outputPath, async (attemptPath) => {
         await (options.run || run)(docenginePath, ["convert", inputPath, attemptPath], { timeout: 1000 * 60 * 10 });
-        return (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
+        const validation = await (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
+        const missing = missingPdfText(source, validation.editableText);
+        if (missing.length || source.some((page) => !page.rows.length)) {
+          throw structureError("PDF_DOCX_TEXT_COVERAGE_FAILED", "版式输出缺少原生文字。", "Layout output omitted native text.");
+        }
+        return validation;
       });
-      return;
+      return { warnings: [] };
     } catch (error) {
-      await (options.convertStructuredPdf || convertStructuredPdf)({
-        inputPath, outputPath, target: "docx", options
-      });
-      return;
+      if (error?.code === "PDF_DOCX_TEXT_COVERAGE_FAILED") {
+        fallbackReason = "content";
+        logger.warn("PDF layout output failed native text coverage; rebuilding editable text.");
+      } else {
+        try {
+          return await (options.convertStructuredPdf || convertStructuredPdf)({
+            inputPath, outputPath, target: "docx", options: { ...options, pdfTextPages: source }
+          });
+        } catch (structureFailure) {
+          // A bad/untrusted manifest and low-confidence table results must still fail closed.
+          if (!["PDF_STRUCTURE_PARSE_FAILED", "PDF_STRUCTURE_ENGINE_MISSING", "PDF_STRUCTURE_MODEL_MISSING",
+            "PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_DOCX_TEXT_COVERAGE_FAILED"].includes(structureFailure?.code)) throw structureFailure;
+        }
+      }
     }
   }
 
-  const source = pages || await extractPdfRowsByPage(inputPath);
-  const hasExtractableRows = source.some((page) => page.rows.length);
+  const completePages = await fillMissingPdfPageText(inputPath, source, options);
+  const hasExtractableRows = completePages.some((page) => page.rows.length);
   if (!hasExtractableRows) {
     throw new Error("这个 PDF 没有可提取的文字，可能是扫描版图片 PDF。扫描版需要 OCR 后才能转 Word。");
   }
 
   const body = [];
-  for (const page of source) {
-    body.push(xmlDocxParagraph(page.name, true));
-    const multiColumnRows = page.rows.filter((row) => row.length > 1);
-    const singleRows = page.rows.filter((row) => row.length <= 1);
-    if (multiColumnRows.length) {
-      body.push("<w:tbl>");
-      for (const row of multiColumnRows) {
+  for (const [pageIndex, page] of completePages.entries()) {
+    if (pageIndex) body.push('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+    let tableColumns = 0;
+    for (const row of page.rows) {
+      if (tableColumns && row.length !== tableColumns) {
+        body.push("</w:tbl>");
+        tableColumns = 0;
+      }
+      if (row.length > 1) {
+        if (!tableColumns) {
+          tableColumns = row.length;
+          body.push('<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblLayout w:type="autofit"/></w:tblPr>',
+            `<w:tblGrid>${row.map(() => `<w:gridCol w:w="${Math.floor(9026 / row.length)}"/>`).join("")}</w:tblGrid>`);
+        }
         body.push("<w:tr>");
         for (const cell of row) {
-          body.push(`<w:tc><w:p><w:r><w:t xml:space="preserve">${xmlDocxText(cell)}</w:t></w:r></w:p></w:tc>`);
+          body.push(`<w:tc><w:tcPr><w:tcW w:w="${Math.floor(9026 / row.length)}" w:type="dxa"/></w:tcPr>${xmlDocxParagraph(cell)}</w:tc>`);
         }
         body.push("</w:tr>");
+      } else {
+        body.push(xmlDocxParagraph(row[0] || ""));
       }
-      body.push("</w:tbl>");
     }
-    for (const row of singleRows) {
-      body.push(xmlDocxParagraph(row[0] || ""));
-    }
+    if (tableColumns) body.push("</w:tbl>");
   }
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
 <w:body>
 ${body.join("\n")}
-<w:sectPr/>
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
 </w:body>
 </w:document>`;
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -614,11 +756,12 @@ ${body.join("\n")}
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
-  await writeDocxZip(outputPath, [
+  await withAttemptOutput(outputPath, (attemptPath) => writeDocxZip(attemptPath, [
     { path: "[Content_Types].xml", content: contentTypes },
     { path: "_rels/.rels", content: rels },
     { path: "word/document.xml", content: documentXml }
-  ]);
+  ]));
+  return { warnings: [pdfLayoutFallbackWarning(fallbackReason), ...pdfOcrWarnings(completePages)] };
 }
 
 async function splitPdfToZip(inputPath, outputPath, options = {}) {
@@ -771,27 +914,25 @@ async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
   }
 }
 
-async function convertScannedPdfToOcrText(inputPath, outputPath) {
-  const pages = await ocrScannedPdfPages(inputPath);
-  const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n").trim();
+async function convertScannedPdfToOcrText(inputPath, outputPath, options = {}) {
+  const pages = await fillMissingPdfPageText(inputPath, await sourcePdfPages(inputPath, options), options);
+  const combined = pages.map((page) => `## ${page.name}\n${page.rows.map((row) => row.join("\t")).join("\n") || "[OCR 未识别出文字]"}`).join("\n\n").trim();
   await fsp.writeFile(outputPath, `${combined}\n`, "utf8");
+  return { warnings: pdfOcrWarnings(pages) };
 }
 
 // 扫描版 PDF -> Word：OCR 识别每页文字，生成可编辑 DOCX（纯文本段落）。
-// fallbackOptions 参数为与满血线保持签名兼容（公开线无表格重建分支，忽略之）；
-// skipTableRebuild 语义见 full-version fb2eba9。
-async function convertScannedPdfToOcrDocx(inputPath, outputPath, fallbackOptions = {}) {
-  const pages = await ocrScannedPdfPages(inputPath);
-  const combined = pages.map((page) => `## ${page.name}\n${page.text || "[OCR 未识别出文字]"}`).join("\n\n");
-  const { convertTextToDocx } = require("./text-docx");
-  await convertTextToDocx(combined, "txt", outputPath);
+// Mixed documents retain native pages and OCR only the pages without a text layer.
+async function convertScannedPdfToOcrDocx(inputPath, outputPath, options = {}) {
+  const pages = await fillMissingPdfPageText(inputPath, await sourcePdfPages(inputPath, options), options);
+  return convertPdfToDocx(inputPath, outputPath, pages, { ...options, docenginePath: null });
 }
 
 // 扫描版 PDF -> HTML：OCR 识别每页文字，生成可读 HTML。
-async function convertScannedPdfToOcrHtml(inputPath, outputPath) {
-  const pages = await ocrScannedPdfPages(inputPath);
+async function convertScannedPdfToOcrHtml(inputPath, outputPath, options = {}) {
+  const pages = await fillMissingPdfPageText(inputPath, await sourcePdfPages(inputPath, options), options);
   const body = pages.map((page) =>
-    `<h2>${escapeHtml(page.name)}</h2>\n<p>${escapeHtml(page.text || "[OCR 未识别出文字]").replace(/\n/g, "<br>\n")}</p>`
+    `<h2>${escapeHtml(page.name)}</h2>\n<p>${escapeHtml(page.rows.map((row) => row.join("\t")).join("\n") || "[OCR 未识别出文字]").replace(/\n/g, "<br>\n")}</p>`
   ).join("\n");
   await fsp.writeFile(outputPath, `<!doctype html>
 <html lang="zh-CN">
@@ -807,6 +948,7 @@ h2{color:#333;border-bottom:1px solid #ddd;padding-bottom:4px}
 ${body}
 </body>
 </html>`, "utf8");
+  return { warnings: pdfOcrWarnings(pages) };
 }
 
 // OCR 扫描版 PDF 的每一页，返回 [{ name, text }]；OCR 不可用或完全识别不出时抛明确错误。
@@ -946,6 +1088,9 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
 }
 
 module.exports = {
+  fillMissingPdfPageText,
+  missingPdfText,
+  restoreNativeStructureText,
   convertPdfDecrypt,
   assertPdfTableOcrQuality,
   convertStructuredPdf,

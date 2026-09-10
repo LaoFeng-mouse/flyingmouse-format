@@ -115,6 +115,7 @@ test("native image-only output is removed and falls back to structured DOCX", as
   let structured = 0;
   await convertPdfToDocx("input.pdf", outputPath, null, {
     docenginePath: "fixture-engine",
+    pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2]),
     convertStructuredPdf: async ({ outputPath: target }) => {
       structured += 1;
@@ -133,6 +134,7 @@ test("native DOCX with editable text keeps the fast path", async (t) => {
   let structured = 0;
   await convertPdfToDocx("input.pdf", outputPath, null, {
     docenginePath: "fixture-engine",
+    pdfTextPages: [{ pageNumber: 1, rows: [["Editable result"]] }],
     run: async (_engine, args) => fixtureDocx(args[2], "Editable result"),
     convertStructuredPdf: async () => { structured += 1; }
   });
@@ -197,6 +199,7 @@ test("native validation and structured fallback failures preserve an existing de
   await fsp.writeFile(outputPath, "KEEP");
   await assert.rejects(convertPdfToDocx("input.pdf", outputPath, null, {
     docenginePath: "fixture-engine",
+    pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2], "Looks editable"),
     validateNativeDocx: async () => { throw new Error("injected validation failure"); },
     convertStructuredPdf: async () => { throw new Error("structured failed"); }
@@ -210,6 +213,7 @@ test("native and structured failures leave no destination when none existed", as
   const outputPath = path.join(scratch, "out.docx");
   await assert.rejects(convertPdfToDocx("input.pdf", outputPath, null, {
     docenginePath: "fixture-engine",
+    pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2], "Looks editable", { malformed: true }),
     convertStructuredPdf: async () => { throw new Error("structured failed"); }
   }));

@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore locked Markdown engine
+        run: npm run restore:pandoc
+
       # conversion.test.js 等真实转换测试需要 bin/ 引擎（ffmpeg/poppler/tessdata/
       # LibreOffice/docstructure），gitignore 不入库——与发布门禁（release.yml）一致，
       # 从 ci-engines-v1 Release 恢复后再跑全量测试，否则引擎测试 ENOENT 假失败。
@@ -103,6 +106,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Restore locked Markdown engine
+        run: npm run restore:pandoc
 
       - name: Restore SHA-pinned native engines
         shell: bash

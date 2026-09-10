@@ -13,6 +13,7 @@ const path = require("path");
 const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
+const { pipeline } = require("stream/promises");
 
 // 下载空闲超时：60 秒内 socket 无任何数据视为断链（大文件持续传输会不断重置该计时）。
 const DOWNLOAD_IDLE_TIMEOUT_MS = 60000;
@@ -20,8 +21,21 @@ const DOWNLOAD_IDLE_TIMEOUT_MS = 60000;
 // .partial 放在最终目录里（同卷 rename 才是原子的），随机后缀防同目录并发互踩。
 function partialPathFor(destination) {
   const dir = path.dirname(destination);
-  const base = path.basename(destination);
-  return path.join(dir, `${base}.${crypto.randomBytes(6).toString("hex")}.partial`);
+  return path.join(dir, `.fm-${crypto.randomBytes(8).toString("hex")}.partial`);
+}
+
+async function publishDownloadedFile(stagedPath, destination, options = {}) {
+  if (options.overwrite === false) {
+    // link fails atomically with EEXIST; checking exists before rename would race.
+    await fs.promises.link(stagedPath, destination);
+    // The complete destination is now published. A cleanup failure cannot turn
+    // this success into an asset rollback that would break the new document.
+    await fs.promises.unlink(stagedPath).catch((error) => {
+      if (typeof options.log === "function") options.log("Saved file; staging cleanup failed", error);
+    });
+  } else {
+    await fs.promises.rename(stagedPath, destination);
+  }
 }
 
 function downloadToFile(url, destination, options = {}) {
@@ -30,6 +44,8 @@ function downloadToFile(url, destination, options = {}) {
   const partialPath = partialPathFor(destination);
   return new Promise((resolve, reject) => {
     let settled = false;
+    let output = null;
+    let incoming = null;
 
     // 失败清理只允许针对 partialPath——destination 归用户，本函数无权删除。
     const fail = (error) => {
@@ -37,12 +53,18 @@ function downloadToFile(url, destination, options = {}) {
       settled = true;
       const wrapped = error instanceof Error ? error : new Error(String(error));
       log(`Save failed: ${destination}`, wrapped);
-      fs.promises.rm(partialPath, { force: true })
+      if (incoming && !incoming.destroyed) incoming.destroy();
+      // Windows cannot reliably remove a partial file until its handle is closed.
+      const closed = output && !output.closed
+        ? new Promise((done) => { output.once("close", done); output.destroy(); })
+        : Promise.resolve();
+      closed.then(() => fs.promises.rm(partialPath, { force: true }))
         .catch((cleanupError) => log(`Failed to remove partial file: ${partialPath}`, cleanupError))
         .finally(() => reject(wrapped));
     };
 
     const request = client.get(url, (response) => {
+      incoming = response;
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
         // 重定向目标必须重新过信任校验（由调用方注入）；拒绝时旧目标同样不动。
@@ -50,6 +72,7 @@ function downloadToFile(url, destination, options = {}) {
         let redirectedUrl = null;
         let redirectError = null;
         try {
+          if ((options.redirectCount || 0) >= 5) throw new Error("保存失败：下载重定向次数过多。");
           if (typeof options.resolveRedirect !== "function") {
             throw new Error("保存失败：无法校验重定向地址。");
           }
@@ -62,7 +85,7 @@ function downloadToFile(url, destination, options = {}) {
           reject(redirectError);
           return;
         }
-        downloadToFile(redirectedUrl, destination, options).then(resolve, reject);
+        downloadToFile(redirectedUrl, destination, { ...options, redirectCount: (options.redirectCount || 0) + 1 }).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -82,30 +105,22 @@ function downloadToFile(url, destination, options = {}) {
       response.on("error", (error) => fail(error));
       response.on("aborted", () => fail(new Error("保存失败：下载连接被中断，文件未完整写入。")));
 
-      const file = fs.createWriteStream(partialPath);
-      file.on("error", (error) => fail(error));
-      file.on("finish", () => {
-        file.close((closeError) => {
-          if (closeError) {
-            fail(closeError);
-            return;
-          }
-          if (Number.isFinite(expectedBytes) && expectedBytes > 0 && receivedBytes !== expectedBytes) {
-            fail(new Error(`保存失败：文件不完整（已写入 ${receivedBytes} 字节，期望 ${expectedBytes} 字节）。`));
-            return;
-          }
-          // 完整性确认后才发布：rename 覆盖/新建最终目标；失败则旧文件原样保留。
-          fs.promises.rename(partialPath, destination).then(() => {
-            if (settled) return;
-            settled = true;
-            log(`Saved converted file: ${destination} (${receivedBytes} bytes)`);
-            resolve();
-          }, (renameError) => {
-            fail(new Error(`保存失败：无法写入目标文件（已有文件保持原样）。${renameError instanceof Error ? renameError.message : renameError}`));
-          });
-        });
-      });
-      response.pipe(file);
+      output = fs.createWriteStream(partialPath, { flags: "wx" });
+      pipeline(response, output).then(async () => {
+        if (settled) return;
+        if (Number.isFinite(expectedBytes) && expectedBytes > 0 && receivedBytes !== expectedBytes) {
+          fail(new Error(`保存失败：文件不完整（已写入 ${receivedBytes} 字节，期望 ${expectedBytes} 字节）。`));
+          return;
+        }
+        try {
+          await publishDownloadedFile(partialPath, destination, options);
+          settled = true;
+          log(`Saved converted file: ${destination} (${receivedBytes} bytes)`);
+          resolve();
+        } catch (renameError) {
+          fail(new Error(`保存失败：无法写入目标文件（已有文件保持原样）。${renameError instanceof Error ? renameError.message : renameError}`));
+        }
+      }, fail);
     });
 
     request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
@@ -115,4 +130,4 @@ function downloadToFile(url, destination, options = {}) {
   });
 }
 
-module.exports = { downloadToFile, partialPathFor, DOWNLOAD_IDLE_TIMEOUT_MS };
+module.exports = { downloadToFile, partialPathFor, publishDownloadedFile, DOWNLOAD_IDLE_TIMEOUT_MS };

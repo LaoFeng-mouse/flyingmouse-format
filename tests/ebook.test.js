@@ -50,9 +50,9 @@ test("splitChapters splits markdown by headings and txt by blocks", () => {
   assert.ok(txtParts[0].body.includes("para one"));
 });
 
-test("EPUB to TXT extracts readable text from a real Gutenberg epub", async () => {
+test("EPUB to TXT extracts readable text from a real Gutenberg epub", async (t) => {
   const epub = path.join(SAMPLES, "alice.epub");
-  if (!require("node:fs").existsSync(epub)) return; // 样本缺失时跳过
+  if (!require("node:fs").existsSync(epub)) return t.skip("Optional Gutenberg EPUB sample is unavailable");
   const dir = await tmpDir();
   try {
     const out = path.join(dir, "alice.txt");
@@ -65,9 +65,9 @@ test("EPUB to TXT extracts readable text from a real Gutenberg epub", async () =
   }
 });
 
-test("MOBI to TXT parses PalmDOC records from a real Gutenberg mobi", async () => {
+test("MOBI to TXT parses PalmDOC records from a real Gutenberg mobi", async (t) => {
   const mobi = path.join(SAMPLES, "alice.mobi");
-  if (!require("node:fs").existsSync(mobi)) return;
+  if (!require("node:fs").existsSync(mobi)) return t.skip("Optional Gutenberg MOBI sample is unavailable");
   const dir = await tmpDir();
   try {
     const out = path.join(dir, "alice-mobi.txt");

@@ -210,3 +210,19 @@ test("CSV to Markdown returns empty string for empty input", () => {
   assert.equal(csvToMarkdown(""), "");
   assert.equal(csvToMarkdown("\n\n"), "");
 });
+
+test("JSON CSV preserves arbitrary precision numeric spelling, including values nested in arrays", () => {
+  const csv = jsonToCsv('[{"id":9007199254740993,"decimal":0.1234567890123456789012345,"nested":[9007199254740993,1e400],"text":"9007199254740993"}]');
+  assert.match(csv, /"9007199254740993"/);
+  assert.match(csv, /"0\.1234567890123456789012345"/);
+  assert.match(csv, /"\[9007199254740993,1e400\]"/);
+  assert.doesNotMatch(csv, /9007199254740992|Infinity/);
+});
+
+test("JSON CSV retains empty objects and scalar or nested-array rows", () => {
+  assert.equal(jsonToCsv('[{"a":{},"b":1}]'), '"a","b"\n"{}","1"');
+  assert.equal(jsonToCsv('[1,true,null,"鼠鼠",{},[2,3]]'), '"value"\n"1"\n"true"\n"null"\n"鼠鼠"\n"{}"\n"[2,3]"');
+  assert.equal(jsonToCsv('42'), '"value"\n"42"');
+  assert.equal(jsonToCsv('[{"a":null}]'), '"a"\n"null"');
+  assert.equal(jsonToCsv('[{"text":"\\u005f_flyingmouse_json_number__0","id":9007199254740993}]'), '"id","text"\n"9007199254740993","__flyingmouse_json_number__0"');
+});

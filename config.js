@@ -142,7 +142,7 @@ const QPDF_PATH = bundledQpdfPath();
 const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
 const DOCSTRUCTURE_MODEL_DIR = bundledDocstructureModelDir();
 
-const imageInput = new Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga", "svg", "jp2", "j2k", "jxl", "qoi", "ppm"]);
+const imageInput = new Set(["jpg", "jpeg", "jfif", "jpe", "png", "webp", "gif", "avif", "tif", "tiff", "bmp", "heic", "heif", "ico", "tga", "svg", "jp2", "j2k", "jxl", "qoi", "ppm"]);
 // 设计稿输入：.ai 本质是 PDF 封装（poppler 可直接栅格化，实测泰文包装稿无缺字），
 // .psd 走 LibreOffice Draw 解码（实测图层合成完整）。统一归入 image 分类。
 const designInput = new Set(["ai", "psd"]);

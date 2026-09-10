@@ -15,10 +15,9 @@ test("all settings persistence goes through the degraded-tolerant persistSetting
   assert.match(appSource, /async function persistSettings\(patch\)/, "缺少统一持久化入口");
   assert.match(appSource, /catch \(error\) \{\s*rendererLog\("warn", "设置持久化失败/, "persistSettings 必须 catch 持久化错误");
   const bare = [...appSource.matchAll(/state\.settings\s*=\s*await logBridge\.updateSettings/g)];
-  // 唯一一次允许出现在 persistSettings 内部（成功后对齐规范化结果）。
-  assert.equal(bare.length, 1, "persistSettings 之外不得再有裸 await updateSettings");
+  assert.equal(bare.length, 0, "成功响应不能整份覆盖本地偏好");
   assert.match(appSource.slice(appSource.indexOf("async function persistSettings"), appSource.indexOf("languageSelect.addEventListener")),
-    /state\.settings = await logBridge\.updateSettings\(patch\)/, "persistSettings 内部才允许 await updateSettings");
+    /await settingsSync\.persist\(patch\)/, "持久化必须保留未落盘字段并处理响应先后顺序");
 });
 
 test("language change updates in-memory settings and UI before persisting", () => {
@@ -48,7 +47,7 @@ test("default target change updates in-memory settings before persisting", () =>
 
 test("startup settings fallbacks keep the legacy language preference", () => {
   // 迁移/读取失败的内存降级若不带 language，用户语言会退回系统语言（复核表第三行）。
-  const fallbacks = [...appSource.matchAll(/state\.settings = \{\s*schemaVersion: 2,\s*targetBySource: legacy\.targetBySource,\s*\.\.\.\(legacy\.language/g)];
+  const fallbacks = [...appSource.matchAll(/settingsSync\.restore\(\{\s*schemaVersion: 2,\s*targetBySource: legacy\.targetBySource,\s*\.\.\.\(legacy\.language/g)];
   assert.equal(fallbacks.length, 2, "migrate 与 getSettings 两处降级都要保留旧语言偏好");
 });
 

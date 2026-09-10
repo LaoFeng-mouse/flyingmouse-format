@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // build-engine-manifest.js — 打包期生成 LibreOffice 引擎关键文件清单（0.6.10 P3）。
-// 运行时 store-engine-cache.js 按这份清单校验缓存/复制产物完整性；缺失时运行时
-// 退回 0.6.9 判定（入口存在 + .complete）但仍执行冒烟转换。
+// 运行时校验缓存/复制产物完整性；旧包没有有效清单时必须执行真实转换验证，
+// 不能仅凭入口和 .complete 放行。
 //
 // 收录策略：
 //   - 入口与启动骨架：soffice.com/.bin/.ini、bootstraplo/sal3/mergedlo/vclplug_winlo/
@@ -50,11 +50,16 @@ function collect() {
   const found = new Map();
   for (const name of fs.readdirSync(programDir)) {
     const lower = name.toLowerCase();
-    if (wanted.has(lower) || /^icu(u|in|dt)\d+\.dll$/.test(lower)) found.set(lower, name);
+    if (wanted.has(lower) || /^icu(uc|u|in|dt)\d+\.dll$/.test(lower)) found.set(lower, name);
   }
   const files = {};
   const missing = [];
-  for (const base of [...wanted]) {
+  for (const family of ["(?:uc|u)", "in", "dt"]) {
+    if (![...found.keys()].some((name) => new RegExp(`^icu${family}\\d+\\.dll$`).test(name))) {
+      missing.push(`${programRel}/icu${family}*.dll`);
+    }
+  }
+  for (const base of new Set([...wanted, ...found.keys()])) {
     const actual = found.get(base);
     if (base === "gengal.exe" && !actual) continue; // 可选辅助工具，不作关键项
     if (!actual) {

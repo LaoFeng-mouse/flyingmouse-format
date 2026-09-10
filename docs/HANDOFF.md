@@ -1,5 +1,13 @@
 # FlyingMouse Format 交接
 
+## 当前工作：0.7.0（2026-09-10）
+
+0.7.0 修复范围与证据以 `docs/release-notes-070.md`、`docs/audit-070-fixes.md` 为准。`package.json`、两个 lockfile 和 README 已同步 0.7.0。使用 `npm run restore:pandoc` 恢复固定引擎，beforePack 自动生成 LibreOffice 完整性清单；`scripts/build-appx.ps1` 整体构建 Electron、创建独立布局并验证未签名 Store APPX 0.7.0.0。最终产物和 Git 同步状态在交付报告中记录；本文不代表已提交微软商店。
+
+下方为历史交接记录，版本、待办和“全部修复”等结论保留其原日期，不代表 0.7.0 当前状态。
+
+---
+
 更新时间：2026-09-10（复核遗留 P1-P5 修复完成，分支 fix/0.6.10-save-safety 待提交/PR/重打 appx）
 
 ## 2026-09-10（晚）：复核遗留 P1-P5 全部修复（分支 fix/0.6.10-save-safety，版本已 bump 0.6.10）

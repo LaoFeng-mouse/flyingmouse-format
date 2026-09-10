@@ -30,6 +30,8 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 
 - 保留鼠鼠品牌：页面必须包含 `mouseMascot` 和鼠鼠状态图；打包图标必须是鼠鼠，不得恢复闲鱼版橙色闪电或中性 UI。
 - 鼠鼠状态覆盖上传、识别、普通转换、批量、OCR、PDF、成功与失败。
+- 胸前 V/U 是默认合拢双手；动作姿态必须删除该 V/U，且只保留一对动作手。带已知胸前手部冲突的工坊场景图不得作为本项目正向参考或默认展示。UI 插件文件完整性验证不等于角色画法正确。
+- 外观支持浅色、深色、随系统；尊重用户选择且不反色处理真实文档/图片内容。修改不能用固定工坊场景替代文件转换工作流。
 - 用户运行时文本使用 DOM API / `textContent`，禁止重新引入动态 `innerHTML`。
 - 长文件名、错误和按钮文案必须可换行，避免窄窗口溢出。
 - 批量转换只显示所有选中文件都支持的目标格式交集。
@@ -42,7 +44,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 
 - PDF → XLSX 是“智能表格提取”：优先 PDF.js 电子文字坐标，无有效文字时使用 Poppler + Tesseract blocks；支持有框/无框、多表、跨页续接、旋转、合并区域、低置信批注与 Raw 回退，但扫描件和复杂排版仍可能不完整。
 - PDF → DOCX 优先用内置 docengine 引擎（spawn `bin/docengine/docengine.exe`，pdf2docx 打包）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。Windows 7 版不含该引擎（Python 3.12 不支持 Win7），始终回退文字提取；macOS 版同样不含（darwin 引擎仅 runtime/libreoffice/tessdata）。
-- HTML / Office → Markdown 必须共用 ATX 标题、fenced 代码块的 Turndown helper；CSV 使用锁定的 `csv-parse 5.6.0`，禁止退回按换行拆分的简易解析器。
+- HTML / Office → Markdown 必须共用 ATX 标题、fenced 代码块的 Turndown helper；CSV 使用锁定的 `csv-parse 7.0.2`（修复已知原型处理问题），禁止退回按换行拆分的简易解析器。
 - 资源上限固定为：单图 50MP、单边 16384px、图片合并 PDF 总解码量 100MP、批量选择 2GB、PDF 不限页数（1:1 还原）、OCR 不限页数；Sharp 不得使用无约束 `limitInputPixels: false`。
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR。
