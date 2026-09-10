@@ -12,6 +12,9 @@ const state = {
   settings: { schemaVersion: 2, targetBySource: {} }
 };
 
+// S1：设置持久化失败时置位——本次会话用内存偏好，界面显示非阻断警告。
+let settingsDegraded = false;
+
 /* --- 渲染进程日志：转发到主进程 debug.log --- */
 const logBridge = window.flyingMouseFormat || {};
 
@@ -100,6 +103,7 @@ const messages = {
   "zh-CN": {
     "workspace.aria": "文件转换工作台", "brand.title": "鼠鼠帮你把文件转成需要的格式",
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
+    "settings.degraded": "偏好设置暂时无法保存，本次仍可正常转换；重启后可能恢复默认设置。",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
     "agent.install": "接入 Agent", "agent.checking": "正在检索已安装 Agent 的 skill 目录…",
@@ -144,6 +148,7 @@ const messages = {
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
+    "settings.degraded": "Preferences could not be saved this session. Converting still works; defaults may return after restart.",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
     "agent.install": "Connect to Agent", "agent.checking": "Looking for existing Agent skill directories…",
@@ -1436,15 +1441,32 @@ async function initializeDurableSettings() {
     })()
   };
   if (typeof logBridge.migrateLegacySettings === "function") {
-    state.settings = await logBridge.migrateLegacySettings(legacy);
+    // S1（2026-09-10 商店版 0.6.4 实证）：设置持久化失败（EXDEV/EACCES/ENOSPC 等）
+    // 只影响「记住偏好」，不是引擎故障。此前异常直接冒泡打断 initializeApp，
+    // 能力检测/版本显示全部跳过、界面误报「检测失败」。现在降级为内存设置
+    // （state.settings 已有安全默认值），保留旧 localStorage 不删（下次启动仍可迁移），
+    // 转换功能照常，仅提示一次非阻断警告。
     try {
-      localStorage.removeItem(LEGACY_TARGET_STORAGE_KEY);
-      localStorage.removeItem(LANGUAGE_STORAGE_KEY);
-    } catch {
-      // A blocked origin store must not prevent startup after main settings load.
+      state.settings = await logBridge.migrateLegacySettings(legacy);
+      try {
+        localStorage.removeItem(LEGACY_TARGET_STORAGE_KEY);
+        localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+      } catch {
+        // A blocked origin store must not prevent startup after main settings load.
+      }
+    } catch (error) {
+      rendererLog("warn", "设置迁移失败，本次使用内存偏好", error);
+      state.settings = { schemaVersion: 2, targetBySource: legacy.targetBySource };
+      settingsDegraded = true;
     }
   } else if (typeof logBridge.getSettings === "function") {
-    state.settings = await logBridge.getSettings();
+    try {
+      state.settings = await logBridge.getSettings();
+    } catch (error) {
+      rendererLog("warn", "设置读取失败，本次使用内存偏好", error);
+      state.settings = { schemaVersion: 2, targetBySource: legacy.targetBySource };
+      settingsDegraded = true;
+    }
   } else {
     state.settings.targetBySource = legacy.targetBySource;
   }
@@ -1458,6 +1480,9 @@ async function initializeApp() {
   setWorkflowStep("select");
   await fetchCapabilities();
   initializeVersionLabel();
+  if (settingsDegraded) {
+    setStatus(t("settings.degraded"), "warn");
+  }
 }
 
 // ---- 版本号显示 ----

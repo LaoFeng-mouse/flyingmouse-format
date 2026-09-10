@@ -80,38 +80,73 @@ async function writeSettings(settingsPath, settings) {
   }
 }
 
-async function updateSettings(settingsPath, patch = {}) {
-  const current = await readSettings(settingsPath);
-  const next = { ...current, schemaVersion: SCHEMA_VERSION };
-  if (Object.prototype.hasOwnProperty.call(patch, "targetBySource")) {
-    next.targetBySource = normalizeTargetMap(patch.targetBySource);
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, "language")) {
-    if (patch.language === "zh-CN" || patch.language === "en-US") next.language = patch.language;
-    else delete next.language;
-  }
-  if (Object.prototype.hasOwnProperty.call(patch, "lastSaveDirectory")) {
-    if (!await isDirectory(patch.lastSaveDirectory)) {
-      throw new Error("保存目录不存在或不是目录。");
+function updateSettings(settingsPath, patch = {}) {
+  return withSettingsLock(settingsPath, async () => {
+    const current = await readSettings(settingsPath);
+    const next = { ...current, schemaVersion: SCHEMA_VERSION };
+    if (Object.prototype.hasOwnProperty.call(patch, "targetBySource")) {
+      next.targetBySource = normalizeTargetMap(patch.targetBySource);
     }
-    next.lastSaveDirectory = patch.lastSaveDirectory;
-  }
-  await writeSettings(settingsPath, next);
-  return next;
+    if (Object.prototype.hasOwnProperty.call(patch, "language")) {
+      if (patch.language === "zh-CN" || patch.language === "en-US") next.language = patch.language;
+      else delete next.language;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "lastSaveDirectory")) {
+      if (!await isDirectory(patch.lastSaveDirectory)) {
+        throw new Error("保存目录不存在或不是目录。");
+      }
+      next.lastSaveDirectory = patch.lastSaveDirectory;
+    }
+    await writeSettings(settingsPath, next);
+    return next;
+  });
 }
 
-async function mergeLegacySettings(settingsPath, legacy = {}) {
-  const current = await readSettings(settingsPath);
-  const legacyTargets = normalizeTargetMap(legacy.targetBySource);
-  const next = {
-    ...current,
-    targetBySource: { ...legacyTargets, ...current.targetBySource }
-  };
-  if (!next.language && (legacy.language === "zh-CN" || legacy.language === "en-US")) {
-    next.language = legacy.language;
+// 语义比较（键序/格式无关）：merge 产物与磁盘现状等价时跳过写盘（S2 幂等迁移）。
+// 0.6.4 商店版实证：迁移失败死循环期间每次启动都白写一次 + EXDEV 回退 copy，
+// AppContainer 重定向盘上纯耗 IO；内容未变就不该有磁盘副作用。
+function settingsContentEquals(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
   }
-  await writeSettings(settingsPath, next);
-  return next;
+}
+
+// S3：同一设置文件的「读→改→写」必须串行（2026-09-10 审计）。updateSettings 与
+// mergeLegacySettings 都是 read-modify-write，IPC 并发（如同时改语言和默认格式）
+// 会拿到同一旧快照、后写覆盖先写——单次 rename 原子性解决不了快照竞争。
+// per-path promise 链把同路径变更排队执行；不同路径互不阻塞。
+const mutationChains = new Map();
+
+function withSettingsLock(settingsPath, task) {
+  const key = path.resolve(settingsPath);
+  const previous = mutationChains.get(key) || Promise.resolve();
+  // 前序失败不阻断后续（链上挂 catch）；链尾无等待者时清掉 Map 条目防泄漏。
+  const current = previous.then(task, task);
+  mutationChains.set(key, current.then(
+    () => { if (mutationChains.get(key) === current) mutationChains.delete(key); },
+    () => { if (mutationChains.get(key) === current) mutationChains.delete(key); }
+  ));
+  return current;
+}
+
+function mergeLegacySettings(settingsPath, legacy = {}) {
+  return withSettingsLock(settingsPath, async () => {
+    const current = await readSettings(settingsPath);
+    const legacyTargets = normalizeTargetMap(legacy.targetBySource);
+    const next = {
+      ...current,
+      targetBySource: { ...legacyTargets, ...current.targetBySource }
+    };
+    if (!next.language && (legacy.language === "zh-CN" || legacy.language === "en-US")) {
+      next.language = legacy.language;
+    }
+    // 没有旧设置（或旧值全被现有设置覆盖）时不产生任何写入；返回值照常，前端无感。
+    if (settingsContentEquals(current, next)) return next;
+    await writeSettings(settingsPath, next);
+    return next;
+  });
 }
 
 async function readLastSaveDirectory(settingsPath, fallbackDirectory) {
