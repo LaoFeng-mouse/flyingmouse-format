@@ -68,7 +68,9 @@ test("renderer restores and updates target preferences through durable Electron 
   assert.match(html, /conversion-preferences\.js/);
   assert.match(app, /migrateLegacySettings/);
   assert.match(app, /preferredTarget\(state\.settings\.targetBySource/);
-  assert.match(app, /logBridge\.updateSettings\(\{\s*targetBySource\s*\}/s);
+  // P2（0.6.10）：持久化统一走 persistSettings()（失败降级），回调不再裸调 IPC。
+  assert.match(app, /await persistSettings\(\{ targetBySource \}\)/);
+  assert.match(app, /logBridge\.updateSettings\(patch\)/);
   assert.doesNotMatch(app, /preferredTarget\(localStorage/);
   assert.doesNotMatch(app, /rememberTarget\(localStorage/);
 });

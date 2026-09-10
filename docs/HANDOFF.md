@@ -1,6 +1,21 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-09-10（PR #71 已合并、main CI 转绿、0.6.9 商店 appx 验包交付，待用户上传 Partner Center）
+更新时间：2026-09-10（复核遗留 P1-P5 修复完成，分支 fix/0.6.10-save-safety 待提交/PR/重打 appx）
+
+## 2026-09-10（晚）：复核遗留 P1-P5 全部修复（分支 fix/0.6.10-save-safety，版本已 bump 0.6.10）
+
+- **范围**：对 0.6.9（f05c0b9）代码复核的 5 项遗留逐项修复，详见 `docs/release-notes-0.6.10.md`。工作目录 `D:\项目\飞鼠格式-fix-0.6.9`（worktree，分支 fix/0.6.10-save-safety，基于 main f05c0b9）。
+- **P1** 下载落盘抽出 `save-download.js`：`.partial` 临时文件收全+校验后才 rename 发布，失败只清临时文件，destination 永不 rm（tests/save-download.test.js 7/7 + 新旧对照复现）。
+- **P2** `public/app.js` 统一 `persistSettings()`：内存先行、UI 更新、尽力持久化、失败一次性非阻断警告；两处迁移降级带 legacy.language（tests/settings-degrade-ui.test.js 5/5 静态守卫）。
+- **P3** 新 `store-engine-cache.js`：staging 复制 → 构建期清单（`scripts/build-engine-manifest.js`，48 关键文件，≤5MB 记 sha256）校验 → 真实 CSV→PDF 冒烟 → rename 发布 → 发布后才回收旧缓存；源包残缺永不发布、绝不动可用旧缓存（tests/store-engine-cache.test.js 7/7，含真实引擎冒烟，本机借用满血版 resources 引擎 ~9s）。
+- **P4** `settings-store.js` `withSettingsLock` 队列清理：`queued` 同一对象比较 + `_mutationChainsSize()` 探针（tests/settings-store.test.js 8/8）。
+- **P5** `scripts/release-version-sync.js` 两阶段原子化：读全校验+内存生成（零写）→ 写盘、中途失败回滚（tests/release-version-sync-atomic.test.js 4/4）。
+- **全量测试**：519 例 = 477 过 / 30 败；30 败与改动前基线逐条一致（worktree bin/ 缺引擎，ffmpeg/pdftoppm ENOENT，`git stash -u` 对照证实非本批引入）。新根 .js 已登记 build.files；新测试已进 test 与 test:ci 两处。
+- **待办（下一窗口）**：
+  - ① 提交本分支 → push → PR → main（受 ruleset 保护走 PR squash 合并）→ 盯 CI 绿。
+  - ② appx 重打：`D:\appx-build` worktree 同步 main → 恢复引擎后 `node scripts/build-engine-manifest.js` 生成 `engine-integrity.json` 随包 → `--win dir` 重打（删 app-update.yml；staging 备份绝不放 `__appx-manual/` 内）→ manifest 版本 `0.6.10.0` → rename-opc / PE 悬空扫描 / makeappx / check-appx 全链 → 交付 `D:\飞鼠打包\FlyingMouseFormat-0.6.10-x64.appx`。
+  - ③ GitHub tag/release 与 Partner Center 上传仍由用户本人操作（0.6.9 tag 仍未建，见下节②）。
+- **已知取舍**：P3 首启同步等待（慢盘首启更长）保持 0.6.9 同时机不引入竞态，体感优化另行立项。
 
 ## 2026-09-10：PR #71 squash 合并（main f05c0b9）+ 0.6.9 商店 appx 打包交付
 

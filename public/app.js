@@ -1352,12 +1352,30 @@ function removeBlankPage(index) {
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
+// P2（2026-09-10 复核）：设置写盘失败不得再打断用户操作。旧回调直接
+// await updateSettings 并拿返回值覆盖 state.settings——IPC 一抛错，语言切换
+// 后面的 refreshLanguage() 被跳过、默认格式更新丢失内存值。统一策略与 S1 启动
+// 降级一致：先更新内存设置 + 界面，再尽力持久化；失败只影响「下次是否记得」。
+async function persistSettings(patch) {
+  if (typeof logBridge.updateSettings !== "function") return;
+  try {
+    // 成功后用主进程规范化结果对齐内存（normalize/白名单以 main 为准）。
+    state.settings = await logBridge.updateSettings(patch);
+  } catch (error) {
+    rendererLog("warn", "设置持久化失败，本次继续使用内存偏好", error);
+    if (!settingsDegraded) {
+      settingsDegraded = true;
+      setStatus(t("settings.degraded"), "warn");
+    }
+  }
+}
 languageSelect.addEventListener("change", async () => {
   i18n.setLanguage(languageSelect.value, { persist: false });
-  if (typeof logBridge.updateSettings === "function") {
-    state.settings = await logBridge.updateSettings({ language: i18n.language });
+  if (i18n.language === "zh-CN" || i18n.language === "en-US") {
+    state.settings = { ...state.settings, language: i18n.language };
   }
   refreshLanguage();
+  await persistSettings({ language: i18n.language });
 });
 targetSelect.addEventListener("change", async () => {
   syncVideoCodecField();
@@ -1370,11 +1388,8 @@ targetSelect.addEventListener("change", async () => {
     state.files.map((file) => extensionOf(file.name)),
     targetSelect.value
   );
-  if (typeof logBridge.updateSettings === "function") {
-    state.settings = await logBridge.updateSettings({ targetBySource });
-  } else {
-    state.settings.targetBySource = targetBySource;
-  }
+  state.settings = { ...state.settings, targetBySource };
+  await persistSettings({ targetBySource });
 });
 downloadButton.addEventListener("click", saveConvertedFile);
 batchSaveButton.addEventListener("click", saveAllConvertedFiles);
@@ -1456,7 +1471,15 @@ async function initializeDurableSettings() {
       }
     } catch (error) {
       rendererLog("warn", "设置迁移失败，本次使用内存偏好", error);
-      state.settings = { schemaVersion: 2, targetBySource: legacy.targetBySource };
+      // P2 补充（09-10 复核）：内存降级要带上已从 localStorage 读到的旧语言偏好，
+      // 否则迁移失败反而把用户语言丢回系统语言。
+      state.settings = {
+        schemaVersion: 2,
+        targetBySource: legacy.targetBySource,
+        ...(legacy.language === "zh-CN" || legacy.language === "en-US"
+          ? { language: legacy.language }
+          : {})
+      };
       settingsDegraded = true;
     }
   } else if (typeof logBridge.getSettings === "function") {
@@ -1464,7 +1487,13 @@ async function initializeDurableSettings() {
       state.settings = await logBridge.getSettings();
     } catch (error) {
       rendererLog("warn", "设置读取失败，本次使用内存偏好", error);
-      state.settings = { schemaVersion: 2, targetBySource: legacy.targetBySource };
+      state.settings = {
+        schemaVersion: 2,
+        targetBySource: legacy.targetBySource,
+        ...(legacy.language === "zh-CN" || legacy.language === "en-US"
+          ? { language: legacy.language }
+          : {})
+      };
       settingsDegraded = true;
     }
   } else {

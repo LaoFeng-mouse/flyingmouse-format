@@ -122,12 +122,17 @@ const mutationChains = new Map();
 function withSettingsLock(settingsPath, task) {
   const key = path.resolve(settingsPath);
   const previous = mutationChains.get(key) || Promise.resolve();
-  // 前序失败不阻断后续（链上挂 catch）；链尾无等待者时清掉 Map 条目防泄漏。
+  // 前序失败不阻断后续（链上挂 catch）。
   const current = previous.then(task, task);
-  mutationChains.set(key, current.then(
-    () => { if (mutationChains.get(key) === current) mutationChains.delete(key); },
-    () => { if (mutationChains.get(key) === current) mutationChains.delete(key); }
-  ));
+  // 链尾无等待者时清掉 Map 条目防泄漏。P4（0.6.10 复核）：旧实现往 Map 存的是
+  // `current.then(...)` 派生 Promise，清理却比较 `mutationChains.get(key) === current`
+  // ——两个对象永不相等，清理条件从不成立，每个用过的设置路径永久留一项。
+  // 现在把要清理的队尾 Promise 存进局部变量，存入与比较同一对象。
+  const queued = current.then(
+    () => { if (mutationChains.get(key) === queued) mutationChains.delete(key); },
+    () => { if (mutationChains.get(key) === queued) mutationChains.delete(key); }
+  );
+  mutationChains.set(key, queued);
   return current;
 }
 
@@ -166,5 +171,9 @@ module.exports = {
   readLastSaveDirectory,
   readSettings,
   updateSettings,
-  writeLastSaveDirectory
+  writeLastSaveDirectory,
+  // 测试/诊断专用：当前排队中的设置路径数（正常应为 0；P4 清理逻辑的回归探针）。
+  _mutationChainsSize() {
+    return mutationChains.size;
+  }
 };
