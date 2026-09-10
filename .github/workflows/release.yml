@@ -80,6 +80,9 @@ jobs:
           node --check pdf-table-runtime.js
           node --check public/app.js
 
+      - name: Validate APPX verification gates
+        run: python -m unittest discover -s tests -p check_appx_test.py
+
       - name: Full real conversion suite
         run: npm test
 

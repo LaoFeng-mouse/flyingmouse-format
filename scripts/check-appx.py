@@ -12,6 +12,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+from urllib.parse import unquote
 
 PACKAGE_NAMESPACE = "http://schemas.microsoft.com/appx/manifest/foundation/windows10"
 REQUIRED_ROOTS = ("[Content_Types].xml", "AppxManifest.xml", "AppxBlockMap.xml")
@@ -25,8 +26,10 @@ def sha_stream(stream):
     return digest.hexdigest()
 
 
-def normalized_entry(name):
-    normalized = name.replace("\\", "/")
+def normalized_entry(name, *, opc_encoded=False):
+    # MakeAppx stores OPC part names, so spaces in payload ZIP names appear as
+    # %20 while the manifest's Executable remains a normal Windows path.
+    normalized = (unquote(name, errors="strict") if opc_encoded else name).replace("\\", "/")
     parts = normalized.rstrip("/").split("/")
     if not normalized or normalized.startswith("/") or any(
         not part or part in (".", "..") or ":" in part or "\x00" in part
@@ -37,11 +40,11 @@ def normalized_entry(name):
 
 
 def backup_entry(name):
-    parts = name.replace("\\", "/").rstrip("/").split("/")
+    parts = unquote(name, errors="strict").replace("\\", "/").rstrip("/").split("/")
     directory_parts = parts if name.endswith(("/", "\\")) else parts[:-1]
     for part in directory_parts:
         lowered = part.casefold()
-        if lowered in {".git", ".codex", ".worktrees", "backup", "backups", ".backup", ".backups", "__pycache__"}:
+        if lowered in {".git", ".codex", ".worktrees", "backup", "backups", ".backup", ".backups"}:
             return True
         if re.search(r"(?:^|[._-])(?:backup|backups|bak)(?:$|[._-])", lowered):
             return True
@@ -76,9 +79,9 @@ def verify_package(package, asar_reference, *, version, identity, publisher):
         infos = archive.infolist()
         seen = set()
         names = {info.filename for info in infos if not info.is_dir()}
-        file_paths = {normalized_entry(name) for name in names}
+        file_paths = {normalized_entry(name, opc_encoded=True) for name in names}
         for info in infos:
-            normalized = normalized_entry(info.filename)
+            normalized = normalized_entry(info.filename, opc_encoded=True)
             if normalized in seen:
                 errors.append(f"Duplicate package path: {info.filename}")
             seen.add(normalized)

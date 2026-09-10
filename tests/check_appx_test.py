@@ -55,6 +55,36 @@ class CheckAppxTests(unittest.TestCase):
         self.assertTrue(self.verify()["ok"])
         self.assertEqual(self.run_checker().returncode, 0)
 
+    def test_makeappx_opc_encoded_spaces_match_the_manifest_executable(self):
+        self.build()
+        with zipfile.ZipFile(self.package) as archive:
+            entries = [(entry.filename, archive.read(entry)) for entry in archive.infolist()]
+        with zipfile.ZipFile(self.package, "w") as archive:
+            for name, content in entries:
+                if name == "AppxManifest.xml":
+                    content = content.replace(b"FlyingMouse.exe", b"Flying Mouse.exe")
+                if name == "app/FlyingMouse.exe":
+                    name = "app/Flying%20Mouse.exe"
+                archive.writestr(name, content)
+        self.assertTrue(self.verify()["ok"])
+
+    def test_bundled_runtime_python_bytecode_is_allowed(self):
+        self.build(extra=(("app/resources/libreoffice/program/__pycache__/uno.cpython-312.pyc", b"bundled runtime"),))
+        self.assertTrue(self.verify()["ok"])
+
+    def test_encoded_traversal_and_duplicate_paths_fail(self):
+        for entry in ("app/%2e%2e/outside", "app/%5c..%5coutside"):
+            with self.subTest(entry=entry):
+                self.build(extra=((entry, b"bad"),))
+                self.assertNotEqual(self.run_checker().returncode, 0)
+        self.build(extra=(("app/%46lyingMouse.exe", b"duplicate logical executable"),))
+        self.assertFalse(self.verify()["ok"])
+
+    def test_percent_encoded_percent_is_not_decoded_twice(self):
+        self.assertEqual(CHECK.normalized_entry("app/Flying%2520Mouse.exe", opc_encoded=True), "app/flying%20mouse.exe")
+        self.assertNotEqual(CHECK.normalized_entry("app/Flying%2520Mouse.exe", opc_encoded=True),
+                            CHECK.normalized_entry("app/Flying Mouse.exe"))
+
     def test_identity_publisher_version_and_architecture_fail_closed(self):
         for changed in ({"identity": "Other"}, {"publisher": "CN=Wrong"}, {"version": "0.6.10.0"}, {"architecture": "arm64"}):
             with self.subTest(changed=changed):
