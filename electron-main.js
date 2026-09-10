@@ -85,18 +85,45 @@ ipcMain.handle("get-app-version", (event) => {
 // per-user location and run from there. Dev / non-Store installs already run from a
 // writable resources dir, so they skip this entirely.
 function ensureWritableLibreOfficeForStore(bundledSofficePath) {
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+  const enginesRoot = path.join(localAppData, "FlyingMouseFormat", "engines");
+  // L3（0.6.9 审计）：缓存按应用版本隔离——旧实现共享固定目录，「soffice.com 存在」
+  // 就直接返回，应用升级后仍会调用上一个版本的引擎。版本目录 + .complete 标记后，
+  // 半套/过期缓存一律重建（L1/L2），旧版本目录在新引擎发布成功后尽力回收。
+  const versionTag = String(app.getVersion() || "unknown").replace(/[^0-9A-Za-z._-]/g, "_");
+  const bundleName = `libreoffice-${versionTag}`;
+  const destBundle = path.join(enginesRoot, bundleName);
+  const destSoffice = path.join(destBundle, "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com");
+  const completeMarker = path.join(destBundle, ".complete");
   try {
     const bundledBundle = path.join(process.resourcesPath || "", "libreoffice");
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    const destBundle = path.join(localAppData, "FlyingMouseFormat", "engines", "libreoffice");
-    const destSoffice = path.join(destBundle, "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com");
-    if (fs.existsSync(destSoffice)) return destSoffice;
+    if (fs.existsSync(destSoffice) && fs.existsSync(completeMarker)) return destSoffice;
+    // 残缺或过期缓存：先整目录清掉再复制，绝不与半套引擎共用目标路径。
+    fs.rmSync(destBundle, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(destBundle), { recursive: true });
     log(`Extracting LibreOffice engine to writable location: ${destBundle}`);
     fs.cpSync(bundledBundle, destBundle, { recursive: true });
-    if (fs.existsSync(destSoffice)) return destSoffice;
+    if (!fs.existsSync(destSoffice)) throw new Error("soffice.com missing after engine extraction");
+    fs.writeFileSync(completeMarker, `${versionTag}\n`, "utf8");
+    try {
+      for (const name of fs.readdirSync(enginesRoot)) {
+        if (name !== bundleName && /^libreoffice(-|$)/.test(name)) {
+          fs.rmSync(path.join(enginesRoot, name), { recursive: true, force: true });
+        }
+      }
+    } catch {
+      // 旧缓存回收失败不影响本次启动（顶多占盘）。
+    }
+    return destSoffice;
   } catch (error) {
+    // 复制中断：把残缺目录清干净再回退 bundled 路径——否则「存在即有效」的旧逻辑
+    // 会让下一次启动命中半套引擎，形成重启也无法自愈的顽固故障（0.6.4 商店线实证）。
     log("LibreOffice writable-engine extraction failed; using bundled path", error);
+    try {
+      fs.rmSync(destBundle, { recursive: true, force: true });
+    } catch {
+      // 清理失败只可能来自更底层的 IO 问题，日志已留。
+    }
   }
   return bundledSofficePath;
 }
