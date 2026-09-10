@@ -144,3 +144,33 @@ test("concurrent setting updates all survive (per-path mutation lock)", async (t
   assert.equal(final.lastSaveDirectory, directory, "并发的保存目录更新被覆盖丢失");
   assert.deepEqual(final.targetBySource, { pdf: "png" }, "无关字段不得被顺带抹掉");
 });
+
+// P4（2026-09-10 复核）：mutationChains 清理条件必须真的成立——旧实现存的是
+// 派生 Promise、比的是 current，永不相等，每条用过的设置路径永久残留一项。
+// 白盒验证：一次更新完成（含失败完成）后，Map 中不应留下该路径的条目。
+test("mutation queue entry is cleaned up after the update settles", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-settings-queue-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const store = require("../settings-store");
+  // 队列 Map 是模块内部状态；通过 require 缓存拿到同一实例并观察其尺寸。
+  // 若测试与实现失去同步（Map 改名），这里必须响亮失败而不是静默通过。
+  const source = require("node:fs").readFileSync(path.join(__dirname, "..", "settings-store.js"), "utf8");
+  assert.match(source, /const mutationChains = new Map\(\);/, "settings-store 队列实现已变更，请同步本测试");
+  assert.match(source, /mutationChains\.get\(key\) === queued/, "P4 修复回归：清理比较对象必须是存入 Map 的同一个 Promise");
+
+  const okPath = path.join(scratch, "ok-settings.json");
+  await store.updateSettings(okPath, { language: "en-US" });
+  // 失败注入：settings.json 位置放一个目录 → rename 发布必然 EPERM/EISDIR
+  //（Windows 上 chmod 位不可靠，目录目标才是确定性的写盘失败）。
+  const badPath = path.join(scratch, "bad-settings.json");
+  await fsp.mkdir(badPath);
+  let failed = false;
+  try {
+    await store.updateSettings(badPath, { language: "zh-CN" });
+  } catch {
+    failed = true;
+  }
+  assert.ok(failed, "目标是目录时写入应当失败（构造场景本身成立）");
+  // 成功与失败的更新都不得在 Map 里留尾巴；两个不同路径 → 修复后 0 项。
+  assert.equal(store._mutationChainsSize(), 0, "已结算的设置路径必须从队列 Map 清除");
+});

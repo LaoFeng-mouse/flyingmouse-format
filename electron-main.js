@@ -1,9 +1,9 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const http = require("http");
-const https = require("https");
 const { app, BrowserWindow, shell, ipcMain, dialog } = require("electron");
+const saveDownload = require("./save-download");
+const storeEngineCache = require("./store-engine-cache");
 const {
   isTrustedRendererUrl,
   resolveTrustedDownloadUrl,
@@ -84,48 +84,24 @@ ipcMain.handle("get-app-version", (event) => {
 // "installation could not be completed". Copy the engine bundle once to a writable
 // per-user location and run from there. Dev / non-Store installs already run from a
 // writable resources dir, so they skip this entirely.
+// P3（2026-09-10 复核）：完整流程（staging 复制 → 打包期清单校验 → 真实最小转换
+// 冒烟 → rename 发布 → 回收旧缓存）在 store-engine-cache.js，可脱离 electron 单测。
+// 失败回退 bundled 路径的语义维持 0.6.9（fail-soft，能力检测会如实报引擎状态）。
 function ensureWritableLibreOfficeForStore(bundledSofficePath) {
   const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
   const enginesRoot = path.join(localAppData, "FlyingMouseFormat", "engines");
-  // L3（0.6.9 审计）：缓存按应用版本隔离——旧实现共享固定目录，「soffice.com 存在」
-  // 就直接返回，应用升级后仍会调用上一个版本的引擎。版本目录 + .complete 标记后，
-  // 半套/过期缓存一律重建（L1/L2），旧版本目录在新引擎发布成功后尽力回收。
   const versionTag = String(app.getVersion() || "unknown").replace(/[^0-9A-Za-z._-]/g, "_");
-  const bundleName = `libreoffice-${versionTag}`;
-  const destBundle = path.join(enginesRoot, bundleName);
-  const destSoffice = path.join(destBundle, "LibreOfficePortable", "App", "libreoffice", "program", "soffice.com");
-  const completeMarker = path.join(destBundle, ".complete");
-  try {
-    const bundledBundle = path.join(process.resourcesPath || "", "libreoffice");
-    if (fs.existsSync(destSoffice) && fs.existsSync(completeMarker)) return destSoffice;
-    // 残缺或过期缓存：先整目录清掉再复制，绝不与半套引擎共用目标路径。
-    fs.rmSync(destBundle, { recursive: true, force: true });
-    fs.mkdirSync(path.dirname(destBundle), { recursive: true });
-    log(`Extracting LibreOffice engine to writable location: ${destBundle}`);
-    fs.cpSync(bundledBundle, destBundle, { recursive: true });
-    if (!fs.existsSync(destSoffice)) throw new Error("soffice.com missing after engine extraction");
-    fs.writeFileSync(completeMarker, `${versionTag}\n`, "utf8");
-    try {
-      for (const name of fs.readdirSync(enginesRoot)) {
-        if (name !== bundleName && /^libreoffice(-|$)/.test(name)) {
-          fs.rmSync(path.join(enginesRoot, name), { recursive: true, force: true });
-        }
-      }
-    } catch {
-      // 旧缓存回收失败不影响本次启动（顶多占盘）。
-    }
-    return destSoffice;
-  } catch (error) {
-    // 复制中断：把残缺目录清干净再回退 bundled 路径——否则「存在即有效」的旧逻辑
-    // 会让下一次启动命中半套引擎，形成重启也无法自愈的顽固故障（0.6.4 商店线实证）。
-    log("LibreOffice writable-engine extraction failed; using bundled path", error);
-    try {
-      fs.rmSync(destBundle, { recursive: true, force: true });
-    } catch {
-      // 清理失败只可能来自更底层的 IO 问题，日志已留。
-    }
+  const result = storeEngineCache.prepareWritableEngineBundle({
+    bundledBundle: path.join(process.resourcesPath || "", "libreoffice"),
+    bundledSofficePath,
+    enginesRoot,
+    bundleName: `libreoffice-${versionTag}`,
+    log
+  });
+  if (result.source === "bundled" && result.reason) {
+    log(`Writable engine cache unavailable: ${result.reason}`);
   }
-  return bundledSofficePath;
+  return result.path;
 }
 
 function configureRuntime() {
@@ -228,82 +204,14 @@ ipcMain.handle("install-agent-skill", async (event, payload) => {
   });
 });
 
-// 下载空闲超时：60 秒内 socket 无任何数据视为断链（大文件持续传输会不断重置该计时）。
-const DOWNLOAD_IDLE_TIMEOUT_MS = 60000;
-
-// 保存链路必须可诊断：任何失败都写 debug.log，并删掉残缺文件，避免用户拿到
-// 一个"看起来存在但打不开"的半截产物（2026-08-31 实测：服务端中途断链时旧实现
-// promise 永挂、界面无任何反馈，磁盘留 64KB 残片）。
+// P1（2026-09-10 复核，最高危）：旧实现失败时 `rm(destination)` 删的是用户选择
+// 的最终路径——404（写流未创建）也走这条，导致「保存失败误删已有文件」。
+// 下载落盘逻辑抽到 save-download.js：只写随机 .partial，完整校验后 rename 发布，
+// 失败只清本次临时文件，destination 永远不被删除。重定向信任校验由这里注入。
 function downloadToFile(url, destination) {
-  const client = url.startsWith("https:") ? https : http;
-  return new Promise((resolve, reject) => {
-    let settled = false;
-
-    const fail = (error) => {
-      if (settled) return;
-      settled = true;
-      const wrapped = error instanceof Error ? error : new Error(String(error));
-      log(`Save failed: ${destination}`, wrapped);
-      fs.promises.rm(destination, { force: true })
-        .catch((cleanupError) => log(`Failed to remove partial file: ${destination}`, cleanupError))
-        .finally(() => reject(wrapped));
-    };
-
-    const request = client.get(url, (response) => {
-      if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-        response.resume();
-        let redirectedUrl;
-        try {
-          redirectedUrl = trustedDownloadUrl(new URL(response.headers.location, url).toString());
-        } catch (error) {
-          fail(error);
-          return;
-        }
-        settled = true;
-        downloadToFile(redirectedUrl, destination).then(resolve, reject);
-        return;
-      }
-      if (response.statusCode !== 200) {
-        response.resume();
-        // 产物登记表在内存里且运行期间不再过期（2026-09-07 决策）。404 如今只可能
-        // 来自服务重启/窗口会话更替，给可行动提示而不是裸状态码。
-        fail(new Error(response.statusCode === 404
-          ? "保存失败：该转换结果已失效（程序可能重启过），请重新转换后再保存。"
-          : `保存失败：下载服务返回 ${response.statusCode}`));
-        return;
-      }
-
-      const expectedBytes = Number(response.headers["content-length"]);
-      let receivedBytes = 0;
-      response.on("data", (chunk) => { receivedBytes += chunk.length; });
-      response.on("error", (error) => fail(error));
-      response.on("aborted", () => fail(new Error("保存失败：下载连接被中断，文件未完整写入。")));
-
-      const file = fs.createWriteStream(destination);
-      file.on("error", (error) => fail(error));
-      file.on("finish", () => {
-        file.close((closeError) => {
-          if (closeError) {
-            fail(closeError);
-            return;
-          }
-          if (Number.isFinite(expectedBytes) && expectedBytes > 0 && receivedBytes !== expectedBytes) {
-            fail(new Error(`保存失败：文件不完整（已写入 ${receivedBytes} 字节，期望 ${expectedBytes} 字节）。`));
-            return;
-          }
-          if (settled) return;
-          settled = true;
-          log(`Saved converted file: ${destination} (${receivedBytes} bytes)`);
-          resolve();
-        });
-      });
-      response.pipe(file);
-    });
-
-    request.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
-      request.destroy(new Error(`保存失败：下载超时（${DOWNLOAD_IDLE_TIMEOUT_MS / 1000} 秒无数据），文件未完整写入。`));
-    });
-    request.on("error", (error) => fail(error));
+  return saveDownload.downloadToFile(url, destination, {
+    log,
+    resolveRedirect: trustedDownloadUrl
   });
 }
 
