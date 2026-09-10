@@ -73,7 +73,15 @@ async function restore(archivePath) {
     async function walk(dir) {
       for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
-        if (entry.isSymbolicLink()) throw new Error(`Unexpected symlink in Pandoc archive: ${entry.name}`);
+        if (entry.isSymbolicLink()) {
+          // Official macOS archives include pandoc-lua -> pandoc. Do not copy
+          // or traverse aliases; only accept links confined to this archive.
+          const relative = path.relative(stage, await fsp.realpath(full));
+          if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            throw new Error(`Pandoc archive link escapes its staging directory: ${entry.name}`);
+          }
+          continue;
+        }
         if (entry.isDirectory()) await walk(full);
         else if (entry.name === basename) matches.push(full);
       }
