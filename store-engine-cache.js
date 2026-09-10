@@ -10,9 +10,8 @@
 //   复制到 <final>.staging → 按打包期清单校验关键文件（大小，小文件加 sha256）
 //   → 用最小 CSV 做一次真实 --convert-to pdf 并验证输出 → rename 发布为可用
 //   缓存 → 写 .complete → 回收其余旧缓存目录。
-// 任何一步失败：只清 staging，绝不发布半成品；旧缓存（若通过完整性校验）不受
-// 影响。全部判定 fail-soft：清单缺失（旧包/dev 树）退回 0.6.9 行为但 smoke
-// 仍然执行——「能转一个真文件」是最低可用标准。
+// 任何一步失败都不得发布半成品；清单缺失/损坏的旧包和已有缓存也必须通过
+// 本次真实转换。清单条目通过不代表文字输出正确，缓存复用同样执行烟测。
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -33,18 +32,29 @@ function sha256File(filePath) {
 function readManifest(bundleDir) {
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(bundleDir, MANIFEST_FILE), "utf8"));
-    if (!manifest || manifest.schema !== 1 || typeof manifest.files !== "object" || !manifest.files) return null;
+    if (!isValidManifest(manifest)) return null;
     return manifest;
   } catch {
     return null;
   }
 }
 
+function isValidManifest(manifest) {
+  if (!manifest || manifest.schema !== 1 || !manifest.files || Array.isArray(manifest.files)
+    || typeof manifest.files !== "object" || !Object.keys(manifest.files).length) return false;
+  return Object.entries(manifest.files).every(([rel, entry]) => {
+    if (!rel || rel.includes("\\") || rel.includes(":") || path.posix.isAbsolute(rel)
+      || rel.split("/").some((part) => !part || part === "." || part === "..")) return false;
+    return entry && Number.isSafeInteger(entry.size) && entry.size >= 0
+      && (!entry.sha256 || /^[a-f0-9]{64}$/i.test(entry.sha256));
+  });
+}
+
 // 校验 manifest 收录的关键文件（相对 bundle 根）：必须存在、size 一致；
 // 带 sha256 的（清单里均为几 MB 内的小文件）再比对哈希。大文件（mergedlo 等
 // 147MB 级）只 stat 不读——全量哈希会在商店盘上拖垮首启，由冒烟转换兜底。
 function verifyIntegrity(bundleDir, manifest) {
-  if (!manifest) return { ok: true, checked: 0 };
+  if (!isValidManifest(manifest)) return { ok: false, checked: 0, reason: "清单缺失或无有效条目，必须执行实际转换验证" };
   let checked = 0;
   for (const [rel, entry] of Object.entries(manifest.files)) {
     const filePath = path.join(bundleDir, ...rel.split("/"));
@@ -65,8 +75,7 @@ function verifyIntegrity(bundleDir, manifest) {
   return { ok: true, checked };
 }
 
-// 真实冒烟：最小 CSV → PDF。走完整 soffice 启动链（bootstrap/vcl/uno/Calc 组件/
-// PDF 导出过滤器），输出必须以 %PDF 开头且非空。options.smokeTest 供测试注入。
+// 真实冒烟：最小 CSV → PDF，实际解析一页 PDF 并验证 flyingmouse 和 42 两个单元格。
 // 同步实现（execFileSync）：本函数在建窗前引导阶段调用，与旧实现的同步 cpSync
 // 同量级阻塞；「首启同步等待」的体感优化另行立项，不混入本安全修复。
 function defaultSmokeTest(sofficePath, options = {}) {
@@ -101,22 +110,31 @@ function defaultSmokeTest(sofficePath, options = {}) {
     );
     const pdfPath = path.join(outDir, "smoke.pdf");
     if (!fs.existsSync(pdfPath)) return { ok: false, reason: "冒烟转换无输出文件" };
-    const head = fs.readFileSync(pdfPath).slice(0, 5).toString("latin1");
-    if (!head.startsWith("%PDF")) return { ok: false, reason: "冒烟输出不是有效 PDF" };
+    // Header checks accept truncated and blank PDFs. Parse the complete file and
+    // verify the actual CSV cells in a separate bounded process (startup is sync).
+    execFileSync(process.execPath, [path.join(__dirname, "engine-smoke-validator.js"), pdfPath], {
+      timeout: Math.min(timeoutMs, 30000), windowsHide: true, maxBuffer: 1024 * 1024,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["ignore", "pipe", "pipe"]
+    });
     return { ok: true };
   } catch (error) {
     return { ok: false, reason: `冒烟转换失败: ${error instanceof Error ? error.message : error}` };
   } finally {
-    if (workDir) fs.rmSync(workDir, { recursive: true, force: true });
+    if (workDir) {
+      try { fs.rmSync(workDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+      catch { /* A locked temporary profile must not override the validation result. */ }
+    }
   }
 }
 
 // 已发布缓存的接受判定：入口 + .complete + （有清单时）关键文件完整性。
 // 返回 false = 半套/损坏/过期，一律走重建。
-function isPublishedBundleUsable({ destBundle, destSoffice, completeMarker, manifest }) {
+function isPublishedBundleUsable({ destBundle, destSoffice, completeMarker, manifest, smokeTest = defaultSmokeTest, tmpRoot }) {
   if (!fs.existsSync(destSoffice) || !fs.existsSync(completeMarker)) return false;
-  if (!manifest) return true; // 旧包无清单可比（0.6.9 及更早缓存），入口存在即维持原判
-  return verifyIntegrity(destBundle, manifest).ok;
+  if (manifest && !verifyIntegrity(destBundle, manifest).ok) return false;
+  // Legacy, corrupt and empty manifests have no integrity evidence. Even an
+  // existing .complete marker cannot replace a real conversion on this launch.
+  return smokeTest(destSoffice, { tmpRoot }).ok === true;
 }
 
 // 主流程。所有路径由调用方（electron-main）注入，本模块不依赖 electron，可单测。
@@ -141,11 +159,10 @@ function prepareWritableEngineBundle(options) {
   const manifest = readManifest(bundledBundle);
 
   try {
-    if (isPublishedBundleUsable({ destBundle, destSoffice, completeMarker, manifest })) {
+    if (isPublishedBundleUsable({ destBundle, destSoffice, completeMarker, manifest, smokeTest, tmpRoot })) {
       return { path: destSoffice, source: "cache" };
     }
-    // 不可用的同名发布目录（半套缓存被完整性判定拒绝）：先清掉再重建。
-    fs.rmSync(destBundle, { recursive: true, force: true });
+    // Retain the previous directory until its replacement has passed validation.
     // staging 残留（上次复制中途断电/杀进程）：一并清掉。
     fs.rmSync(stagingDir, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(destBundle), { recursive: true });
@@ -157,10 +174,11 @@ function prepareWritableEngineBundle(options) {
       throw new Error("soffice.com missing after engine extraction");
     }
     const integrity = verifyIntegrity(stagingDir, manifest);
-    if (!integrity.ok) {
+    if (manifest && !integrity.ok) {
       throw new Error(`引擎完整性校验失败: ${integrity.reason}`);
     }
     if (integrity.checked) log(`Engine integrity verified: ${integrity.checked} critical files`);
+    else log("Engine manifest unavailable; real conversion validation is required");
 
     const smoke = smokeTest(stagingSoffice, { tmpRoot });
     if (!smoke.ok) {
@@ -170,6 +188,7 @@ function prepareWritableEngineBundle(options) {
 
     fs.writeFileSync(path.join(stagingDir, ".complete"), `${bundleName}\n`, "utf8");
     // rename 发布：staging→最终目录一次到位，中途不存在「入口在但内容不全」的窗口。
+    fs.rmSync(destBundle, { recursive: true, force: true });
     fs.renameSync(stagingDir, destBundle);
 
     // 新缓存发布成功后才回收其余旧目录（含仍在用的历史版本；本次 bundle 除外）。

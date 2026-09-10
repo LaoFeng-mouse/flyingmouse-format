@@ -1,6 +1,6 @@
 {
   "name": "flyingmouse-format",
-  "version": "0.6.10",
+  "version": "0.7.0",
   "private": true,
   "author": "FlyingMouse Format",
   "productName": "FlyingMouse Format",
@@ -21,19 +21,22 @@
     "dist:mac:arm64": "node scripts/validate-ci-engines.js --platform darwin --arch arm64 --root bin/engines/darwin-arm64 && electron-builder --mac dmg --arm64 --publish never",
     "dist:mac:x64": "node scripts/validate-ci-engines.js --platform darwin --arch x64 --root bin/engines/darwin-x64 && electron-builder --mac dmg --x64 --publish never",
     "dist:win7": "node scripts/build-win7.js",
-    "test": "node --test tests/agent-skill-installer.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mouse-assets.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/store-engine-cache.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js",
-    "test:ci": "node --test tests/agent-skill-installer.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mouse-assets.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/store-engine-cache.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js"
+    "test": "node --test tests/agent-skill-installer.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mouse-assets.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/store-engine-cache.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js tests/build-engine-manifest.test.js tests/ebook-integrity.test.js tests/markdown-document.test.js tests/pandoc-engine.test.js tests/pdf-content-fidelity.test.js tests/process-output.test.js tests/save-converted-result.test.js tests/settings-sync.test.js",
+    "test:ci": "node --test tests/agent-skill-installer.test.js tests/bmp-input.test.js tests/bmp-output.test.js tests/ci-engine-release.test.js tests/cli.test.js tests/conversion-preferences.test.js tests/conversion.test.js tests/diagnostics.test.js tests/ebook.test.js tests/electron-hardening-static.test.js tests/electron-security.test.js tests/i18n.test.js tests/ico-format.test.js tests/image-conversion.test.js tests/logger.test.js tests/macos-packaging.test.js tests/media-codec.test.js tests/mouse-assets.test.js tests/ocr-merge.test.js tests/ofd-convert.test.js tests/office-crc-repair.test.js tests/office-engine.test.js tests/office-quality.test.js tests/office-wps-repair.test.js tests/pdf-classifier.test.js tests/pdf-scanned-routing.test.js tests/pdf-structure-contract.test.js tests/pdf-table-extractor.test.js tests/pdf-table-runtime.test.js tests/pdf2docx.test.js tests/pe-metadata.test.js tests/preview.test.js tests/raw-input.test.js tests/release-version-sync-atomic.test.js tests/release-version-sync.test.js tests/resource-policy.test.js tests/runtime-cleanup.test.js tests/runtime-paths.test.js tests/save-download.test.js tests/settings-degrade-ui.test.js tests/settings-store.test.js tests/store-engine-cache.test.js tests/text-conversion-integration.test.js tests/text-conversion.test.js tests/tga-input.test.js tests/ui-static.test.js tests/utils.test.js tests/win7-build-profile.test.js tests/win7-build-script.test.js tests/xml-json.test.js tests/zip-util.test.js tests/build-engine-manifest.test.js tests/ebook-integrity.test.js tests/markdown-document.test.js tests/pandoc-engine.test.js tests/pdf-content-fidelity.test.js tests/process-output.test.js tests/save-converted-result.test.js tests/settings-sync.test.js",
+    "restore:pandoc": "node scripts/restore-pandoc.js",
+    "dist:appx": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-appx.ps1"
   },
   "dependencies": {
     "@miconvert/ofd-to-pdf": "^0.2.3",
     "@tesseract.js-data/chi_sim": "^1.0.0",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/tha": "1.0.0",
-    "csv-parse": "5.6.0",
+    "csv-parse": "7.0.2",
     "docx": "9.5.1",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "js-yaml": "^4.3.1",
+    "katex": "0.18.7",
     "mammoth": "^1.12.0",
     "marked": "9.1.6",
     "mime-types": "^2.1.35",
@@ -49,7 +52,9 @@
     "yazl": "^3.3.1"
   },
   "overrides": {
-    "uuid": "^11.1.1"
+    "uuid": "^11.1.1",
+    "fast-xml-parser": "5.11.1",
+    "qs": "6.16.0"
   },
   "devDependencies": {
     "electron": "^43.1.0",
@@ -117,7 +122,13 @@
       "public/**/*",
       "agent-skill/**/*",
       "package.json",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "markdown-document.js",
+      "markdown-math.js",
+      "engine-smoke-validator.js",
+      "save-converted-result.js",
+      "THIRD_PARTY_NOTICES.md",
+      "third_party/**/*"
     ],
     "asarUnpack": [
       "node_modules/sharp/**/*",
@@ -172,6 +183,10 @@
         {
           "from": "node_modules/tesseract.js-core",
           "to": "tesseract.js-core"
+        },
+        {
+          "from": "bin/pandoc",
+          "to": "pandoc"
         }
       ],
       "target": [
@@ -209,6 +224,10 @@
         {
           "from": "node_modules/tesseract.js-core",
           "to": "tesseract.js-core"
+        },
+        {
+          "from": "bin/pandoc",
+          "to": "pandoc"
         }
       ]
     },
@@ -230,6 +249,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "FlyingMouse Format"
-    }
+    },
+    "beforePack": "scripts/prepare-windows-package.js"
   }
 }

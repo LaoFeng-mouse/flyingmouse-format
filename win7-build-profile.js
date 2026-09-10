@@ -5,7 +5,9 @@ const STAGING_EXCLUDED_TESTS = new Set([
   "tests/conversion.test.js",
   "tests/win7-build-profile.test.js",
   "tests/win7-build-script.test.js",
-  "tests/pe-metadata.test.js"
+  "tests/pe-metadata.test.js",
+  "tests/build-engine-manifest.test.js",
+  "tests/pandoc-engine.test.js"
 ]);
 
 const REQUIRED_RUNTIME_FILES = [
@@ -127,10 +129,11 @@ function createWin7Package(basePackage, projectRoot) {
   profile.build.artifactName = "${productName}-Setup-${version}-win7-${arch}.${ext}";
   profile.build.win.target = ["nsis"];
   delete profile.build.appx;
+  delete profile.build.beforePack;
   // Python-backed docengine and docstructure runtimes are excluded from Win7;
   // their JavaScript boundary modules remain available for static imports.
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure/i.test(String(value))))
+    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure|pandoc/i.test(String(value))))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")

@@ -133,3 +133,48 @@ test("electron-main must not rm the user destination on save failure", () => {
   assert.match(source, /require\("\.\/save-download"\)/,
     "electron-main 必须经由 save-download 模块落盘");
 });
+
+test("aborted download closes the write handle before rejection and cleanup", async (t) => {
+  const dir = await scratchDir(t, "save-close");
+  const destination = path.join(dir, "existing.txt");
+  await fsp.writeFile(destination, "old");
+  const baseUrl = await startServer(t, () => (res) => {
+    res.setHeader("content-length", "10000");
+    res.write("short");
+    setTimeout(() => res.destroy(), 40);
+  });
+  const originalCreate = fs.createWriteStream;
+  let stream;
+  fs.createWriteStream = (...args) => { stream = originalCreate(...args); return stream; };
+  try {
+    await assert.rejects(downloadToFile(`${baseUrl}/cut`, destination));
+    assert.ok(stream.closed);
+    assert.ok(stream.destroyed);
+    assert.equal(stream.fd, null);
+    assert.deepEqual(await fsp.readdir(dir), ["existing.txt"]);
+    assert.equal(await fsp.readFile(destination, "utf8"), "old");
+  } finally {
+    fs.createWriteStream = originalCreate;
+  }
+});
+
+test("long legal target filename does not overflow the temporary filename", async (t) => {
+  const dir = await scratchDir(t, "save-long");
+  const destination = path.join(dir, `${"a".repeat(235)}.txt`);
+  const baseUrl = await startServer(t, () => (res) => res.end("complete"));
+  await downloadToFile(`${baseUrl}/long`, destination);
+  assert.equal(await fsp.readFile(destination, "utf8"), "complete");
+});
+
+test("overwrite false atomically refuses an existing target and publishes a new one", async (t) => {
+  const dir = await scratchDir(t, "save-no-clobber");
+  const existing = path.join(dir, "existing.txt");
+  await fsp.writeFile(existing, "keep old");
+  const baseUrl = await startServer(t, () => (res) => res.end("complete"));
+  await assert.rejects(downloadToFile(`${baseUrl}/file`, existing, { overwrite: false }), /EEXIST/);
+  assert.equal(await fsp.readFile(existing, "utf8"), "keep old");
+  const fresh = path.join(dir, "new.txt");
+  await downloadToFile(`${baseUrl}/file`, fresh, { overwrite: false });
+  assert.equal(await fsp.readFile(fresh, "utf8"), "complete");
+  assert.deepEqual((await fsp.readdir(dir)).sort(), ["existing.txt", "new.txt"]);
+});

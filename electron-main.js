@@ -4,6 +4,7 @@ const os = require("os");
 const { app, BrowserWindow, shell, ipcMain, dialog } = require("electron");
 const saveDownload = require("./save-download");
 const storeEngineCache = require("./store-engine-cache");
+const { saveConvertedResult } = require("./save-converted-result");
 const {
   isTrustedRendererUrl,
   resolveTrustedDownloadUrl,
@@ -120,6 +121,8 @@ function configureRuntime() {
   }
   process.env.FLYINGMOUSE_PDFTOPPM_PATH = runtimePaths.pdftoppm;
   process.env.FLYINGMOUSE_TESSDATA_PATH = runtimePaths.tessdata;
+  const pandoc = path.join(process.resourcesPath || __dirname, "pandoc", process.platform === "win32" ? "pandoc.exe" : "pandoc");
+  if (app.isPackaged && fs.existsSync(pandoc)) process.env.FLYINGMOUSE_PANDOC_PATH = pandoc;
   if (runtimePaths.docstructureEngine) process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH = runtimePaths.docstructureEngine;
   else delete process.env.FLYINGMOUSE_DOCSTRUCTURE_ENGINE_PATH;
   if (runtimePaths.docstructureModels) process.env.FLYINGMOUSE_DOCSTRUCTURE_MODEL_DIR = runtimePaths.docstructureModels;
@@ -208,37 +211,12 @@ ipcMain.handle("install-agent-skill", async (event, payload) => {
 // 的最终路径——404（写流未创建）也走这条，导致「保存失败误删已有文件」。
 // 下载落盘逻辑抽到 save-download.js：只写随机 .partial，完整校验后 rename 发布，
 // 失败只清本次临时文件，destination 永远不被删除。重定向信任校验由这里注入。
-function downloadToFile(url, destination) {
+function downloadToFile(url, destination, options = {}) {
   return saveDownload.downloadToFile(url, destination, {
+    ...options,
     log,
     resolveRedirect: trustedDownloadUrl
   });
-}
-
-// md 转换产物带图片外置目录时，把 assets 清单里的图片下载到
-// `<md所在目录>/<下载名basename>.assets/`，与 md 内相对引用（./xxx.assets/...）对应。
-async function downloadAssetsToMdSidecar(assets, mdDestination) {
-  if (!Array.isArray(assets) || !assets.length) return;
-  const mdDir = path.dirname(mdDestination);
-  const mdBasename = path.basename(mdDestination, path.extname(mdDestination)) || "document";
-  const assetsDir = path.join(mdDir, `${mdBasename}.assets`);
-  await fs.promises.mkdir(assetsDir, { recursive: true });
-  for (const asset of assets) {
-    const name = path.basename(String(asset?.name || ""));
-    if (!name) continue;
-    let absoluteUrl;
-    try {
-      absoluteUrl = trustedDownloadUrl(asset?.url);
-    } catch (error) {
-      log("Rejected md asset URL", error);
-      continue;
-    }
-    try {
-      await downloadToFile(absoluteUrl, path.join(assetsDir, name));
-    } catch (error) {
-      log(`Failed to download md asset: ${name}`, error);
-    }
-  }
 }
 
 function assertTrustedIpc(event) {
@@ -335,10 +313,8 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
     return { canceled: true };
   }
 
-  await downloadToFile(absoluteUrl, result.filePath);
-  // md 转换产物带图片外置目录时，把图片下载到 md 同目录的 <下载名>.assets/，
-  // 保证 md 里的相对图片引用（./xxx.assets/...）可用。
-  await downloadAssetsToMdSidecar(assets, result.filePath);
+  await saveConvertedResult({ downloadUrl: absoluteUrl, fileName, assets }, result.filePath,
+    { download: downloadToFile, resolveUrl: trustedDownloadUrl, log });
   await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
     .catch((error) => log("Failed to remember save directory", error));
   log(`Saved converted file: ${result.filePath}`);
@@ -379,8 +355,7 @@ ipcMain.handle("save-converted-files", async (event, payload) => {
     let destination;
     try {
       destination = uniqueDestination(directory, item.fileName);
-      await downloadToFile(item.downloadUrl, destination);
-      await downloadAssetsToMdSidecar(item.assets, destination);
+      await saveConvertedResult(item, destination, { download: downloadToFile, resolveUrl: trustedDownloadUrl, log, overwrite: false });
       saved.push(destination);
     } catch (error) {
       // 逐项容错：一个文件失败不再打断队列（旧实现整个 IPC reject，后续文件全部不落盘）。

@@ -21,6 +21,7 @@ const {
 const { xmlToJson } = require("./xml-json");
 const { normalizeExt, escapeHtml } = require("./utils");
 const { convertWithLibreOffice } = require("./office-convert");
+const { convertMarkdownDocument } = require("./markdown-document");
 
 function htmlToText(html) {
   return html
@@ -95,7 +96,8 @@ function splitHtmlIntoLines(html) {
     .split("\n");
 }
 
-async function convertTextToDocx(raw, source, outputPath) {
+async function convertTextToDocx(raw, source, outputPath, options = {}) {
+  if (source === "md" || source === "markdown") return convertMarkdownDocument(raw, outputPath, options);
   let lines;
   if (source === "html" || source === "htm") {
     lines = splitHtmlIntoLines(raw);
@@ -190,22 +192,22 @@ async function convertText(inputPath, outputPath, inputExt, target, originalName
   if (target === "pdf") {
     if (source === "md") {
       const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-textpdf-"));
-      const htmlPath = path.join(tempDir, "converted.html");
-      await fsp.writeFile(htmlPath, markdownToHtml(raw), "utf8");
+      const docxPath = path.join(tempDir, "converted.docx");
       try {
-        await convertWithLibreOffice(htmlPath, outputPath, "converted.html", "pdf");
+        const result = await convertMarkdownDocument(raw, docxPath, { sourceDir: path.dirname(inputPath) });
+        warnings.push(...result.warnings);
+        await convertWithLibreOffice(docxPath, outputPath, "converted.docx", "pdf");
       } finally {
         await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
       }
     } else {
       await convertWithLibreOffice(inputPath, outputPath, originalName, "pdf");
     }
-    return;
+    return { warnings };
   }
 
   if (target === "docx") {
-    await convertTextToDocx(raw, source, outputPath);
-    return;
+    return await convertTextToDocx(raw, source, outputPath, { sourceDir: path.dirname(inputPath) });
   }
 
   if (target === "txt") {

@@ -17,6 +17,11 @@ let settingsDegraded = false;
 
 /* --- 渲染进程日志：转发到主进程 debug.log --- */
 const logBridge = window.flyingMouseFormat || {};
+const settingsSync = window.FlyingMouseSettings.createSynchronizer({
+  get: () => state.settings,
+  set: (settings) => { state.settings = settings; },
+  save: (patch) => logBridge.updateSettings(patch)
+});
 
 function rendererLog(level, message, error) {
   const detail = error ? `${message}\n${error.stack || error.message || error}` : message;
@@ -88,6 +93,7 @@ const progressTrack = document.querySelector(".progress-track");
 const progressFill = document.querySelector("#progressFill");
 const mouseMascot = document.querySelector("#mouseMascot");
 const languageSelect = document.querySelector("#languageSelect");
+const themeSelect = document.querySelector("#themeSelect");
 const diagnosticsButton = document.querySelector("#diagnosticsButton");
 const agentInstallButton = document.querySelector("#agentInstallButton");
 const workflowSteps = [...document.querySelectorAll("[data-step]")];
@@ -103,6 +109,7 @@ const messages = {
   "zh-CN": {
     "workspace.aria": "文件转换工作台", "brand.title": "鼠鼠帮你把文件转成需要的格式",
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
+    "theme.label": "外观", "theme.system": "跟随系统", "theme.light": "浅色", "theme.dark": "深色",
     "settings.degraded": "偏好设置暂时无法保存，本次仍可正常转换；重启后可能恢复默认设置。",
     "diagnostics.export": "导出诊断", "diagnostics.saved": "诊断报告已保存到：{path}",
     "diagnostics.canceled": "已取消导出诊断报告。", "diagnostics.failed": "导出诊断失败：{message}",
@@ -117,6 +124,7 @@ const messages = {
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
     "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
+    "upload.markdownLimited": "Markdown 转 Word/PDF 暂不可用：文档引擎缺失或无法启动，请修复安装。",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
     "action.save": "保存", "action.saveAll": "保存全部",
     "target.label": "目标格式",
@@ -148,6 +156,7 @@ const messages = {
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
+    "theme.label": "Appearance", "theme.system": "System", "theme.light": "Light", "theme.dark": "Dark",
     "settings.degraded": "Preferences could not be saved this session. Converting still works; defaults may return after restart.",
     "diagnostics.export": "Export diagnostics", "diagnostics.saved": "Diagnostics saved to: {path}",
     "diagnostics.canceled": "Diagnostics export canceled.", "diagnostics.failed": "Diagnostics export failed: {message}",
@@ -162,6 +171,7 @@ const messages = {
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
     "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
+    "upload.markdownLimited": "Markdown to Word/PDF is unavailable: the document engine is missing or cannot start. Repair the installation.",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
     "action.save": "Save", "action.saveAll": "Save all",
     "target.label": "Target format",
@@ -208,9 +218,13 @@ function renderHealth() {
   if (!state.capabilities) return;
   const enabled = i18n.language === "en-US" ? ["Images", "Text", "PDF", "ZIP"] : ["图片", "文本", "PDF", "ZIP"];
   if (state.capabilities.tools.libreoffice) enabled.push("Office/WPS");
+  if (state.capabilities.tools.pandoc) enabled.push("Markdown → Word");
   if (state.capabilities.tools.ffmpeg) enabled.push(i18n.language === "en-US" ? "Audio/Video" : "音视频");
   toolHealth.textContent = i18n.language === "en-US" ? `${enabled.join(", ")} enabled` : `${enabled.join("、")} 已启用`;
-  if (!state.capabilities.tools.libreoffice) dropHint.textContent = t("upload.limited");
+  const limitations = [];
+  if (!state.capabilities.tools.libreoffice) limitations.push(t("upload.limited"));
+  if (!state.capabilities.tools.pandoc) limitations.push(t("upload.markdownLimited"));
+  dropHint.textContent = limitations.length ? limitations.join(" ") : t("upload.hint");
 }
 
 function refreshLanguage() {
@@ -411,15 +425,7 @@ async function fetchCapabilities() {
   if (!response.ok) throw new Error(i18n.language === "en-US" ? "Unable to read conversion capabilities." : "无法读取转换能力。");
   state.capabilities = await response.json();
 
-  const enabled = ["图片", "文本", "PDF", "ZIP"];
-  if (state.capabilities.tools.libreoffice) enabled.push("Office/WPS");
-  if (state.capabilities.tools.ffmpeg) enabled.push("音视频");
-  toolHealth.textContent = `${enabled.join("、")} 已启用`;
   toolHealth.classList.add("ok");
-
-  if (!state.capabilities.tools.libreoffice) {
-    dropHint.textContent = "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice";
-  }
 
   renderFormatTable();
   renderHealth();
@@ -1359,8 +1365,7 @@ convertButton.addEventListener("click", convertCurrentFiles);
 async function persistSettings(patch) {
   if (typeof logBridge.updateSettings !== "function") return;
   try {
-    // 成功后用主进程规范化结果对齐内存（normalize/白名单以 main 为准）。
-    state.settings = await logBridge.updateSettings(patch);
+    await settingsSync.persist(patch);
   } catch (error) {
     rendererLog("warn", "设置持久化失败，本次继续使用内存偏好", error);
     if (!settingsDegraded) {
@@ -1369,6 +1374,11 @@ async function persistSettings(patch) {
     }
   }
 }
+themeSelect.addEventListener("change", async () => {
+  const theme = window.FlyingMouseTheme.select(themeSelect.value);
+  state.settings = { ...state.settings, theme };
+  await persistSettings({ theme });
+});
 languageSelect.addEventListener("change", async () => {
   i18n.setLanguage(languageSelect.value, { persist: false });
   if (i18n.language === "zh-CN" || i18n.language === "en-US") {
@@ -1462,7 +1472,7 @@ async function initializeDurableSettings() {
     // （state.settings 已有安全默认值），保留旧 localStorage 不删（下次启动仍可迁移），
     // 转换功能照常，仅提示一次非阻断警告。
     try {
-      state.settings = await logBridge.migrateLegacySettings(legacy);
+      settingsSync.restore(await logBridge.migrateLegacySettings(legacy));
       try {
         localStorage.removeItem(LEGACY_TARGET_STORAGE_KEY);
         localStorage.removeItem(LANGUAGE_STORAGE_KEY);
@@ -1473,33 +1483,34 @@ async function initializeDurableSettings() {
       rendererLog("warn", "设置迁移失败，本次使用内存偏好", error);
       // P2 补充（09-10 复核）：内存降级要带上已从 localStorage 读到的旧语言偏好，
       // 否则迁移失败反而把用户语言丢回系统语言。
-      state.settings = {
+      settingsSync.restore({
         schemaVersion: 2,
         targetBySource: legacy.targetBySource,
         ...(legacy.language === "zh-CN" || legacy.language === "en-US"
           ? { language: legacy.language }
           : {})
-      };
+      });
       settingsDegraded = true;
     }
   } else if (typeof logBridge.getSettings === "function") {
     try {
-      state.settings = await logBridge.getSettings();
+      settingsSync.restore(await logBridge.getSettings());
     } catch (error) {
       rendererLog("warn", "设置读取失败，本次使用内存偏好", error);
-      state.settings = {
+      settingsSync.restore({
         schemaVersion: 2,
         targetBySource: legacy.targetBySource,
         ...(legacy.language === "zh-CN" || legacy.language === "en-US"
           ? { language: legacy.language }
           : {})
-      };
+      });
       settingsDegraded = true;
     }
   } else {
     state.settings.targetBySource = legacy.targetBySource;
   }
   i18n.setLanguage(state.settings.language || navigator.language, { persist: false });
+  window.FlyingMouseTheme.restore(state.settings.theme);
 }
 
 async function initializeApp() {

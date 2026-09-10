@@ -126,12 +126,14 @@ if (dryRun) {
 const written = [];
 try {
   for (const change of plan) {
-    fs.writeFileSync(path.join(ROOT, change.rel), change.newText);
+    // A write may truncate the file and then throw (for example ENOSPC).
+    // Include the attempted file in rollback before touching its bytes.
     written.push(change.rel);
+    fs.writeFileSync(path.join(ROOT, change.rel), change.newText);
   }
 } catch (error) {
-  console.error(`写入 ${plan[written.length].rel} 失败，回滚本次已写的 ${written.length} 个文件：${error instanceof Error ? error.message : error}`);
-  for (const rel of written) {
+  console.error(`写入 ${written[written.length - 1]} 失败，回滚本次尝试写入的 ${written.length} 个文件：${error instanceof Error ? error.message : error}`);
+  for (const rel of written.reverse()) {
     try {
       fs.writeFileSync(path.join(ROOT, rel), originals.get(rel));
     } catch (rollbackError) {

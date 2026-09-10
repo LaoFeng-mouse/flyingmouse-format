@@ -6,6 +6,7 @@ const fsp = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { saveConvertedResult } = require("./save-converted-result");
 
 const VALUE_OPTIONS = new Map([
   ["--to", "to"],
@@ -219,25 +220,6 @@ async function postMultipart(url, fields, files, fieldName) {
   });
 }
 
-async function downloadFile(url, destination) {
-  await fsp.mkdir(path.dirname(destination), { recursive: true });
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const request = http.get(parsed, (response) => {
-      if (response.statusCode !== 200) {
-        response.resume();
-        reject(new Error(`Download failed with HTTP ${response.statusCode}.`));
-        return;
-      }
-      const output = fs.createWriteStream(destination, { flags: "wx" });
-      response.pipe(output);
-      output.on("finish", () => output.close(resolve));
-      output.on("error", reject);
-    });
-    request.on("error", reject);
-  });
-}
-
 function extensionFromInput(value) {
   const base = path.basename(String(value || ""));
   const ext = path.extname(base).replace(/^\./, "");
@@ -297,7 +279,15 @@ async function executeCli(parsed, runtime) {
     const destinations = resolveOutputDestinations(results, parsed.options);
     const outputs = [];
     for (let index = 0; index < results.length; index += 1) {
-      await downloadFile(new URL(results[index].downloadUrl, baseUrl), destinations[index]);
+      await fsp.mkdir(path.dirname(destinations[index]), { recursive: true });
+      const resolveUrl = (value) => {
+        const url = new URL(value, baseUrl);
+        if (url.origin !== new URL(baseUrl).origin || url.username || url.password || !url.pathname.startsWith("/downloads/")) {
+          throw new Error("Rejected conversion download URL.");
+        }
+        return url.href;
+      };
+      await saveConvertedResult(results[index], destinations[index], { resolveUrl, overwrite: false, resolveRedirect: resolveUrl });
       outputs.push({
         input: parsed.command === "convert" ? path.resolve(parsed.files[index]) : parsed.files.map((item) => path.resolve(item)),
         path: destinations[index],

@@ -6,6 +6,8 @@
   const STORAGE_KEY = "flyingmouse.conversionPreferences.v1";
   const aliases = new Map([
     ["jpeg", "jpg"],
+    ["jfif", "jpg"],
+    ["jpe", "jpg"],
     ["markdown", "md"],
     ["htm", "html"],
     ["tif", "tiff"]

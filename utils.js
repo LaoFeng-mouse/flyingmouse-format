@@ -4,7 +4,7 @@
 const { randomUUID } = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execFile } = require("child_process");
+const { spawn } = require("child_process");
 const sanitize = require("sanitize-filename");
 const logger = require("./logger");
 const {
@@ -43,18 +43,46 @@ function ensureDirs() {
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { timeout: options.timeout || 1000 * 60 * 15 }, (error, stdout, stderr) => {
-      if (error) {
-        const detail = stderr || stdout || error.message;
-        logger.warn(`Command failed: ${command} ${(args || []).join(" ")}`, {
-          message: detail.trim() || error.message,
-          stack: error.stack
-        });
-        reject(new Error(detail.trim()));
-        return;
-      }
-      resolve({ stdout, stderr });
+    const child = spawn(command, args, { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const stdoutLimit = options.maxStdoutBytes || 16 * 1024 * 1024;
+    const stderrLimit = 128 * 1024;
+    const stdoutChunks = [];
+    let stdoutBytes = 0;
+    let stderr = Buffer.alloc(0);
+    let stderrTruncated = false;
+    let failure = null;
+    let settled = false;
+    const timer = setTimeout(() => {
+      failure = Object.assign(new Error("Conversion process timed out."), { code: "ETIMEDOUT" });
+      child.kill();
+    }, options.timeout || 1000 * 60 * 15);
+    function complete(code, signal) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const output = { stdout: Buffer.concat(stdoutChunks).toString("utf8"), stderr: stderr.toString("utf8"), stderrTruncated };
+      if (failure || code !== 0) {
+        const error = failure || Object.assign(new Error(output.stderr.trim() || `Conversion process exited with code ${code}.`), { code });
+        error.signal = signal || null;
+        error.stderr = output.stderr;
+        // Arguments can contain passwords; never serialize them into diagnostics.
+        logger.warn(`Command failed: ${path.basename(String(command))}`, { code: error.code, signal: error.signal });
+        reject(error);
+      } else resolve(output);
+    }
+    child.on("error", error => { failure = error; complete(error.code, null); });
+    child.stdout.on("data", chunk => {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > stdoutLimit) {
+        failure = Object.assign(new Error("Conversion process output exceeded the supported size."), { code: "PROCESS_OUTPUT_LIMIT" });
+        child.kill();
+      } else stdoutChunks.push(chunk);
     });
+    child.stderr.on("data", chunk => {
+      stderr = Buffer.concat([stderr, chunk]);
+      if (stderr.length > stderrLimit) { stderr = stderr.subarray(stderr.length - stderrLimit); stderrTruncated = true; }
+    });
+    child.on("close", complete);
   });
 }
 
@@ -116,7 +144,7 @@ function decodeUploadFileName(name = "") {
 }
 
 function normalizeExt(ext) {
-  if (ext === "jpeg") return "jpg";
+  if (["jpeg", "jfif", "jpe"].includes(ext)) return "jpg";
   if (ext === "markdown") return "md";
   if (ext === "htm") return "html";
   if (ext === "tif") return "tiff";
@@ -154,16 +182,19 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "text") {
     textTargets.forEach((target) => targets.add(target));
-    if (tools.libreoffice) {
+    if (tools.libreoffice && (normalizeExt(rawExt) !== "md" || tools.pandoc)) {
       targets.add("pdf");
     }
-    if (["txt", "md", "markdown", "html", "htm"].includes(normalizeExt(rawExt))) {
+    if (["txt", "html"].includes(normalizeExt(rawExt)) || (normalizeExt(rawExt) === "md" && tools.pandoc)) {
       targets.add("docx");
     }
   }
 
-  // 电子书输入（EPUB/MOBI）是二进制容器，仅支持文本类目标；MOBI 只支持 EPUB/TXT/MD。
-  if (["epub", "mobi"].includes(normalizeExt(rawExt))) {
+  // Binary ebook targets follow the implemented readers, not text pass-through.
+  if (normalizeExt(rawExt) === "epub") {
+    return ["txt", "md", "html", ...(tools.libreoffice ? ["pdf", "docx"] : [])];
+  }
+  if (normalizeExt(rawExt) === "mobi") {
     return [...targets].filter((target) => ["epub", "txt", "md"].includes(target));
   }
 
@@ -184,6 +215,10 @@ function targetsForExt(rawExt, tools) {
 
   if (category === "document" && tools.libreoffice) {
     documentTargets.forEach((target) => targets.add(target));
+  }
+  if (normalizeExt(rawExt) === "docx") {
+    targets.add("md");
+    targets.add("txt");
   }
 
   if (category === "spreadsheet" && tools.libreoffice) {

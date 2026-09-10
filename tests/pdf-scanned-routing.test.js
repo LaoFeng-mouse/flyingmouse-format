@@ -75,6 +75,7 @@ test("composes scanned and mixed structured DOCX/XLSX writers", async (t) => {
     const outputPath = path.join(scratch, `out.${target}`);
     await convertPdf("input.pdf", outputPath, target, {
       classifyPdf: async () => ({ kind: target === "docx" ? "mixed" : "scanned", pages: [] }),
+      pdfTextPages: [],
       withStructuredPdf: async (_input, _options, consume) => consume(Object.freeze(manifest), scratch),
       [`writePdfOffice${target === "docx" ? "Docx" : "Xlsx"}`]: async ({ manifest: selected, outputPath: output }) => {
         seen.push({ target, selected });
@@ -238,6 +239,7 @@ test("structured failures preserve a pre-existing destination byte-for-byte", as
         withStructuredPdf: async (_input, _options, consume) => consume(
           structuredManifest({ tables: [acceptedTable()] }), scratch),
         writePdfOfficeDocx: writer,
+        pdfTextPages: [],
         writePdfOfficeXlsx: writer
       }
     }));
@@ -263,6 +265,7 @@ test("actual structured writers accept a deeply frozen validated manifest withou
   const docxPath = path.join(scratch, "actual.docx");
   await convertStructuredPdf({
     inputPath: "input.pdf", outputPath: docxPath, target: "docx", options: {
+      pdfTextPages: [],
       withStructuredPdf: async (_input, _options, consume) => consume(manifest, scratch)
     }
   });

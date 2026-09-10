@@ -183,5 +183,50 @@ test("readManifest tolerates missing/corrupt manifest files", async (t) => {
   assert.equal(readManifest(bundle), null);
   fs.writeFileSync(path.join(bundle, "engine-integrity.json"), "{ not json");
   assert.equal(readManifest(bundle), null);
-  assert.equal(verifyIntegrity(bundle, null).ok, true);
+  assert.equal(verifyIntegrity(bundle, null).ok, false);
+});
+
+for (const [label, content] of [["missing", null], ["corrupt", "{bad"], ["empty", '{"schema":1,"files":{}}']]) {
+  test(`existing cache with ${label} manifest must run smoke before reuse`, async (t) => {
+    const { root, bundle } = await makeBundle(t, `existing-${label}`);
+    if (content !== null) fs.writeFileSync(path.join(bundle, "engine-integrity.json"), content);
+    const enginesRoot = path.join(root, "engines");
+    const cacheDir = path.join(enginesRoot, "libreoffice-test");
+    fs.cpSync(bundle, cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, ".complete"), "old marker");
+    let calls = 0;
+    const result = prepareWritableEngineBundle({
+      bundledBundle: bundle, bundledSofficePath: path.join(bundle, LO_SUB, "soffice.com"),
+      enginesRoot, bundleName: "libreoffice-test",
+      smokeTest: () => { calls += 1; return { ok: false, reason: "invalid output" }; }
+    });
+    assert.equal(calls, 2, "both existing cache and staged replacement need a real smoke result");
+    assert.equal(result.source, "bundled");
+    assert.match(result.reason, /冒烟/);
+  });
+}
+
+test("manifest rejects traversal and invalid metadata", async (t) => {
+  const { bundle } = await makeBundle(t, "invalid-entry");
+  for (const files of [{ "../outside": { size: 1 } }, { "a": {} }, { "a": { size: -1 } }, { "a": { size: 1, sha256: "bad" } }]) {
+    assert.equal(verifyIntegrity(bundle, { schema: 1, files }).ok, false);
+  }
+});
+
+test("smoke rejects a magic-only PDF and a valid blank PDF, accepts expected text", async (t) => {
+  const { defaultSmokeTest } = require("../store-engine-cache");
+  const { PDFDocument, StandardFonts } = require("pdf-lib");
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-smoke-pdf-"));
+  t.after(() => fsp.rm(root, { recursive: true, force: true }));
+  const blank = await PDFDocument.create();
+  blank.addPage();
+  const expected = await PDFDocument.create();
+  const page = expected.addPage();
+  page.drawText("flyingmouse 42", { font: await expected.embedFont(StandardFonts.Helvetica) });
+  for (const [bytes, success] of [[Buffer.from("%PDF"), false], [await blank.save(), false], [await expected.save(), true]]) {
+    const outcome = defaultSmokeTest("fake-soffice", { tmpRoot: root, exec: (_exe, args) => {
+      fs.writeFileSync(path.join(args[args.indexOf("--outdir") + 1], "smoke.pdf"), bytes);
+    } });
+    assert.equal(outcome.ok, success, outcome.reason);
+  }
 });

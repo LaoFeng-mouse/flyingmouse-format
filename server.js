@@ -20,6 +20,7 @@ const { convertRasterImage } = require("./image-conversion");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
 const { xmlToJson } = require("./xml-json");
 const { convertEbook, convertTextToEpub } = require("./ebook");
+const { pandocPath } = require("./markdown-document");
 const yaml = require("js-yaml");
 const {
   LIMITS,
@@ -317,9 +318,25 @@ async function getTools() {
       };
       logger.warn("LibreOffice capability probe failed", error);
     }
+    const pandocExecutable = pandocPath();
+    let pandocEnabled = false;
+    try {
+      if (!pandocExecutable || !fs.existsSync(pandocExecutable)) throw new Error("missing engine");
+      const result = await run(pandocExecutable, ["--version"], { timeout: 10000, maxStdoutBytes: 64 * 1024 });
+      const version = /^pandoc\s+(\S+)/m.exec(result.stdout)?.[1];
+      if (!version) throw new Error("invalid engine response");
+      pandocEnabled = true;
+      cachedToolDetails.pandoc = { enabled: true, version, executable: pandocExecutable };
+    } catch {
+      cachedToolDetails.pandoc = {
+        enabled: false, errorCode: "MARKDOWN_ENGINE_MISSING",
+        messages: { zhCN: "Markdown 文档引擎缺失或无法启动；Word/PDF 转换暂不可用，请修复安装。", enUS: "The Markdown document engine is missing or cannot start. Repair the installation to enable Word/PDF conversion." }
+      };
+    }
     cachedTools = {
       ffmpeg: await commandExists(FFMPEG_PATH),
       libreoffice: Boolean(officeProbe?.enabled),
+      pandoc: pandocEnabled,
       poppler: await commandExists(PDFTOPPM_PATH, ["-v"]),
       ocr: ocrAvailable(),
       pdf: true,
@@ -334,6 +351,7 @@ async function getToolDiagnostics() {
   return {
     ffmpeg: { enabled: tools.ffmpeg, executable: FFMPEG_PATH },
     libreoffice: { ...cachedToolDetails.libreoffice, executable: LIBREOFFICE_PATH },
+    pandoc: { ...cachedToolDetails.pandoc },
     poppler: { enabled: tools.poppler, executable: PDFTOPPM_PATH },
     ocr: { enabled: tools.ocr, version: require("tesseract.js/package.json").version },
     pdfjs: { enabled: tools.pdf, version: require("pdfjs-dist/package.json").version },
@@ -409,6 +427,7 @@ app.get("/api/capabilities", async (_req, res) => {
     },
     optional: [
       { name: "LibreOffice", enabled: tools.libreoffice, formats: ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "wps", "pdf"] },
+      { name: "Pandoc Markdown", enabled: tools.pandoc, formats: ["md", "docx", "pdf"] },
       { name: "PDF table extractor", enabled: tools.pdf, formats: ["pdf", "xlsx", "txt", "html"] },
       { name: "Poppler PDF renderer", enabled: tools.poppler, formats: ["pdf", "png", "jpg"] },
       { name: "Tesseract OCR", enabled: tools.ocr, formats: ["image", "pdf", "txt"] }
@@ -605,7 +624,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       conversionResult = await convertImage(file.path, outputPath, requestedTarget, { inputName: originalName });
     } else if (category === "text") {
       if (["epub", "mobi"].includes(inputExt)) {
-        await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
+        conversionResult = await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
       } else if (requestedTarget === "epub") {
         await convertTextToEpub(await fsp.readFile(file.path, "utf8"), inputExt, originalName, outputPath);
       } else {
@@ -628,7 +647,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
           await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
         }
       } else {
-        await convertPdf(file.path, outputPath, requestedTarget, {
+        conversionResult = await convertPdf(file.path, outputPath, requestedTarget, {
           pdfAction,
           password: String(req.body?.password || ""),
           splitMode: String(req.body?.splitMode || "page"),
@@ -719,7 +738,7 @@ app.post("/api/convert", assertLocalWebRequest, upload.single("file"), async (re
       "BMP_UNSUPPORTED_VARIANT",
       "JSON_CSV_PATH_COLLISION",
       "PDF_TABLE_OCR_LOW_QUALITY"
-    ].includes(error?.code);
+    ].includes(error?.code) || /^(?:MARKDOWN|EPUB|MOBI)_/.test(error?.code || "");
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError;
     if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);

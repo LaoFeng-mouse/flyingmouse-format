@@ -97,6 +97,30 @@ test("server flags txt to JSON as a raw-text wrapper warning instead of pretendi
   assert.ok(body.warnings.some((warning) => warning.code === "TEXT_JSON_WRAPPED"));
 });
 
+test("server returns a client error for unsupported mathematics and corrupt ebook containers", async () => {
+  const math = await convertResponse("equation.md", "$\\unsupportedMouseMacro{x}$", "html", "text/markdown");
+  assert.equal(math.response.status, 422);
+  assert.equal(math.body.errorCode, "MARKDOWN_MATH_UNSUPPORTED");
+  assert.match(math.body.messages.enUS, /mathematics/);
+  for (const extension of ["epub", "mobi"]) {
+    const result = await convertResponse(`corrupt.${extension}`, "invalid binary container", "txt", "application/octet-stream");
+    assert.equal(result.response.status, 422);
+    assert.match(result.body.errorCode, /^(EPUB|MOBI)_PARSE_FAILED$/);
+  }
+});
+
+test("server exposes the real Pandoc probe and propagates missing Markdown image warnings", async (t) => {
+  const capabilities = await (await fetch(`${baseUrl}/api/capabilities`)).json();
+  assert.equal(typeof capabilities.tools.pandoc, "boolean");
+  assert.equal(capabilities.toolDetails.pandoc.enabled, capabilities.tools.pandoc);
+  if (!capabilities.tools.pandoc) return t.skip("Bundled Pandoc is unavailable on this test host");
+  const result = await convertResponse("rich.md", "# Heading\n\n$E=mc^2$\n\n![图片](missing.png)", "docx", "text/markdown");
+  assert.equal(result.response.status, 200, result.body.error);
+  assert.ok(result.body.warnings.some((warning) => warning.code === "MARKDOWN_IMAGE_UNAVAILABLE"));
+  const buffer = Buffer.from(await (await fetch(`${baseUrl}${result.body.downloadUrl}`)).arrayBuffer());
+  assert.equal(buffer.toString("ascii", 0, 2), "PK");
+});
+
 test("server converts CSV to JSON without the wrapper warning (real parse)", async () => {
   const { response, body } = await convertResponse(
     "data.csv",

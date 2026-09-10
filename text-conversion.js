@@ -1,6 +1,7 @@
 const { parse } = require("csv-parse/sync");
-const { marked } = require("marked");
+const { marked, Marked } = require("marked");
 const TurndownService = require("turndown");
+const { markdownExtensions } = require("./markdown-math");
 
 function createTurndownService() {
   const service = new TurndownService({
@@ -83,7 +84,7 @@ function isSafeMarkdownImage(href) {
 
 function markdownToHtml(markdown) {
   const renderer = new marked.Renderer();
-  renderer.html = (html) => escapeHtmlText(html);
+  renderer.html = (html) => /^<\/?(?:u|mark)\s*>$/i.test(html) ? html.toLowerCase() : escapeHtmlText(html);
   renderer.link = (href, title, text) => {
     if (!isSafeMarkdownLink(href)) return text;
     const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
@@ -94,7 +95,8 @@ function markdownToHtml(markdown) {
     const titleAttribute = title ? ` title="${escapeHtmlAttribute(title)}"` : "";
     return `<img src="${escapeHtmlAttribute(href)}" alt="${escapeHtmlAttribute(text)}"${titleAttribute}>`;
   };
-  const body = marked.parse(String(markdown || ""), {
+  const parser = new Marked({ extensions: markdownExtensions() });
+  const body = parser.parse(String(markdown || ""), {
     async: false,
     gfm: true,
     mangle: false,
@@ -246,6 +248,7 @@ ${rows}
 }
 
 function stableJsonStringify(value) {
+  if (value instanceof JsonNumber) return value.source;
   if (Array.isArray(value)) return `[${value.map(stableJsonStringify).join(",")}]`;
   if (value && typeof value === "object") {
     return `{${Object.keys(value).sort().map((key) =>
@@ -259,9 +262,11 @@ function flattenJsonObject(value, prefix = "", output = Object.create(null)) {
   for (const key of Object.keys(value || {}).sort()) {
     const path = prefix ? `${prefix}.${key}` : key;
     const nested = value[key];
-    if (Array.isArray(nested)) setFlattenedValue(output, path, stableJsonStringify(nested));
-    else if (nested && typeof nested === "object") flattenJsonObject(nested, path, output);
-    else setFlattenedValue(output, path, nested);
+    if (nested instanceof JsonNumber) setFlattenedValue(output, path, nested.source);
+    else if (Array.isArray(nested)) setFlattenedValue(output, path, stableJsonStringify(nested));
+    else if (nested && typeof nested === "object" && Object.keys(nested).length) flattenJsonObject(nested, path, output);
+    else if (nested && typeof nested === "object") setFlattenedValue(output, path, "{}");
+    else setFlattenedValue(output, path, nested === null ? "null" : nested);
   }
   return output;
 }
@@ -276,9 +281,39 @@ function setFlattenedValue(output, path, value) {
   output[path] = value;
 }
 
+class JsonNumber {
+  constructor(source) { this.source = source; }
+  toString() { return this.source; }
+}
+
+function parseJsonNumbersExactly(source) {
+  // Validate using the platform JSON grammar, then replace only numeric tokens
+  // outside strings before materialization. Numeric spelling never enters a
+  // floating-point Number, including integers above 2^53 and decimal fractions.
+  const validated = JSON.parse(source);
+  let marker = "__flyingmouse_json_number__";
+  // Check decoded strings as well: a user string can spell the prefix with JSON
+  // unicode escapes, which must never be mistaken for one of our placeholders.
+  const decodedContent = JSON.stringify(validated);
+  while (source.includes(marker) || decodedContent.includes(marker)) marker += "_";
+  const numbers = [];
+  const rewritten = source.replace(/"(?:\\[\s\S]|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g, (token) => {
+    if (token[0] === '"') return token;
+    numbers.push(token);
+    return JSON.stringify(`${marker}${numbers.length - 1}`);
+  });
+  return JSON.parse(rewritten, (_key, value) => typeof value === "string" && value.startsWith(marker)
+    ? new JsonNumber(numbers[Number(value.slice(marker.length))]) : value);
+}
+
 function jsonToCsv(jsonText) {
-  const data = JSON.parse(String(jsonText || ""));
-  const rows = (Array.isArray(data) ? data : [data]).map((row) => flattenJsonObject(row));
+  const data = parseJsonNumbersExactly(String(jsonText || ""));
+  const rows = (Array.isArray(data) ? data : [data]).map((row) => {
+    if (row === null || typeof row !== "object" || row instanceof JsonNumber || Array.isArray(row) || !Object.keys(row).length) {
+      return { value: row instanceof JsonNumber ? row.source : row === null ? "null" : typeof row === "object" ? stableJsonStringify(row) : row };
+    }
+    return flattenJsonObject(row);
+  });
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))].sort();
   const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   return [

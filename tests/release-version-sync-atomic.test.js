@@ -102,3 +102,28 @@ test("P5: dry-run never touches disk", async (t) => {
   execFileSync(process.execPath, [path.join(dir2, "scripts", "release-version-sync.js"), "0.7.0", "--dry-run"], { encoding: "utf8" });
   assert.deepEqual(snapshot(dir2), before2, "--dry-run 不得写盘");
 });
+
+test("partial write failure restores the failed file as well as preceding files", async (t) => {
+  const dir = await sandbox(t);
+  const before = snapshot(dir);
+  const injection = path.join(dir, "fail-partial.cjs");
+  fs.writeFileSync(injection, `
+const fs = require('fs');
+const original = fs.writeFileSync;
+let failed = false;
+fs.writeFileSync = function(file, contents, ...rest) {
+  if (!failed && String(file).endsWith('win7-package-lock.json')) {
+    failed = true;
+    original.call(fs, file, String(contents).slice(0, 12), ...rest);
+    const error = new Error('injected disk full after truncation');
+    error.code = 'ENOSPC';
+    throw error;
+  }
+  return original.call(fs, file, contents, ...rest);
+};
+`);
+  assert.throws(() => execFileSync(process.execPath,
+    ["--require", injection, path.join(dir, "scripts", "release-version-sync.js"), "0.7.0"],
+    { stdio: "pipe", windowsHide: true }));
+  assert.deepEqual(snapshot(dir), before);
+});

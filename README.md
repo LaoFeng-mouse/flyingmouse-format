@@ -20,21 +20,23 @@
 ### 主要功能
 
 - 鼠鼠原版界面：鼠鼠会跟随上传、识别、批量、OCR、转换成功或失败切换状态。
-- 本地离线转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器。
+- 本地离线转换：内置 FFmpeg、LibreOffice、Poppler、Tesseract 和 AVS3 解码器；Windows 10/11 与 macOS 版增加 Pandoc 文档引擎。
 - 支持图片、文本、Word/WPS、Excel/WPS、PPT/WPS、PDF、音频、视频和 ZIP。
 - 音频转换：支持 MP3 / WAV / FLAC / M4A / AAC / OGG / OPUS / WMA 等普通格式互转；**不支持其他音乐平台的加密特殊格式**（如 NCM / KGG / mflac / kgma / kwm 等）。
 - 视频编码选择：转视频时可选 H.264 / H.265 / AV1 编码（目标 mp4/mov/mkv 时显示）。
 - 操作记忆：按“源文件格式”分别记住上次选择的目标格式；重新修改后，新选择会成为该源格式的默认值。
 - 路径记忆：记住上次保存目录，下次保存时自动从该目录开始。
 - 中文/English 界面：首次启动跟随系统语言，手动选择后会记住设置。
+- 外观：可选择浅色、深色或跟随系统；切换系统外观时自动更新，选择会保存。
+- Markdown → Word/PDF：保留标题、表格、嵌套列表、代码原文及可编辑 Word 公式；缺失图片或不支持的原始内容会提示。Win7 Legacy 未捆绑新版 Pandoc，因此不提供这两个目标。
 - 批量转换：显示逐文件进度、结果和失败原因，并可单独保存或保存全部。
 - 结果预览：转换完成后可在侧边抽屉预览图片、PDF、文本、音频和视频；窄窗口自动切换为底部面板。
 - CLI 与 Agent 接入：命令行覆盖能力查询、目标查询、单个/批量转换、图片合并 PDF 和 PDF 合并；应用内可把配套 skill 一键接入现有 Codex、Claude 或通用 Agent 目录。
 - 转换质量：HTML / Office 转 Markdown 保留标题、列表和代码块；CSV 支持 BOM、转义引号和字段内换行。
 - PDF → Excel（智能表格提取）：支持电子文字坐标、扫描页 OCR、有框/无框表格、多表、跨页续接、合并单元格、低置信度批注与 Raw 回退。
-- PDF → Word（版式还原）：内置 pdf2docx 引擎还原段落、表格、图片、字体与布局；扫描版自动 OCR 回退。Windows 10/11 版支持版式还原，Windows 7 版回退到文字提取。
+- PDF → Word：Windows 10/11 优先使用版式引擎，检查文字覆盖后再接受结果；旋转文字和碎片正文可重建为可编辑段落，混合扫描页逐页处理。降级重建和 OCR 会显示说明；复杂多栏、图片定位和扫描标点不能保证与原 PDF 完全一致。
 - PDF 拆分 / 加密 / 解密：PDF 可逐页拆分或每 N 页一组（打包 ZIP），也可用密码加密（AES-256）或解密（需原密码）。
-- 电子书：txt/md/html → EPUB（纯本地生成）；EPUB → TXT/Markdown；MOBI → EPUB/TXT/Markdown（MOBI 解析为实验性，复杂版式可能不完整）。
+- 电子书：txt/md/html → EPUB；EPUB → TXT/Markdown/HTML，以及有 LibreOffice 时转 PDF/DOCX。读取按章节目录排序，缺章、缺图、加密及不支持的 MOBI 压缩会明确失败；复杂 CSS 版式会简化。
 - 图片合并 PDF 支持调整顺序：多张图片转 PDF 前可在队列中上移/下移，PDF 页序跟随队列顺序。
 - HEIC/HEIF 图片可转换为 JPG/PNG/WebP 等（内置 ffmpeg 解码）。
 - ICO 图标可转换为 PNG/JPG 等，PNG/JPG 也可生成多尺寸 ICO 图标（实验性）。
@@ -46,7 +48,9 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.6.10 对应系统的安装包。
+本轮 0.7.0 交付源码与 Windows Store APPX；NSIS/DMG 尚未随本轮发布。下方列出的各平台文件名是对应构建名称，只有实际出现在 Release 资产列表后才可下载。源码、APPX 交付和全平台公开发布分别验收。
+
+1. 全平台安装包发布后，在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.7.0 对应系统的安装包；当前可从该页面选择已经发布的版本。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -82,15 +86,15 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.6.10-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
-- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.6.10-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
+- **Windows 10 / 11 x64（推荐）**：下载标准资产 `FlyingMouse-Format-Setup-0.7.0-x64.exe`。它使用 Electron 43、Sharp 0.35 和 PDF.js 6 运行时。
+- **Windows 7 SP1 x64（兼容版）**：下载 `FlyingMouse.Format-Setup-0.7.0-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.6.10 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.7.0 通过 Windows、macOS arm64 和 macOS x64 自动化门禁以及真实样本回归；真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.6.10-mac-arm64.dmg`。
-- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.6.10-mac-x64.dmg`。
+- **Apple Silicon（M1 及更新）**：下载 `FlyingMouse.Format-Setup-0.7.0-mac-arm64.dmg`。
+- **Intel Mac**：下载 `FlyingMouse.Format-Setup-0.7.0-mac-x64.dmg`。
 
 首批 macOS 包支持 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。两个架构已在原生 GitHub runner 完成固定引擎、完整转换、包结构和 12 秒启动冒烟；真实 Mac 设备仍待验收。
 
@@ -135,7 +139,9 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Quick start
 
-1. Download the v0.6.10 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+This 0.7.0 delivery contains source code and a Windows Store APPX. NSIS/DMG installers have not been published for this delivery; platform filenames below describe expected build outputs, and are downloadable only after they appear in the Release asset list.
+
+1. Once published, download the v0.7.0 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest). Until then, choose an already published version listed there.
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -157,15 +163,15 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.6.10-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
-- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.6.10-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
+- **Windows 10 / 11 x64 (recommended):** use `FlyingMouse-Format-Setup-0.7.0-x64.exe` with Electron 43, Sharp 0.35, and PDF.js 6.
+- **Windows 7 SP1 x64 (compatibility build):** use `FlyingMouse.Format-Setup-0.7.0-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation.
 
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.6.10 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
+The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. v0.7.0 passed Windows, native macOS arm64, and native macOS x64 automation gates plus real-sample regressions; acceptance on a physical Windows 7 SP1 x64 system is still pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.6.10-mac-arm64.dmg`.
-- **Intel Mac:** use `FlyingMouse.Format-Setup-0.6.10-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** use `FlyingMouse.Format-Setup-0.7.0-mac-arm64.dmg`.
+- **Intel Mac:** use `FlyingMouse.Format-Setup-0.7.0-mac-x64.dmg`.
 
 The first macOS packages support macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Both architectures passed pinned-engine, full-conversion, bundle, and 12-second launch gates on native GitHub runners; physical Mac acceptance remains pending.
 

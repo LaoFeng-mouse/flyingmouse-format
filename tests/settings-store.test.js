@@ -12,6 +12,23 @@ const {
   writeLastSaveDirectory
 } = require("../settings-store");
 
+test("appearance survives unrelated settings updates and accepts only supported modes", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-theme-test-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const settingsPath = path.join(scratch, "settings.json");
+  await updateSettings(settingsPath, { theme: "dark", targetBySource: { pdf: "docx" } });
+  await updateSettings(settingsPath, { language: "en-US" });
+  const persisted = await readSettings(settingsPath);
+  assert.equal(persisted.theme, "dark");
+  assert.equal(persisted.targetBySource.pdf, "docx");
+  for (const theme of ["light", "system"]) {
+    await updateSettings(settingsPath, { theme });
+    assert.equal((await readSettings(settingsPath)).theme, theme);
+  }
+  await updateSettings(settingsPath, { theme: "unexpected" });
+  assert.equal((await readSettings(settingsPath)).theme, "system");
+});
+
 test("falls back when settings are missing, damaged, or point to a non-directory", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-settings-test-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
