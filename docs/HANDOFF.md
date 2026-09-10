@@ -1,6 +1,21 @@
 # FlyingMouse Format 交接
 
-更新时间：2026-08-28（商店 v0.6.5 appx 双修复重建 + main 已提交）
+更新时间：2026-09-10（PR #71 已合并、main CI 转绿、0.6.9 商店 appx 验包交付，待用户上传 Partner Center）
+
+## 2026-09-10：PR #71 squash 合并（main f05c0b9）+ 0.6.9 商店 appx 打包交付
+
+- **合并与门禁**：PR #71（0.6.9 稳定性修复 S1-S3/L1-L3）`gh pr merge 71 --squash` → main `f05c0b9`；合并后 push run `34441466609` **success**（3m59s）——Run162 以来的连续红终结。
+- **D:\appx-build 同步**：fast-forward dd68899→f05c0b9 干净；package-lock 有变 → `npm ci --cache D:\appx-cache\npm-cache --registry=npmmirror` 482 包 flat 布局（无 `.pnpm`，勿用 pnpm——pdfjs 守卫见 store-worktree ref §1）。
+- **打包链**：`npx electron-builder --win dir` EXIT=0；asar 内 package.json=0.6.9（脚本核验）；无 app-update.yml 残留；manifest 0.6.8.0→0.6.9.0；rename-opc 4 文件→保留名 0；scan-pe-cert-dangling bin 与 staging 均 0。
+- **交付物**：`D:\飞鼠打包\FlyingMouseFormat-0.6.9-x64.appx`（2,136,906,857 B），check-appx 全绿：zip OK、三根条目齐、**无 AppxSignature.p7x（未签名=正确交付形态）**、Identity `488B6338.354574AC174AD`/Publisher `CN=56D7A4A1-…`/Version `0.6.9.0`/PublisherDisplayName 牢蜂喜欢开飞机、**包内 app.asar SHA `e3074ad9…`==win-unpacked**。与 0.6.8 包条目数持平（21,108），唯一差异=sharp 原生库 0.35.3→0.35.4（随 lockfile，#71 audit fix 预期）。
+- **★新坑（已入 skill appx-msix-packaging）**：首打把旧 `app.bak-0.6.8` 留在 `dist/__appx-manual/` staging 内 → makeappx `/d` 无脑全收 → 4.27GB 双倍包（payload 行数 42,206 vs 21,105 识破）；备份必须放 `__appx-manual` 的兄弟目录，清空重打恢复 2.14GB。
+- **清场（用户已确认执行）**：`dist/old-app-0.6.8.bak`（~4G）与 0.6.8 旧 appx 已删；D 盘可用回升至 ~48G。
+- **08-28 遗留对账**：③ EXDEV/LibreOffice 修复已在 full-version（`D:\项目\飞鼠格式-src` settings-store.js 有 EXDEV 降级分支，实测确认）；④ main 已推送（f05c0b9）；① 0.6.5 appx 未单独上传，已被本 0.6.9 包取代（本机商店版仍 0.6.4.0）；② 商店实机验证并入下方新待办；⑤ tools/zstd/ 仍未跟踪未忽略（遗留）。
+- **待办（下一窗口）**：
+  - ① **上传 `D:\飞鼠打包\FlyingMouseFormat-0.6.9-x64.appx` 到 Partner Center——仅用户本人操作**。上传后本机用 0.6.4.0 商店包实测：Word→PDF 不再「安装无法完成」、settings 不再 EXDEV 崩、引擎版本化缓存重建。
+  - ② **GitHub v0.6.9 tag/release 未建**：main README 已写「下载 v0.6.9 安装包」，但 Releases Latest 仍是 v0.6.5（无 0.6.6~0.6.9 资产）——需决策是否 push tag `v0.6.9` 触发 release.yml 云端 Publish（NSIS+mac），否则 README 指向空资产。
+  - ③ fix worktree `D:\项目\飞鼠格式-fix-0.6.9` 与分支 `fix/0.6.9-capability-gates`（含 origin 远端分支）：内容已全部进 main（diff main 为空，squash 落地），用户确认后可清；其 bin/ 内残缺 avs3 占位目录为已知无害残留。
+  - ④ tools/zstd/ 入库还是忽略（承 08-28⑤）。
 
 ## 2026-08-28：商店版 v0.6.5 appx 两处启动/转换崩溃修复
 
