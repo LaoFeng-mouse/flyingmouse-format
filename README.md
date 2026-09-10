@@ -48,7 +48,9 @@
 
 ### 快速开始
 
-1. 在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.7.0 对应系统的安装包。
+本轮 0.7.0 交付源码与 Windows Store APPX；NSIS/DMG 尚未随本轮发布。下方列出的各平台文件名是对应构建名称，只有实际出现在 Release 资产列表后才可下载。源码、APPX 交付和全平台公开发布分别验收。
+
+1. 全平台安装包发布后，在 [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 下载 v0.7.0 对应系统的安装包；当前可从该页面选择已经发布的版本。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -137,7 +139,9 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Quick start
 
-1. Download the v0.7.0 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest).
+This 0.7.0 delivery contains source code and a Windows Store APPX. NSIS/DMG installers have not been published for this delivery; platform filenames below describe expected build outputs, and are downloadable only after they appear in the Release asset list.
+
+1. Once published, download the v0.7.0 build for your system from [Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest). Until then, choose an already published version listed there.
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
