@@ -186,7 +186,7 @@ function csvToMarkdown(csv) {
     throw wrapped;
   }
   if (!records.length) return "";
-  const width = Math.max(...records.map((row) => row.length));
+  const width = records.reduce((max, row) => Math.max(max, row.length), 0);
   const normalized = records.map((row) => [...row, ...Array(width - row.length).fill("")]);
   const escapeCell = (value) => {
     const CR = String.fromCharCode(13);
@@ -223,7 +223,7 @@ function csvToHtmlTable(csv) {
     throw wrapped;
   }
   if (!records.length) return "<p>（空 CSV）</p>";
-  const width = Math.max(...records.map((row) => row.length));
+  const width = records.reduce((max, row) => Math.max(max, row.length), 0);
   const normalized = records.map((row) => [...row, ...Array(width - row.length).fill("")]);
   const cell = (value) => `<td>${escapeHtmlText(String(value ?? ""))}</td>`;
   const rows = normalized.map((row) => `<tr>${row.map(cell).join("")}</tr>`).join("\n");

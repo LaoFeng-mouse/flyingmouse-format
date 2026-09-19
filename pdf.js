@@ -15,6 +15,7 @@ const { PDFTOPPM_PATH, DOCENGINE_PATH, QPDF_PATH, pdfImageTargets } = require(".
 const { run, commandExists, escapeHtml, safeBaseName } = require("./utils");
 const { zipFiles, openZipEntries, openZipEntriesFromBuffer, readZipEntryToFile } = require("./zip-util");
 const { convertImagesToPdf } = require("./image");
+const { throwIfCanceled } = require("./conversion-cancellation");
 const { ocrAvailable, createOcrWorker, recognizeImageTextWithWorker, recognizeImageResultWithWorker } = require("./ocr");
 const { loadPdfjs } = require("./pdfjs");
 const { classifyPdf } = require("./pdf-classifier");
@@ -108,6 +109,7 @@ function mergeOcrLineSpaces(value) {
 }
 
 async function fillMissingPdfPageText(inputPath, pages, options = {}) {
+  throwIfCanceled(options.signal);
   // A digital header does not make a raster body searchable. Empty pages alone
   // need no OCR. Coverage also catches a scan behind a searchable stamp.
   const missing = pages.filter(pdfPageNeedsOcr);
@@ -128,15 +130,18 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
     const scanRegions = !options.renderPdfTablePage && missing.every(page => Number.isInteger(page.pageNumber) && Array.isArray(page.lines))
       ? await extractPdfScanRegions(inputPath, missing, tempDir) : new Map();
     for (const page of missing) {
+      throwIfCanceled(options.signal);
       const pageNumber = page.pageNumber || pages.indexOf(page) + 1;
+      const pageOptions = { ...options, pageNumber };
       const regions = scanRegions.get(pageNumber);
       if (regions?.length) {
         const blocks = (page.lines || []).map(line => ({ bbox: line.bbox, rows: [line.cells] }));
         const warnings = [];
         for (const region of regions) {
+          throwIfCanceled(options.signal);
           const result = options.recognizeImageTextWithWorker
-            ? { text: await options.recognizeImageTextWithWorker(worker, region.outputPath), warnings: [] }
-            : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, region.outputPath);
+            ? { text: await options.recognizeImageTextWithWorker(worker, region.outputPath, pageOptions), warnings: [] }
+            : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, region.outputPath, pageOptions);
           const text = mergeOcrLineSpaces(result.text);
           if (text) blocks.push({ bbox: region.bbox, rows: text.split(/\r?\n/).filter(line=>line.trim()).map(line=>[line]) });
           warnings.push(...(result.warnings || []));
@@ -151,8 +156,8 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
       }
       const rendered = await (options.renderPdfTablePage || renderPdfTablePage)(inputPath, pageNumber, tempDir, 200);
       const result = options.recognizeImageTextWithWorker
-        ? { text: await options.recognizeImageTextWithWorker(worker, rendered.outputPath), warnings: [] }
-        : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, rendered.outputPath);
+        ? { text: await options.recognizeImageTextWithWorker(worker, rendered.outputPath, pageOptions), warnings: [] }
+        : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, rendered.outputPath, pageOptions);
       const text = mergeOcrLineSpaces(result.text);
       const rows = text ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => [line]) : [];
       const omittedNative = [];
@@ -306,12 +311,13 @@ async function publishAttempt(attemptPath, outputPath) {
   await fsp.rm(backupPath, { force: true }).catch(() => {});
 }
 
-async function withAttemptOutput(outputPath, produce) {
+async function withAttemptOutput(outputPath, produce, signal) {
   const attemptPath = `${outputPath}.attempt-${crypto.randomUUID()}`;
   try {
     const result = await produce(attemptPath);
     const info = await fsp.lstat(attemptPath);
     if (!info.isFile() || info.isSymbolicLink() || info.size < 1) throw new Error("invalid attempt output");
+    throwIfCanceled(signal);
     await publishAttempt(attemptPath, outputPath);
     return result;
   } finally {
@@ -329,7 +335,7 @@ async function convertStructuredPdf({ inputPath, outputPath, target, options = {
         return withAttemptOutput(outputPath, (attemptPath) =>
           (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
             manifest: selected, assetRoot, outputPath: attemptPath
-          }));
+          }), options.signal);
       }
       if (target === "docx") {
         const nativePages = await sourcePdfPages(inputPath, options);
@@ -349,7 +355,7 @@ async function convertStructuredPdf({ inputPath, outputPath, target, options = {
             }
           }
           return written;
-        });
+        }, options.signal);
         return { ...result, warnings: restored ? [{ code: "PDF_NATIVE_TEXT_RESTORED", messages: {
           zhCN: "已使用 PDF 原生文字补回结构识别遗漏的内容。", enUS: "Native PDF text was restored where structure recognition omitted it."
         } }] : [] };
@@ -377,6 +383,7 @@ function assertPdfTableOcrQuality(model) {
 }
 
 async function convertPdf(inputPath, outputPath, target, options = {}) {
+  throwIfCanceled(options.signal);
   if (target === "pdf") {
     if (options.pdfAction === "encrypt") {
       await convertPdfEncrypt(inputPath, outputPath, options.password);
@@ -389,7 +396,7 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
   }
 
   if (pdfImageTargets.includes(target)) {
-    await convertPdfPagesToImagesZip(inputPath, outputPath, target);
+    await convertPdfPagesToImagesZip(inputPath, outputPath, target, options);
     return;
   }
 
@@ -887,6 +894,7 @@ async function loadPdfForPageCopy(inputPath) {
 }
 
 async function splitPdfToZip(inputPath, outputPath, options = {}) {
+  throwIfCanceled(options.signal);
   const mode = String(options.splitMode || "page");
   const groupSize = Math.max(1, Math.floor(Number(options.groupSize) || 1));
   const splitPages = mode === "group" ? groupSize : 1;
@@ -896,7 +904,8 @@ async function splitPdfToZip(inputPath, outputPath, options = {}) {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
     try {
       const prefix = path.join(tempDir, "page-%d.pdf");
-      await run(QPDF_PATH, [`--split-pages=${splitPages}`, inputPath, prefix], { timeout: 1000 * 60 * 5 });
+      await run(QPDF_PATH, [`--split-pages=${splitPages}`, inputPath, prefix], { timeout: 1000 * 60 * 5, signal: options.signal });
+      throwIfCanceled(options.signal);
       const entries = (await fsp.readdir(tempDir))
         .filter((name) => name.endsWith(".pdf"))
         .sort()
@@ -933,6 +942,7 @@ async function splitPdfToZip(inputPath, outputPath, options = {}) {
   try {
     const entries = [];
     for (let index = 0; index < src.getPageCount(); index += splitPages) {
+      throwIfCanceled(options.signal);
       const single = await PDFDocument.create();
       const end = Math.min(index + splitPages, src.getPageCount());
       const indices = Array.from({ length: end - index }, (_, offset) => index + offset);
@@ -955,24 +965,31 @@ async function splitPdfToZip(inputPath, outputPath, options = {}) {
   }
 }
 
-async function mergePdfFiles(pdfFiles, outputPath) {
+async function mergePdfFiles(pdfFiles, outputPath, options = {}) {
+  throwIfCanceled(options.signal);
   const merged = await PDFDocument.create();
   let totalPages = 0;
   for (const file of pdfFiles) {
+    throwIfCanceled(options.signal);
     const src = await loadPdfForPageCopy(file.inputPath);
     totalPages += src.getPageCount();
     assertPdfPages(totalPages);
     const pages = await merged.copyPages(src, src.getPageIndices());
+    throwIfCanceled(options.signal);
     pages.forEach((page) => merged.addPage(page));
+    options.onProgress?.({ stage: "merging", completedPages: totalPages });
   }
+  throwIfCanceled(options.signal);
   const bytes = await merged.save();
+  throwIfCanceled(options.signal);
   if (!bytes.length) {
     throw new Error("PDF 合并失败，未生成任何内容。");
   }
   await fsp.writeFile(outputPath, bytes);
 }
 
-async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = false } = {}) {
+async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = false, signal } = {}) {
+  throwIfCanceled(signal);
   const sourcePdf = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
   assertPdfPages(sourcePdf.getPageCount(), { ocr });
   if (!(await commandExists(PDFTOPPM_PATH, ["-v"]))) {
@@ -983,7 +1000,8 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
   try {
     const prefix = path.join(tempDir, "page");
     const formatArg = target === "jpg" ? "-jpeg" : "-png";
-    await run(PDFTOPPM_PATH, [formatArg, "-cropbox", "-r", String(dpi), inputPath, prefix], { timeout: 1000 * 60 * 20 });
+    await run(PDFTOPPM_PATH, [formatArg, "-cropbox", "-r", String(dpi), inputPath, prefix], { timeout: 1000 * 60 * 20, signal });
+    throwIfCanceled(signal);
     const ext = target === "jpg" ? ".jpg" : ".png";
     const files = (await fsp.readdir(tempDir))
       .filter((file) => file.toLowerCase().endsWith(ext))
@@ -1001,13 +1019,15 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
 // PDF 页面 → 散图集合（不再无脑打 zip）。命名按源文件名区分：
 // 单页 = <base>.<target>（直接可存），多页 = <base>-第N页.<target> 打包 zip。
 // webp 目标：poppler 只出 png/jpg，先渲 png 再 sharp 二跳（实测编码器可用）。
-async function emitPdfPageImages(inputPath, baseName, target) {
+async function emitPdfPageImages(inputPath, baseName, target, options = {}) {
+  throwIfCanceled(options.signal);
   const renderTarget = target === "webp" ? "png" : target;
-  const rendered = await renderPdfPages(inputPath, renderTarget, 300);
+  const rendered = await renderPdfPages(inputPath, renderTarget, 300, options);
   try {
     const files = [];
     const single = rendered.files.length === 1;
     for (let index = 0; index < rendered.files.length; index += 1) {
+      throwIfCanceled(options.signal);
       let filePath = rendered.files[index];
       if (target === "webp") {
         const sharp = require("sharp");
@@ -1027,8 +1047,8 @@ async function emitPdfPageImages(inputPath, baseName, target) {
   }
 }
 
-async function convertPdfPagesToImagesZip(inputPath, outputPath, target) {
-  const rendered = await renderPdfPages(inputPath, target, 300);
+async function convertPdfPagesToImagesZip(inputPath, outputPath, target, options = {}) {
+  const rendered = await renderPdfPages(inputPath, target, 300, options);
   try {
     await zipFiles(
       rendered.files.map((file, index) => ({
@@ -1100,7 +1120,7 @@ async function ocrScannedPdfPages(inputPath) {
     worker = await createOcrWorker();
     const pages = [];
     for (let index = 0; index < rendered.files.length; index += 1) {
-      const text = await recognizeImageTextWithWorker(worker, rendered.files[index]);
+      const text = await recognizeImageTextWithWorker(worker, rendered.files[index], { pageNumber: index + 1 });
       // 中文 OCR 拆字空格合并（`纳税 人 名 称` → `纳税人名称`），提升扫描件文本可读性
       pages.push({ name: `Page ${index + 1}`, text: String(mergeCnSpaces(text) || "").trim() });
     }

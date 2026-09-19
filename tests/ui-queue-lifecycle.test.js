@@ -6,6 +6,7 @@ const { test } = require("node:test");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
 const resetSource = source.slice(source.indexOf("function resetDownload()"), source.indexOf("let capabilityRefreshTimer;"));
+const targetLabelSource = source.slice(source.indexOf("function targetFormatLabel("), source.indexOf("function commonTargetsFrom("));
 const conversionSource = source.slice(source.indexOf("async function acceptFiles("), source.indexOf("async function saveResult("));
 const selectionEvents = source.slice(source.indexOf('dropZone.addEventListener("click"'), source.indexOf('batchList.addEventListener("click"'));
 
@@ -32,7 +33,7 @@ function harness({ targets, convert } = {}) {
     summarizeFiles: files => ({ name: files.map(file => file.name).join(", "), meta: "" }),
     extensionOf: name => name.split(".").at(-1), preferredTarget: () => null,
     categoryLabel: value => value, isLongTaskTarget: () => false,
-    mouseStateForConversion: () => "converting", maybeShowQqTutorial() {}, rendererLog() {},
+    mouseStateForConversion: () => "converting", rendererLog() {},
     setMouseState() {}, setWorkflowStep() {}, resetProgress() {}, setProgress() {},
     setIndeterminateProgress() {}, closePreview() {}, renderBatchList() {},
     syncVideoCodecField() {}, syncPdfActionFields() {}, syncImagePdfModeField() {}, syncPdfExcelHint() {},
@@ -53,7 +54,7 @@ function harness({ targets, convert } = {}) {
     "pdfPassword", "pdfAction", "pdfSplitMode", "pdfGroupSize", "imagePdfMode"]) context[name] = element();
   context.targetSelect.disabled = true;
   context.convertButton.disabled = true;
-  vm.runInContext(`${resetSource}\n${conversionSource}\n${selectionEvents}`, context);
+  vm.runInContext(`${targetLabelSource}\n${resetSource}\n${conversionSource}\n${selectionEvents}`, context);
   return { context, state, statuses, convertedNames, forms, accept: files => context.acceptFiles(files),
     clear: () => context.clearFile(), convert: () => context.convertCurrentFiles() };
 }

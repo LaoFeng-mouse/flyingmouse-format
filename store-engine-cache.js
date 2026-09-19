@@ -19,9 +19,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const childProcess = require("child_process");
+const { execFileSync } = childProcess;
 const { pathToFileURL } = require("url");
-const { Worker } = require("node:worker_threads");
+const ownedTasks = require("./owned-tasks");
 const { createOfficeWorkspace } = require("./office-runtime");
 
 const MANIFEST_FILE = "engine-integrity.json";
@@ -54,10 +55,19 @@ function manifestKey(manifest) {
   return crypto.createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 
+function resolveOfficeEnginesRoot(localAppData) {
+  // MSIX inserts Packages/<family>/LocalCache/Local into the physical path.
+  // LibreOffice's native loader can fail before emitting stderr on long paths.
+  // Keep this private per-user root short; legacy caches remain untouched.
+  return path.join(localAppData, "FMF", "e");
+}
+
 function resolveWritableEngineBundle({ bundledBundle, enginesRoot, bundleName }) {
   const key = manifestKey(readManifest(bundledBundle));
-  const name = bundleName || `libreoffice-${key || "unverified"}`;
-  if (!/^libreoffice(?:-[0-9A-Za-z._-]+)?$/.test(name) || name.includes("..")) {
+  // The basename is only a compact directory identifier. Integrity and warm
+  // reuse still compare all 64 key characters and the complete file snapshot.
+  const name = bundleName || `lo-${key ? key.slice(0, 32) : "unverified"}`;
+  if (!/^(?:lo|libreoffice)(?:-[0-9A-Za-z._-]+)?$/.test(name) || name.includes("..")) {
     throw new Error("Invalid writable engine cache name");
   }
   const destBundle = path.resolve(enginesRoot, name);
@@ -93,11 +103,11 @@ function readPrepareOwner(lockDir) {
   return owner;
 }
 
-function retirePrepareLock(root, token, strict = false) {
+function retirePrepareLock(root, token, strict = false, ownerPid = process.pid) {
   const lockDir = path.join(root, PREPARE_LOCK_NAME);
   assertCacheChild(root, lockDir);
   const owner = readPrepareOwner(lockDir);
-  if (owner.pid !== process.pid || owner.token !== token) {
+  if (owner.pid !== ownerPid || owner.token !== token) {
     if (strict) throw new Error("Engine preparation lock ownership changed");
     return;
   }
@@ -176,9 +186,9 @@ function acquirePrepareLock(root, timeoutMs = PREPARE_LOCK_TIMEOUT_MS, token = c
   }
 }
 
-function releaseExitedWorkerLock(root, token) {
+function releaseExitedWorkerLock(root, token, ownerPid = process.pid) {
   try {
-    retirePrepareLock(root, token);
+    retirePrepareLock(root, token, false, ownerPid);
   } catch (error) { if (error.code !== "ENOENT") throw error; }
 }
 
@@ -281,7 +291,18 @@ function prepareWritableEngineBundleAsync(options) {
   const { log = () => {}, ...workerData } = options;
   const prepareOwnerToken = crypto.randomBytes(12).toString("hex");
   return new Promise((resolve, reject) => {
-    const worker = new Worker(path.join(__dirname, "store-engine-worker.js"), { workerData: { ...workerData, prepareOwnerToken } });
+    ownedTasks.assertAccepting();
+    // Native smoke checks use synchronous child execution. A Node Worker stuck
+    // in that call can block app.exit while joining its thread. An owned helper
+    // process lets shutdown terminate the exact helper/native descendant tree.
+    const worker = childProcess.fork(path.join(__dirname, "store-engine-worker.js"), [], {
+      execPath: process.execPath, execArgv: [], env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      windowsHide: true, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe", "ipc"]
+    });
+    ownedTasks.trackProcess(worker, { processGroup: process.platform !== "win32" });
+    worker.stdin?.end();
+    worker.stdout?.resume();
+    worker.stderr?.resume();
     let settled = false;
     worker.on("message", (message) => {
       if (message.type === "log") log(message.message, message.error ? new Error(message.error) : undefined);
@@ -289,12 +310,15 @@ function prepareWritableEngineBundleAsync(options) {
       if (message.type === "failure") { settled = true; reject(new Error(message.reason)); }
     });
     worker.on("error", reject);
-    worker.on("exit", (code) => {
+    worker.on("close", (code) => {
       // A worker can die while the owning application process remains alive.
       // Its exact token permits cleanup only after that worker has exited.
-      try { releaseExitedWorkerLock(workerData.enginesRoot, prepareOwnerToken); }
+      try { if (!ownedTasks.isStopping()) releaseExitedWorkerLock(workerData.enginesRoot, prepareOwnerToken, worker.pid); }
       catch (error) { log("Exited engine worker lock cleanup deferred", error); }
       if (!settled) reject(new Error(`Office preparation worker exited without a result (${code})`));
+    });
+    worker.send({ ...workerData, prepareOwnerToken }, error => {
+      if (error) { reject(error); worker.kill(); }
     });
   });
 }
@@ -505,6 +529,7 @@ module.exports = {
   prepareWritableEngineBundle,
   prepareWritableEngineBundleAsync,
   resolveWritableEngineBundle,
+  resolveOfficeEnginesRoot,
   readManifest,
   verifyIntegrity
 };

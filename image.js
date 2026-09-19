@@ -14,6 +14,7 @@ const { FFMPEG_PATH, DCRAW_PATH, rawInput } = require("./config");
 const RAW_EXTENSIONS = rawInput;
 const FFMPEG_IMAGE_EXTENSIONS = new Set(["tga", "jp2", "j2k", "jxl", "qoi", "ppm"]);
 const { run } = require("./utils");
+const { throwIfCanceled } = require("./conversion-cancellation");
 const {
   LIMITS,
   ResourceLimitError,
@@ -52,21 +53,23 @@ async function convertToIco(inputPath, outputPath) {
 }
 
 async function convertImage(inputPath, outputPath, target, options = {}) {
+  throwIfCanceled(options.signal);
   const prepared = await prepareImageInput(inputPath, options.inputName);
   try {
+    throwIfCanceled(options.signal);
     if (target === "pdf") {
-      await convertImagesToPdf([{ inputPath: prepared.inputPath, originalName: path.basename(prepared.inputPath) }], outputPath);
+      await convertImagesToPdf([{ inputPath: prepared.inputPath, originalName: path.basename(prepared.inputPath) }], outputPath, options);
       return { warnings: [] };
     }
 
     if (target === "txt") {
       const { convertImageToOcrText } = require("./ocr");
-      return await convertImageToOcrText(prepared.inputPath, outputPath);
+      return await convertImageToOcrText(prepared.inputPath, outputPath, options);
     }
 
     if (target === "docx" || target === "md") {
       const { recognizeImageResult } = require("./ocr");
-      const result = await recognizeImageResult(prepared.inputPath);
+      const result = await recognizeImageResult(prepared.inputPath, options);
       if (!result.text.trim()) {
         const error = new Error("OCR 没有识别出文字，请确认图片清晰、方向正确。");
         error.code = "OCR_NO_TEXT";
@@ -299,7 +302,8 @@ function pdfNumber(value) {
   return Number(value).toFixed(2).replace(/\.00$/, "");
 }
 
-async function readImageForPdf(inputPath) {
+async function readImageForPdf(inputPath, options = {}) {
+  throwIfCanceled(options.signal);
   // sharp 的预编译构建不支持 BMP 输入：批量/ZIP 图片合并 PDF 时直接解码 BMP。
   // 先读文件头判断，避免把非 BMP 大图整读进内存。
   if (isBmpFileSync(inputPath)) {
@@ -326,7 +330,8 @@ async function readImageForPdf(inputPath) {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-heic-pdf-"));
     try {
       const pngPath = path.join(tempDir, "decoded.png");
-      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, pngPath], { timeout: 1000 * 60 * 5 });
+      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, pngPath], { timeout: 1000 * 60 * 5, signal: options.signal });
+      throwIfCanceled(options.signal);
       return await readPngAsPdfImage(pngPath);
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -338,7 +343,8 @@ async function readImageForPdf(inputPath) {
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-tga-pdf-"));
     try {
       const pngPath = path.join(tempDir, "decoded.png");
-      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5 });
+      await run(FFMPEG_PATH, ["-hide_banner", "-y", "-i", inputPath, "-frames:v", "1", pngPath], { timeout: 1000 * 60 * 5, signal: options.signal });
+      throwIfCanceled(options.signal);
       return await readPngAsPdfImage(pngPath);
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -386,7 +392,9 @@ function writePdfChunk(stream, buffer, pos) {
 
 // 图片合并为 PDF：逐张解码、即时流式写盘，内存占用与图片数量无关（O(1)），
 // 因此不因「图片过多」而失败。每张图以原始分辨率整页内嵌、不做缩放，质量不降。
-async function convertImagesToPdf(imageFiles, outputPath) {
+async function convertImagesToPdf(imageFiles, outputPath, options = {}) {
+  const { signal, onProgress = () => {} } = options;
+  throwIfCanceled(signal);
   if (!imageFiles.length) {
     throw new Error("请先选择要转换为 PDF 的图片。");
   }
@@ -395,12 +403,14 @@ async function convertImagesToPdf(imageFiles, outputPath) {
   // 输入有效性检查，让坏文件在开工前统一暴露，而不是写一半才失败）。
   const metadataList = [];
   for (const file of imageFiles) {
+    throwIfCanceled(signal);
     if (file?.blank) {
       metadataList.push({ width: 595, height: 842, pages: 1, pageHeight: 842 });
       continue;
     }
     metadataList.push(await inspectImageMetadata(file.inputPath));
   }
+  throwIfCanceled(signal);
   assertImagePdfBudget(metadataList);
 
   // 页对象编号是确定的（3 + index*3），可先算好 Kids 列表，再写 /Pages 对象 2。
@@ -428,6 +438,7 @@ async function convertImagesToPdf(imageFiles, outputPath) {
     await writePdfChunk(stream, pdfAscii(`2 0 obj\n<< /Type /Pages /Kids [${pageRefs.join(" ")}] /Count ${pageRefs.length} >>\nendobj\n`), pos);
 
     for (let index = 0; index < count; index += 1) {
+      throwIfCanceled(signal);
       const file = imageFiles[index];
       const pageNumber = 3 + index * 3;
       const imageNumber = pageNumber + 1;
@@ -444,9 +455,10 @@ async function convertImagesToPdf(imageFiles, outputPath) {
           data: zlib.deflateSync(Buffer.alloc(blankWidth * blankHeight * 3, 0xff))
         };
       } else {
-        image = await readImageForPdf(file.inputPath);
+        image = await readImageForPdf(file.inputPath, options);
       }
 
+      throwIfCanceled(signal);
       const pageWidth = Math.max(1, image.width);
       const pageHeight = Math.max(1, image.height);
 
@@ -466,8 +478,11 @@ async function convertImagesToPdf(imageFiles, outputPath) {
       offsets[contentNumber] = pos.value;
       const content = `q\n${pdfNumber(pageWidth)} 0 0 ${pdfNumber(pageHeight)} 0 0 cm\n/Im${index + 1} Do\nQ\n`;
       await writePdfChunk(stream, pdfAscii(`${contentNumber} 0 obj\n<< /Length ${Buffer.byteLength(content, "latin1")} >>\nstream\n${content}endstream\nendobj\n`), pos);
+      onProgress({ stage: "merging", completedPages: index + 1, totalPages: count, percent: (index + 1) / count * 100 });
+      throwIfCanceled(signal);
     }
 
+    throwIfCanceled(signal);
     const xrefOffset = pos.value;
     const objectCount = Object.keys(offsets).length;
     let xref = `xref\n0 ${objectCount + 1}\n0000000000 65535 f \n`;

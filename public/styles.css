@@ -354,6 +354,7 @@ h1 {
 
 .batch-list {
   display: grid;
+  grid-auto-rows: max-content;
   gap: 8px;
   max-height: 300px;
   overflow: auto;
@@ -413,10 +414,13 @@ h1 {
 }
 
 .batch-actions {
-  display: grid;
-  justify-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  min-width: 72px;
+  min-width: 0;
+  max-width: 260px;
 }
 
 .batch-status {
@@ -1179,7 +1183,8 @@ input:focus-visible {
   }
 
   .batch-actions {
-    justify-items: stretch;
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .batch-status {

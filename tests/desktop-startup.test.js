@@ -17,7 +17,7 @@ async function startDesktop({ serverFailure } = {}) {
     whenReady: () => Promise.resolve(), requestSingleInstanceLock: () => true,
     on: (name, listener) => handlers.set(name, listener),
     quit: () => events.push("quit"), disableHardwareAcceleration() {}, setAppUserModelId() {},
-    commandLine: { appendSwitch() {} }
+    commandLine: { hasSwitch: () => false, getSwitchValue: () => "", appendSwitch() {} }
   };
   class Window extends EventEmitter {
     constructor(options) {
@@ -35,10 +35,19 @@ async function startDesktop({ serverFailure } = {}) {
     electron: { app, BrowserWindow: Window, shell: {}, ipcMain: { handle() {} },
       dialog: { showErrorBox: (_title, detail) => events.push({ errorDialog: detail }) } },
     "./logger": logger,
+    "./desktop-shutdown": { ...require("../desktop-shutdown"), captureRuntimeIdentity: async () => ({}) },
     "./office-readiness": state,
     "./store-engine-cache": {
-      resolveWritableEngineBundle: () => ({ path: "C:/writable/soffice.com", bundleName: "libreoffice-content" }),
-      prepareWritableEngineBundleAsync: async () => { events.push("prepare"); return pending; }
+      resolveOfficeEnginesRoot: require("../store-engine-cache").resolveOfficeEnginesRoot,
+      resolveWritableEngineBundle: ({ enginesRoot }) => {
+        assert.equal(enginesRoot, path.join("C:/test-user", "FMF", "e"));
+        return { path: "C:/writable/soffice.com", bundleName: `lo-${"1".repeat(32)}` };
+      },
+      prepareWritableEngineBundleAsync: async ({ enginesRoot, bundleName }) => {
+        assert.equal(enginesRoot, path.join("C:/test-user", "FMF", "e"));
+        assert.equal(bundleName, `lo-${"1".repeat(32)}`, "helper must use the same destination selected before server configuration");
+        events.push("prepare"); return pending;
+      }
     },
     "./runtime-paths": { resolveRuntimePaths: () => ({ ffmpeg: "ffmpeg", libreoffice: "C:/readonly/soffice.com",
       pdftoppm: "pdftoppm", tessdata: "tessdata" }) },

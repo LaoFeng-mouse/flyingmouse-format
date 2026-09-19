@@ -1,5 +1,6 @@
 const { execFile, spawn } = require("node:child_process");
 const path = require("node:path");
+const ownedTasks = require("./owned-tasks");
 const MAX_BUFFER = 1024 * 1024;
 
 // soffice.com owns a soffice.bin child. execFile's built-in timeout kills only
@@ -7,6 +8,7 @@ const MAX_BUFFER = 1024 * 1024;
 // execFile also does not forward detached: POSIX process groups require spawn.
 function defaultExecutor(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    ownedTasks.assertAccepting();
     let settled = false;
     let stopping = false;
     let timer;
@@ -18,6 +20,7 @@ function defaultExecutor(command, args, options = {}) {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"]
     });
+    ownedTasks.trackProcess(child, { processGroup: process.platform !== "win32" });
     child.stdin?.on("error", () => {});
     child.stdin?.end();
 

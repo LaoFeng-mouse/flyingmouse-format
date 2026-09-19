@@ -271,7 +271,7 @@ test("save dialogs restore and update the last successful directory", () => {
   assert.ok(packageJson.build.files.includes("settings-store.js"));
   assert.match(main, /readLastSaveDirectory/);
   assert.match(main, /writeLastSaveDirectory/);
-  assert.match(main, /path\.join\(lastSaveDirectory, fileName\)/);
+  assert.ok(packageJson.build.files.includes("save-dialog.js"));
   assert.match(main, /defaultPath: lastSaveDirectory/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, path\.dirname\(result\.filePath\)\)/);
   assert.match(main, /writeLastSaveDirectory\(settingsPath, directory\)/);
@@ -324,7 +324,7 @@ test("packaged Electron exposes CLI mode without creating a window", () => {
   assert.strictEqual(packageJson.bin["flyingmouse-format"], "cli.js");
   assert.match(main, /process\.argv\.indexOf\("--cli"\)/);
   assert.match(main, /if \(cliMode\)[\s\S]*runCli/);
-  assert.match(main, /if \(!cliMode && !mainWindow/);
+  assert.match(main, /if \(!cliMode && !desktopShutdown\.isStopping\(\) && !mainWindow/);
 });
 
 test("runtime diagnostics read Sharp's supported runtime version API", () => {

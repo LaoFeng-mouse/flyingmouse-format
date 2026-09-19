@@ -1,10 +1,16 @@
+# 当前候选：0.7.9 稳定性修复
+
+本分支保留公开功能版 0.7.5–0.7.8 修复，并继续 0.7.9 无响应恢复、退出清理及转换入口修复。当前验收边界见 [REPAIR-0.7.9.md](docs/REPAIR-0.7.9.md)；0.7.8 记录为历史基线。0.7.7 CAD 工作未纳入；本地音乐专用模块不在公开分支。源码同步不代表安装器发布或 Microsoft Store 认证。
+
+Windows 构建使用 package.json 的构建配置，需先准备锁定引擎与 MSVC。完整重建 EXE/ASAR 后由 afterSign 附加原生入口。不得关闭 GPU 或渲染器沙箱、全局重置 ACL 或按 Unknown Account 名称批量删除权限。
+
 # AGENTS.md
 
 ## Project boundary
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前技术栈：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、偏好与保存目录记忆。PDF 按原生/扫描内容分流，见 [架构](docs/ARCHITECTURE.md)；OFD 仅通过 `ofd-convert.js` 转 PDF，不走 LibreOffice。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27，禁止降低根 manifest 的主线依赖。当前候选与发布状态以 [0.7.4 修复说明](docs/REPAIR-0.7.4.md) 为准，不能从源码版本推断已安装或已发布版本。
+当前技术栈：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、偏好与保存目录记忆。PDF 按原生/扫描内容分流，见 [架构](docs/ARCHITECTURE.md)；OFD 仅通过 `ofd-convert.js` 转 PDF，不走 LibreOffice。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27，禁止降低根 manifest 的主线依赖。当前候选与发布状态以 [0.7.9 修复说明](docs/REPAIR-0.7.9.md) 为准，不能从源码版本推断已安装或已发布版本。
 
 ## Source map
 
@@ -17,6 +23,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `public/conversion-preferences.js`：按规范化源扩展名记忆目标格式。
 - `settings-store.js`：在 Electron `userData/settings.json` 中原子保存最近目录。
 - `office-readiness.js`、`store-engine-cache.js`、`store-engine-worker.js`：Office 准备状态、Store 可写缓存与后台验证。
+- `desktop-shutdown.js`、`owned-tasks.js`：有界退出、所属进程/Worker 收尾及临时目录身份校验。Store 默认逻辑缓存根使用 `%LOCALAPPDATA%/FMF/e` 和短目录名以避免 AppData 重定向后的路径溢出；完整内容键校验不得因目录缩短而删减。
 - `ocr.js`、`subtitles.js`：带质量/方向诊断的 OCR、多页 TIFF 和字幕时间轴转换。
 - `resource-policy.js`：统一图片、批量、PDF 与 OCR 资源上限和稳定错误码。
 - `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
@@ -47,7 +54,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - PDF → DOCX/XLSX 先由 `pdf-classifier.js` 分类；扫描/混合页尝试 `docstructure`。DOCX 仅在 `pdf.js` 允许的错误码下回退 OCR 段落并提示版式损失；扫描 XLSX 不伪造成功或输出空表。
 - 原生 PDF → DOCX 优先 `docengine` 并检查内容完整性，失败回退 PDF.js/OCR；原生 PDF → XLSX 使用 `pdf-table-extractor.js` 的文字坐标/表格模型。轻量版、Win7、macOS 的可用引擎不同，必须按能力检测呈现目标与降级说明。
 - HTML / Office → Markdown 必须共用 ATX 标题、fenced 代码块的 Turndown helper；CSV 使用锁定的 `csv-parse 7.0.2`（修复已知原型处理问题），禁止退回按换行拆分的简易解析器。
-- 资源说明必须对应实现：普通图片/批量限制当前由 `resource-policy.js` 的 `LIMITS` 决定（现为 `Number.MAX_SAFE_INTEGER` 占位，不能宣称固定 50MP/2GB 防护）；高级结构识别使用 `STRUCTURED_PDF_LIMITS` 与 Python `DEFAULT_LIMITS`，含 500 页、单页 50MP、累计 100MP（144 DPI）。不得宣称无限制或保证任意文件 1:1 还原；Sharp 不得使用 `limitInputPixels: false`。
+- 资源说明必须对应实现：普通图片/批量限制当前由 `resource-policy.js` 的 `LIMITS` 决定（现为 `Number.MAX_SAFE_INTEGER` 占位，不能宣称固定 50MP/2GB 防护）；高级结构识别使用 `STRUCTURED_PDF_LIMITS` 与 Python `DEFAULT_LIMITS`，含 500 页、单页 50MP、每批最多 8 页且累计 100MP（144 DPI）；JS 串行分批，500 页与输出/内容预算仍按整份 PDF 校验。不得宣称无限制或保证任意文件 1:1 还原；Sharp 不得使用 `limitInputPixels: false`。
 - PDF → PNG/JPG 使用 Poppler，并因多页输出 ZIP。
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR；图片 DOCX/Markdown 与 PDF Markdown 需传递质量和重排版式提示。多页 TIFF 必须逐页识别，动画仅识别首帧时明确提示。
 - SRT/VTT/ASS/SSA 互转及 TXT 导出保留时间轴和 Unicode；样式/位置/精度损失要提示，不能静默丢弃无法表示的绘图或事件。
@@ -107,7 +114,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - Microsoft Store 使用同一鼠鼠 UI 源码单独构建的 Windows 10/11 x64 APPX/MSIX；不得上传 NSIS，也不得提交 Win7 Legacy 包。上传前必须校验 Identity、Publisher、版本、架构、包内模块、鼠鼠图标和 SHA-256。
 - Partner Center 的“包验证通过”“认证通过”“公开发布”是不同状态；外部状态只能按现场回读结果和绝对日期记录，不能由本地构建或上传成功推断。
 - Store settings 写入必须保留 `settings-store.js` 的 `EXDEV` 跨卷回退，同卷仍用原子 rename。
-- Store Office 缓存位于 `%LOCALAPPDATA%\FlyingMouseFormat\engines\libreoffice-<内容标识>`；先显示窗口，再在 Worker 复制、校验与验证。只有 Office 任务等待，失败要可诊断；仅复用与内容及验证收据相符的缓存。见 [架构](docs/ARCHITECTURE.md)。
+- Store Office 默认逻辑缓存路径为 `%LOCALAPPDATA%\FMF\e\lo-<32位内容摘要前缀>`，避免 AppData 重定向后路径过长；完整内容键与文件清单校验仍保留。先显示窗口，再在自有独立子进程复制、校验与验证。只有 Office 任务等待，失败要可诊断；仅复用与内容及验证收据相符的缓存。见 [架构](docs/ARCHITECTURE.md)。
 - 改动包内内容后必须整体重建 EXE 与 ASAR（完整性哈希绑定），不能只替换 ASAR；签名包需重签名。源码说明更新不等于现有安装包已重建。见 [发布流程](docs/RELEASE.md)。
 - Windows 10/11 x64 使用 `native/launcher.cpp` 兼容启动入口；`afterSign` 完成原 Electron EXE 的 ASAR 绑定后，将其改名为 `FlyingMouse Format Runtime.exe`，再安装主入口。禁止在 `afterPack` 提前替换。需要 MSVC x64/Windows SDK；Win7 派生禁用该 hook，macOS 跳过。Store 打包同时验证入口、Runtime、ASAR 和公开功能边界。
 - 发布前必须检查：完整测试、当前能力表中实际支持格式的真实转换样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。AV3A 和平台加密音频不在当前输入能力表内；遗留 AVS3 资源或环境变量不能作为转换支持的证据，不得沿用已移除路径的 AV3A 发布门槛。
@@ -122,7 +129,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - `README.md`：面向用户的中英文介绍、下载与格式范围。
 - `docs/ARCHITECTURE.md`：运行架构、状态和数据边界。
 - `docs/RELEASE.md`：本机测试、打包、桌面同步与 GitHub 发布清单。
-- `docs/HANDOFF.md`：恢复工作入口；候选状态与剩余风险指向 `docs/REPAIR-0.7.4.md`。
+- `docs/HANDOFF.md`：恢复工作入口；候选状态与剩余风险指向 `docs/REPAIR-0.7.9.md`。
 - `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
 

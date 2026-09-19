@@ -1,3 +1,4 @@
+(function startDesktop() {
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -6,6 +7,7 @@ const saveDownload = require("./save-download");
 const storeEngineCache = require("./store-engine-cache");
 const officeReadiness = require("./office-readiness");
 const { saveConvertedResult } = require("./save-converted-result");
+const { chooseConvertedSavePath } = require("./save-dialog");
 const {
   isTrustedRendererUrl,
   resolveTrustedDownloadUrl,
@@ -16,6 +18,8 @@ const { buildDiagnosticsReport } = require("./diagnostics");
 const { discoverSkillRoots, installAgentSkill } = require("./agent-skill-installer");
 const { resolveRuntimePaths } = require("./runtime-paths");
 const { createDesktopRecovery } = require("./desktop-recovery");
+const ownedTasks = require("./owned-tasks");
+const { createDesktopShutdown, captureRuntimeIdentity, cleanupOwnedRuntime } = require("./desktop-shutdown");
 const {
   mergeLegacySettings,
   readLastSaveDirectory,
@@ -29,14 +33,47 @@ let desktopRecovery = null;
 let server = null;
 let serverUrl = "";
 let serverRuntime = null;
-const settingsPath = path.join(app.getPath("userData"), "settings.json");
+let runtimeOwner;
+const desktopShutdown = createDesktopShutdown({
+  app, log,
+  stopTasks: () => ownedTasks.stopAll(),
+  closeServer: () => { server?.close(); server?.closeAllConnections?.(); },
+  closeWindows: () => { for (const window of BrowserWindow.getAllWindows()) window.destroy(); },
+  cleanup: () => cleanupOwnedRuntime(runtimeOwner)
+});
 const cliMarkerIndex = process.argv.indexOf("--cli");
 const cliMode = cliMarkerIndex >= 0;
+let settingsPath;
+let startupPath = "userData";
 
-// Route all logging (including from server.js and renderer-forwarded IPC
-// messages) to a single debug.log in the Electron userData directory.
-logger.setLogFile(path.join(app.getPath("userData"), "debug.log"));
-process.env.FLYINGMOUSE_LOG_FILE = logger.getLogFile();
+try {
+  // Electron can replace an unusable --user-data-dir with its default before
+  // this module runs. Validate the original switch before touching that fallback.
+  if (app.commandLine.hasSwitch("user-data-dir")) {
+    const requestedProfile = app.commandLine.getSwitchValue("user-data-dir");
+    if (!requestedProfile) {
+      throw Object.assign(new Error("--user-data-dir requires a directory path."), { code: "EINVAL", path: "--user-data-dir" });
+    }
+    startupPath = path.resolve(requestedProfile);
+    fs.mkdirSync(startupPath, { recursive: true });
+    if (path.resolve(app.getPath("userData")) !== startupPath) app.setPath("userData", startupPath);
+  }
+  startupPath = app.getPath("userData");
+  settingsPath = path.join(startupPath, "settings.json");
+  startupPath = path.join(startupPath, "debug.log");
+  // Server and renderer-forwarded messages share this profile's log.
+  logger.setLogFile(startupPath);
+  process.env.FLYINGMOUSE_LOG_FILE = logger.getLogFile();
+} catch (error) {
+  const detail = `无法准备配置或日志目录；应用已停止启动，未切换到备用配置。\nCould not prepare the selected profile or log directory. Startup stopped without switching to another profile.\n\n${error?.path || startupPath}\n${error?.code || "STARTUP_PROFILE_ERROR"}: ${error?.message || error}`;
+  console.error(detail);
+  try {
+    if (!cliMode) dialog.showErrorBox("飞鼠格式启动失败 / FlyingMouse Format could not start", detail);
+  } finally {
+    app.exit(1);
+  }
+  return;
+}
 
 function log(message, error) {
   if (error) {
@@ -46,7 +83,16 @@ function log(message, error) {
   }
 }
 
+function finishCli(code) {
+  // CLI owns its own workspace in cli.js, but Store preparation may still be
+  // running after a command that did not need Office. Stop that helper too.
+  createDesktopShutdown({ app, log, exitCode: code, releaseLock: false,
+    stopTasks: () => ownedTasks.stopAll(), closeServer: () => {}, cleanup: () => {}
+  }).beforeQuit();
+}
+
 function createWindow(url) {
+  if (desktopShutdown.isStopping()) return;
   log(`Creating window for ${url}`);
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -112,7 +158,7 @@ ipcMain.handle("get-app-version", (event) => {
 // advertises a pending Office engine and awaits readiness only for Office work.
 function configureWritableLibreOfficeForStore(bundledSofficePath) {
   const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-  const enginesRoot = path.join(localAppData, "FlyingMouseFormat", "engines");
+  const enginesRoot = storeEngineCache.resolveOfficeEnginesRoot(localAppData);
   const options = {
     bundledBundle: path.join(process.resourcesPath || "", "libreoffice"),
     bundledSofficePath,
@@ -137,7 +183,9 @@ function configureRuntime() {
   // 双开实例时各自 server 会在同目录互相清掉对方的产物（cleanupOldFiles 按 mtime 删），
   // 并共享 downloads 登记表之外的文件——本机日志实证过两实例并行（2026-08-25）。
   // 以 pid 为后缀后各实例完全隔离，互不干扰。
-  process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), `flyingmouse-format-runtime-${process.pid}`);
+  // CLI owns a fresh child workspace and disposes it before app.exit; preserve
+  // an explicit caller-owned parent until that lifecycle has initialized it.
+  if (!cliMode) process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), `flyingmouse-format-runtime-${process.pid}`);
   const runtimePaths = resolveRuntimePaths({ resourcesPath: process.resourcesPath });
   process.env.FLYINGMOUSE_FFMPEG_PATH = runtimePaths.ffmpeg;
   if (process.windowsStore) {
@@ -164,6 +212,7 @@ function configureRuntime() {
 }
 
 async function boot() {
+  if (desktopShutdown.isStopping()) return;
   log("Boot started");
   // 单实例锁：禁止双开（旧版允许并行，两份 server 共享同一 runtime 目录，会互删产物）。
   // 第二个实例直接退出，聚焦已有窗口。
@@ -174,6 +223,7 @@ async function boot() {
     return;
   }
   app.on("second-instance", () => {
+    if (desktopShutdown.isStopping()) return;
     log("Second instance launched; focusing existing window");
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -182,10 +232,13 @@ async function boot() {
     }
   });
   configureRuntime();
+  runtimeOwner = await captureRuntimeIdentity({ runtimeDir: process.env.FLYINGMOUSE_RUNTIME_DIR });
+  if (desktopShutdown.isStopping()) { await cleanupOwnedRuntime(runtimeOwner); return; }
   serverRuntime = require("./server");
 
   const started = await serverRuntime.startServer(0);
   server = started.server;
+  if (desktopShutdown.isStopping()) { server.close(); server.closeAllConnections?.(); return; }
   serverUrl = started.url;
   console.log(`FlyingMouse Format started at ${started.url}`);
   log(`Server started at ${started.url}`);
@@ -345,10 +398,8 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   const absoluteUrl = trustedDownloadUrl(payload?.downloadUrl);
   const assets = Array.isArray(payload?.assets) ? payload.assets : [];
   const lastSaveDirectory = await readLastSaveDirectory(settingsPath, app.getPath("downloads"));
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: "保存转换后的文件",
-    defaultPath: path.join(lastSaveDirectory, fileName),
-    buttonLabel: "保存"
+  const result = await chooseConvertedSavePath({
+    dialog, window: mainWindow, directory: lastSaveDirectory, fileName
   });
 
   if (result.canceled || !result.filePath) {
@@ -356,7 +407,7 @@ ipcMain.handle("save-converted-file", async (event, payload) => {
   }
 
   await saveConvertedResult({ downloadUrl: absoluteUrl, fileName, assets }, result.filePath,
-    { download: downloadToFile, resolveUrl: trustedDownloadUrl, log });
+    { download: downloadToFile, resolveUrl: trustedDownloadUrl, log, overwrite: result.overwrite });
   await writeLastSaveDirectory(settingsPath, path.dirname(result.filePath))
     .catch((error) => log("Failed to remember save directory", error));
   log(`Saved converted file: ${result.filePath}`);
@@ -451,11 +502,11 @@ if (cliMode) {
     void officeReadiness.startOfficePreparation();
     const { runCli } = require("./cli");
     const code = await runCli(process.argv.slice(cliMarkerIndex + 1));
-    app.exit(code);
+    finishCli(code);
   }).catch((error) => {
     log("CLI boot failed", error);
     console.error(error);
-    app.exit(1);
+    finishCli(1);
   });
 } else {
   app.whenReady().then(boot).catch((error) => {
@@ -476,7 +527,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (!cliMode && !mainWindow && server?.listening) {
+  if (!cliMode && !desktopShutdown.isStopping() && !mainWindow && server?.listening) {
     const address = server.address();
     const port = typeof address === "object" && address ? address.port : 5177;
     serverUrl = `http://127.0.0.1:${port}`;
@@ -484,21 +535,10 @@ app.on("activate", () => {
   }
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   if (cliMode) return;
   log("Before quit");
-  if (server?.listening) {
-    server.close();
-  }
-  // 退出即清理本实例 runtime：产物登记表在内存里，进程结束后再无保存机会，
-  // 因此运行期间不再让产物过期（2026-09-07 决策），残骸在退出/下次启动时回收。
-  try {
-    serverRuntime?.purgeRuntimeDirsSync?.({
-      dirs: [require("./config").UPLOAD_DIR, require("./config").OUTPUT_DIR]
-    });
-  } catch (error) {
-    log("Failed to purge runtime dirs on quit", error);
-  }
+  desktopShutdown.beforeQuit(event);
 });
 
 app.on("web-contents-created", (_event, contents) => {
@@ -514,3 +554,4 @@ app.on("web-contents-created", (_event, contents) => {
     return { action: "deny" };
   });
 });
+})();

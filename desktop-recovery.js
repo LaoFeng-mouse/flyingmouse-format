@@ -9,6 +9,8 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
   let timer;
   let promptOpen = false;
   let readyBeforeUnresponsive = false;
+  let rendererUnresponsive = false;
+  let restartingRenderer = false;
   const listeners = [];
   const alive = () => !disposed && !window.isDestroyed();
   function clearDeadline() { clearTimeout(timer); timer = undefined; }
@@ -20,6 +22,44 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
   function listen(target, event, handler) {
     target.on(event, handler);
     listeners.push([target, event, handler]);
+  }
+
+  function stopUnresponsiveRenderer() {
+    // A navigation cannot interrupt JavaScript that no longer yields. Only
+    // replace that renderer after the user chooses Retry for the current
+    // failure; an interface that recovered while the prompt was open is kept.
+    if (!alive()) return Promise.resolve(false);
+    if (contents.getOSProcessId?.() === 0) return Promise.resolve(true);
+    return new Promise(resolve => {
+      let settled = false;
+      let deadline;
+      function finish(stopped) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        contents.removeListener('render-process-gone', onGone);
+        window.removeListener('closed', onClosed);
+        restartingRenderer = false;
+        resolve(stopped);
+      }
+      const onGone = () => finish(true);
+      const onClosed = () => finish(false);
+      contents.once('render-process-gone', onGone);
+      window.once('closed', onClosed);
+      restartingRenderer = true;
+      deadline = setTimeout(() => {
+        log('Unresponsive renderer did not exit before its restart deadline');
+        finish(false);
+      }, 5000);
+      deadline.unref?.();
+      try {
+        log('Stopping unresponsive renderer after user requested retry');
+        contents.forcefullyCrashRenderer();
+      } catch (error) {
+        log('Stopping unresponsive renderer failed', error);
+        finish(false);
+      }
+    });
   }
 
   async function prompt() {
@@ -48,7 +88,17 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
       if (alive()) dialog.showErrorBox?.('FlyingMouse Format', `界面启动失败 / Interface startup failed\n${observedFailure.reason}\n${logPath}`);
       return;
     } finally { promptOpen = false; }
-    if (retry && alive()) await start();
+    if (retry && alive()) {
+      // Preserve the first diagnostic reason, but use the renderer's current
+      // condition: a startup timeout/navigation error may precede the hang.
+      if (rendererUnresponsive) {
+        if (!await stopUnresponsiveRenderer() || !alive()) {
+          if (alive() && failure) void prompt();
+          return;
+        }
+      }
+      await start();
+    }
     else if (alive() && failure) void prompt();
   }
 
@@ -66,6 +116,7 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
     if (!alive()) return;
     const attempt = ++generation;
     ready = false;
+    rendererUnresponsive = false;
     failure = null;
     clearDeadline();
     armDeadline();
@@ -93,13 +144,20 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
   listen(contents, 'did-fail-load', (_event, code, description, _validatedUrl, isMainFrame) => {
     if (isMainFrame && code !== -3) fail(`navigation ${code}: ${description}`);
   });
-  listen(contents, 'render-process-gone', (_event, details) => fail(`renderer ${details.reason}; exitCode=${details.exitCode}`));
+  listen(contents, 'render-process-gone', (_event, details) => {
+    rendererUnresponsive = false;
+    // This is the completion signal for an explicit retry, not another crash.
+    if (!restartingRenderer) fail(`renderer ${details.reason}; exitCode=${details.exitCode}`);
+  });
   listen(contents, 'preload-error', (_event, _preloadPath, error) => fail(`preload: ${error.message || error}`));
   listen(window, 'unresponsive', () => {
-    readyBeforeUnresponsive = ready;
+    if (!rendererUnresponsive) readyBeforeUnresponsive = ready;
+    rendererUnresponsive = true;
     fail('renderer-unresponsive');
   });
   listen(window, 'responsive', () => {
+    if (restartingRenderer) return;
+    rendererUnresponsive = false;
     if (readyBeforeUnresponsive && failure?.reason === 'renderer-unresponsive') {
       ready = true;
       failure = null;
@@ -118,6 +176,7 @@ function createDesktopRecovery({ window, url, dialog, shell, log, logPath, timeo
     markReady() {
       if (!alive()) return;
       ready = true;
+      rendererUnresponsive = false;
       failure = null;
       clearDeadline();
       log('Desktop interface ready');

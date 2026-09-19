@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const crypto = require("node:crypto");
 
 function findVcvars() {
   if (process.env.FLYINGMOUSE_VCVARS_PATH) return process.env.FLYINGMOUSE_VCVARS_PATH;
@@ -36,6 +37,26 @@ module.exports = async function attachWindowsLauncher(context) {
   const runtime = path.join(context.appOutDir, "FlyingMouse Format Runtime.exe");
   if (!fs.existsSync(entry) || fs.existsSync(runtime)) throw new Error("Expected one fresh Electron executable.");
   const build = fs.mkdtempSync(path.join(path.dirname(context.appOutDir), "native-launcher-"));
+  const local = context.packager.config.extraMetadata?.flyingMouseLocalAudio ?? manifest.flyingMouseLocalAudio ?? false;
+  const resourceNames = ["icudtl.dat", "resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin",
+    ...fs.readdirSync(path.join(context.appOutDir, "locales")).filter(name => name.endsWith(".pak")).sort().map(name => `locales/${name}`),
+    ...fs.readdirSync(context.appOutDir).filter(name => name.endsWith(".dll")).sort()];
+  const resourceEntries = resourceNames.map(name => {
+    const file = path.join(context.appOutDir, name);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || !stat.size) throw new Error(`Invalid startup resource: ${name}`);
+    return { path: name.replaceAll("/", "\\"), sha256: crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"), executable: name.endsWith(".dll") };
+  });
+  fs.writeFileSync(path.join(build, "startup-build.h"), `#pragma once
+#define FM_VERSION L"${manifest.version}"
+#define FM_CHANNEL L"${local ? "local-music" : "public"}"
+#define FM_LOG_FOLDER L"${local ? "FlyingMouse Format Local Music" : "FlyingMouseFormat"}"
+#define FM_TITLE L"飞鼠格式${local ? "（本地音乐版）" : " / FlyingMouse Format"}"
+static const std::vector<startup::Resource> FM_STARTUP_RESOURCES = {
+${resourceEntries.map(item => `  { L${JSON.stringify(item.path)}, ${JSON.stringify(item.sha256)}, ${item.executable} },`).join("\n")}
+};
+`);
+  fs.writeFileSync(path.join(build, "startup-resources.json"), JSON.stringify({ version: manifest.version, local, files: resourceEntries }, null, 2));
   const png = await require("sharp")(path.join(root, "build/icon.png")).resize(256, 256).png().toBuffer();
   const header = Buffer.alloc(22);
   header.writeUInt16LE(1, 2); header.writeUInt16LE(1, 4);

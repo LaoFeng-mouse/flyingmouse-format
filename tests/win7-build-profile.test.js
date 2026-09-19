@@ -61,6 +61,23 @@ test("Win7 artifact name follows a non-current input version", () => {
   assert.doesNotMatch(profile.build.artifactName, /0\.3\.2/);
 });
 
+test("Win7 staging excludes build-only distribution tests and retains the qpdf resource filter", () => {
+  const { createWin7BuildProfile } = require("../win7-build-profile");
+  const { packageJson: profile, stagingEntries } = createWin7BuildProfile(
+    rootPackage, path.resolve(__dirname, "..")
+  );
+  // The distribution test loads a build script and the modern build.win layout;
+  // neither exists in this independently derived legacy runtime staging area.
+  assert.ok(!stagingEntries.some(entry => entry === "scripts" || entry.startsWith("scripts/")));
+  for (const command of [profile.scripts.test, profile.scripts["test:ci"]]) {
+    assert.doesNotMatch(command, /tests\/distribution-footprint\.test\.js/);
+  }
+  assert.deepEqual(
+    profile.build.extraResources.find(item => item.to === "qpdf").filter,
+    rootPackage.build.win.extraResources.find(item => item.to === "qpdf").filter
+  );
+});
+
 test("Win7 profile includes every current runtime module and absolute binary resources", () => {
   const { createWin7Package } = require("../win7-build-profile");
   const projectRoot = path.resolve(__dirname, "..");

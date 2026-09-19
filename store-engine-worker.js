@@ -1,13 +1,21 @@
 const { parentPort, workerData } = require("node:worker_threads");
 const { prepareWritableEngineBundle } = require("./store-engine-cache");
 
+function prepare(options, send) {
 try {
   const result = prepareWritableEngineBundle({
-    ...workerData,
-    log: (message, error) => parentPort.postMessage({ type: "log", message,
+    ...options,
+    log: (message, error) => send({ type: "log", message,
       error: error ? String(error.message || error) : undefined })
   });
-  parentPort.postMessage({ type: "result", result });
+  send({ type: "result", result });
 } catch (error) {
-  parentPort.postMessage({ type: "failure", reason: String(error.message || error) });
+  send({ type: "failure", reason: String(error.message || error) });
 }
+}
+
+if (parentPort) prepare(workerData, message => parentPort.postMessage(message));
+else process.once("message", options => {
+  prepare(options, message => process.send(message));
+  process.disconnect();
+});

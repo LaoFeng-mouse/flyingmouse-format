@@ -8,6 +8,7 @@ const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const sharp = require("sharp");
+const { throwIfCanceled } = require("./conversion-cancellation");
 const { TESSDATA_PATH } = require("./config");
 const { LIMITS } = require("./resource-policy");
 const { inspectImageMetadata } = require("./image");
@@ -89,6 +90,8 @@ function ocrError(code, zhCN, enUS, details = {}) {
 }
 
 async function createOcrWorker() {
+  const ownedTasks = require("./owned-tasks");
+  ownedTasks.assertAccepting();
   if (!ocrAvailable()) {
     throw ocrError("OCR_ENGINE_UNAVAILABLE",
       "OCR 引擎或中英文语言文件缺失，请修复或重新安装飞鼠格式。",
@@ -98,17 +101,19 @@ async function createOcrWorker() {
   const { createWorker } = loadTesseract();
   const paths = ocrRuntimePaths();
   // 语言集固定中英文：牺牲泰文，避免泰文模型抢认中文、产出乱码；中文识别优先。
-  const worker = await createWorker("eng+chi_sim", 1, {
+  const worker = await ownedTasks.trackPendingWorker(createWorker("eng+chi_sim", 1, {
     langPath: paths.langPath,
     corePath: paths.corePath,
     workerPath: paths.workerPath,
     cacheMethod: "none"
-  });
+  }));
   try {
+    ownedTasks.assertAccepting();
     await worker.setParameters({
       preserve_interword_spaces: "1",
       user_defined_dpi: "300"
     });
+    ownedTasks.assertAccepting();
   } catch (error) {
     await worker.terminate().catch(() => {});
     throw error;
@@ -163,14 +168,17 @@ function ocrCandidateScore(result) {
   return (result.confidence ?? 0) - 20 * result.weakFraction - Math.min(45, 15 * result.unreliableLines);
 }
 
-async function recognizeImageResultWithWorker(worker, inputPath) {
+async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
+  throwIfCanceled(options.signal);
   const prepared = await prepareImageForOcr(inputPath);
   try {
     const recognize = async (imagePath, pageMode, orientation = 0) => {
+      throwIfCanceled(options.signal);
       const { data } = await worker.recognize(imagePath, {
         rotateAuto: true,
         tessedit_pageseg_mode: pageMode
       }, { text: true, blocks: true });
+      throwIfCanceled(options.signal);
       return {
         ...ocrQuality(data),
         orientation,
@@ -197,6 +205,7 @@ async function recognizeImageResultWithWorker(worker, inputPath) {
         // AUTO already handles most sideways text; an upside-down page is the
         // next useful candidate and should not need two wasted sideways passes.
         for (const orientation of [180, 90, 270]) {
+          throwIfCanceled(options.signal);
           const rotatedPath = path.join(prepared.tempDir, `ocr-${orientation}.png`);
           await sharp(prepared.outputPath, { limitInputPixels: LIMITS.maxImagePixels })
             .rotate(orientation, { background: "#ffffff" }).png().toFile(rotatedPath);
@@ -207,10 +216,13 @@ async function recognizeImageResultWithWorker(worker, inputPath) {
       }
     }
     if (best.text && ((best.confidence !== null && best.confidence < 60) || best.weakFraction > 0.5 || best.unreliableLines)) {
+      const pageNumber = Number.isSafeInteger(options.pageNumber) && options.pageNumber > 0
+        ? options.pageNumber : null;
       throw ocrError("OCR_LOW_CONFIDENCE",
-        "扫描文字识别质量过低，已停止导出以避免生成乱码。请使用更清晰、光照均匀的扫描件后重试。",
-        "OCR quality is too low to export reliably. Use a sharper, evenly lit scan and try again.",
-        { confidence: best.confidence, unreliableLines: best.unreliableLines });
+        `${pageNumber ? `第 ${pageNumber} 页的` : ""}扫描文字识别质量过低，已停止导出以避免生成乱码。请核对该页的清晰度、方向和文字内容后重试。`,
+        `OCR quality${pageNumber ? ` on page ${pageNumber}` : ""} is too low to export reliably. Check the scan's clarity, orientation and text before trying again.`,
+        { confidence: best.confidence, unreliableLines: best.unreliableLines,
+          ...(pageNumber ? { pageNumber } : {}) });
     }
     const warnings = [];
     if (best.orientation) warnings.push({ code: "OCR_ORIENTATION_CORRECTED", messages: {
@@ -237,11 +249,12 @@ async function recognizeImageResultWithWorker(worker, inputPath) {
   }
 }
 
-async function recognizeImageTextWithWorker(worker, inputPath) {
-  return (await recognizeImageResultWithWorker(worker, inputPath)).text;
+async function recognizeImageTextWithWorker(worker, inputPath, options = {}) {
+  return (await recognizeImageResultWithWorker(worker, inputPath, options)).text;
 }
 
-async function recognizeImageResult(inputPath) {
+async function recognizeImageResult(inputPath, options = {}) {
+  throwIfCanceled(options.signal);
   const metadata = await inspectImageMetadata(inputPath, true);
   const pageCount = Number(metadata.pages || 1);
   const worker = await createOcrWorker();
@@ -252,12 +265,13 @@ async function recognizeImageResult(inputPath) {
       const pages = [];
       const warnings = new Map();
       for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
+        throwIfCanceled(options.signal);
         // Decode only the current document page. Keeping a single worker avoids
         // loading Chinese/English models again for each page of a fax or scan.
         const pagePath = path.join(pageDirectory, "page.png");
         await sharp(inputPath, { page: pageIndex, pages: 1, limitInputPixels: LIMITS.maxImagePixels })
           .rotate().png().toFile(pagePath);
-        const result = await recognizeImageResultWithWorker(worker, pagePath);
+        const result = await recognizeImageResultWithWorker(worker, pagePath, { ...options, pageNumber: pageIndex + 1 });
         pages.push({ pageNumber: pageIndex + 1, ...result });
         for (const warning of result.warnings) warnings.set(warning.code, warning);
         await fsp.rm(pagePath, { force: true });
@@ -280,7 +294,7 @@ async function recognizeImageResult(inputPath) {
         warnings: [...warnings.values()], orientation: 0, deskewAngle: 0, pages
       };
     }
-    const result = await recognizeImageResultWithWorker(worker, inputPath);
+    const result = await recognizeImageResultWithWorker(worker, inputPath, options);
     if (pageCount > 1) {
       // Animation frames are not separate document pages. Keep the established
       // first-frame behavior, but make the omitted frames visible to the user.
@@ -299,12 +313,13 @@ async function recognizeImageResult(inputPath) {
   }
 }
 
-async function recognizeImageText(inputPath) {
-  return (await recognizeImageResult(inputPath)).text;
+async function recognizeImageText(inputPath, options = {}) {
+  return (await recognizeImageResult(inputPath, options)).text;
 }
 
-async function convertImageToOcrText(inputPath, outputPath) {
-  const result = await recognizeImageResult(inputPath);
+async function convertImageToOcrText(inputPath, outputPath, options = {}) {
+  const result = await recognizeImageResult(inputPath, options);
+  throwIfCanceled(options.signal);
   if (!result.text) {
     throw ocrError("OCR_NO_TEXT", "OCR 没有识别出文字。请确认图片包含清晰的文字。",
       "OCR found no text. Check that the image contains legible text.");

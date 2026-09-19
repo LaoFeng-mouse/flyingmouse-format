@@ -5,6 +5,7 @@ const fsp = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const ownedTasks = require("./owned-tasks");
 
 const READER = "markdown+mark+tex_math_dollars+tex_math_single_backslash+tex_math_double_backslash-smart";
 
@@ -24,8 +25,10 @@ function pandocPath() {
 
 function runPandoc(executable, args, input, options = {}) {
   return new Promise((resolve, reject) => {
+    ownedTasks.assertAccepting();
     let stdout = [], stderr = [], outputBytes = 0, errorBytes = 0, settled = false;
     const child = spawn(executable, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], cwd: options.cwd });
+    ownedTasks.trackProcess(child);
     const fail = (error) => {
       if (settled) return;
       settled = true;

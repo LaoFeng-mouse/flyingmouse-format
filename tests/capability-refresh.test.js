@@ -8,6 +8,7 @@ const { test } = require("node:test");
 // timers. This makes conversion/selection races reproducible without sleeping.
 const appSource = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
 const refreshSource = appSource.slice(appSource.indexOf("let capabilityRefreshTimer;"), appSource.indexOf("function renderFormatTable()"));
+const targetLabelSource = appSource.slice(appSource.indexOf("function targetFormatLabel("), appSource.indexOf("function commonTargetsFrom("));
 
 function deferred() {
   let resolve;
@@ -45,7 +46,7 @@ function harness({ converting = false, loadTargets } = {}) {
     commonTargetsFrom: infos => infos[0].targets.filter(target => infos.every(info => info.targets.includes(target)))
   });
   assert.ok(refreshSource.includes("async function fetchCapabilities"));
-  vm.runInContext(refreshSource, context);
+  vm.runInContext(targetLabelSource + "\n" + refreshSource, context);
   return {
     state, select, files, result, batchResults, timers, context,
     refresh: () => context.fetchCapabilities(),

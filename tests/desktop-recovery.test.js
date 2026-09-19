@@ -17,6 +17,10 @@ function fixture({ load, timeoutMs = 1000 } = {}) {
     async closeAllConnections() { events.push(['connections-closed']); }
   };
   window.loadURL = async url => { events.push(['load', url]); await load?.(); };
+  contents.forcefullyCrashRenderer = () => {
+    events.push(['terminate-renderer']);
+    setImmediate(() => contents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 1 }));
+  };
   const recovery = createDesktopRecovery({ window, url: 'http://127.0.0.1:5555', timeoutMs,
     log: message => events.push(['log', message]), logPath: 'debug.log',
     dialog: { showMessageBox: async (_parent, options) => new Promise(resolve => dialogs.push({ options, resolve })) },
@@ -115,6 +119,87 @@ test('a responsive event preserves a recovered interface without reloading', asy
   f.dialogs[0].resolve({ response: 0 });
   await settle();
   assert.equal(f.recovery.isReady(), true);
+  assert.equal(f.events.filter(e => e[0] === 'load').length, 1);
+  assert.equal(f.events.filter(e => e[0] === 'terminate-renderer').length, 0);
+  f.window.close();
+});
+
+test('retrying an unresponsive renderer terminates it before loading a replacement', async () => {
+  const f = fixture();
+  await f.recovery.start();
+  f.recovery.markReady();
+  f.window.emit('unresponsive');
+  f.dialogs[0].resolve({ response: 0 });
+  await settle();
+  await settle();
+  const termination = f.events.findIndex(e => e[0] === 'terminate-renderer');
+  const loads = f.events.map((event, index) => event[0] === 'load' ? index : -1).filter(index => index >= 0);
+  assert.ok(termination >= 0, 'navigation alone cannot interrupt a renderer stuck in JavaScript');
+  assert.equal(loads.length, 2);
+  assert.ok(termination < loads[1], 'the old renderer must exit before replacement navigation');
+  assert.equal(f.dialogs.length, 1, 'intentional termination must not produce another crash prompt');
+  f.recovery.markReady();
+  assert.equal(f.recovery.isReady(), true);
+  f.window.close();
+});
+
+test('closing the window while terminating a renderer does not reload or retain termination listeners', async () => {
+  const f = fixture();
+  f.contents.forcefullyCrashRenderer = () => f.events.push(['terminate-renderer']);
+  await f.recovery.start();
+  f.recovery.markReady();
+  f.window.emit('unresponsive');
+  f.dialogs[0].resolve({ response: 0 });
+  await settle();
+  f.window.close();
+  await settle();
+  assert.equal(f.events.filter(e => e[0] === 'terminate-renderer').length, 1);
+  assert.equal(f.events.filter(e => e[0] === 'load').length, 1);
+  assert.equal(f.contents.listenerCount('render-process-gone'), 0);
+});
+
+test('a renderer that becomes unresponsive after the startup timeout is terminated on retry', async () => {
+  const f = fixture({ timeoutMs: 10 });
+  await f.recovery.start();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.match(f.dialogs[0].options.detail, /renderer-ready-timeout/);
+  f.window.emit('unresponsive');
+  assert.equal(f.dialogs.length, 1);
+  f.dialogs[0].resolve({ response: 0 });
+  await settle();
+  await settle();
+  assert.equal(f.events.filter(e => e[0] === 'terminate-renderer').length, 1,
+    'a prior timeout must not hide a later renderer hang');
+  assert.equal(f.events.filter(e => e[0] === 'load').length, 2);
+  f.recovery.markReady();
+  f.window.close();
+});
+
+test('a later responsive event allows timeout retry without terminating a recovered renderer', async () => {
+  const f = fixture({ timeoutMs: 10 });
+  await f.recovery.start();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  f.window.emit('unresponsive');
+  f.window.emit('responsive');
+  f.dialogs[0].resolve({ response: 0 });
+  await settle();
+  await settle();
+  assert.equal(f.events.filter(e => e[0] === 'terminate-renderer').length, 0);
+  assert.equal(f.events.filter(e => e[0] === 'load').length, 2,
+    'responsiveness alone does not prove application initialization completed');
+  f.recovery.markReady();
+  f.window.close();
+});
+
+test('late readiness after a timeout and hang makes the original retry prompt obsolete', async () => {
+  const f = fixture({ timeoutMs: 10 });
+  await f.recovery.start();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  f.window.emit('unresponsive');
+  f.recovery.markReady();
+  f.dialogs[0].resolve({ response: 0 });
+  await settle();
+  assert.equal(f.events.filter(e => e[0] === 'terminate-renderer').length, 0);
   assert.equal(f.events.filter(e => e[0] === 'load').length, 1);
   f.window.close();
 });

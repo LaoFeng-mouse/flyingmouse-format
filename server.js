@@ -243,7 +243,7 @@ async function purgeRuntimeDirs({ dirs = [UPLOAD_DIR, OUTPUT_DIR] } = {}) {
   }
 }
 
-// 同步版：electron-main before-quit 里用，避免异步 purge 与进程退出抢时间。
+// Legacy explicit maintenance helper; desktop shutdown uses bounded async cleanup.
 function purgeRuntimeDirsSync({ dirs = [UPLOAD_DIR, OUTPUT_DIR], fsModule = fs } = {}) {
   for (const dir of dirs) {
     try { fsModule.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -282,9 +282,22 @@ async function purgeStaleRuntimeDirs({ runtimeDir = RUNTIME_DIR } = {}) {
     })
     .map(async (entry) => {
       const dirPath = path.join(parent, entry.name);
-      const stat = await fsp.stat(dirPath).catch(() => null);
-      if (stat && stat.mtimeMs < cutoff) {
-        await fsp.rm(dirPath, { recursive: true, force: true }).catch(() => {});
+      const { PENDING_CLEANUP_FILE, assertRuntimeIdentity, removeMarkedRuntime } = require("./desktop-shutdown");
+      const stat = await fsp.lstat(dirPath).catch(() => null);
+      if (!stat?.isDirectory() || stat.isSymbolicLink()) return;
+      const owner = { runtimeDir: dirPath, identity: stat, realPath: await fsp.realpath(dirPath) };
+      const pid = Number(entry.name.slice(prefix.length));
+      const markerPath = path.join(dirPath, PENDING_CLEANUP_FILE);
+      const markerStat = await fsp.lstat(markerPath).catch(() => null);
+      let marked = false;
+      if (markerStat?.isFile() && !markerStat.isSymbolicLink() && markerStat.size <= 256) {
+        const marker = await fsp.readFile(markerPath, "utf8").then(JSON.parse).catch(() => null);
+        marked = marker?.schema === 1 && marker.pid === pid && marker.dev === stat.dev && marker.ino === stat.ino;
+      }
+      if ((marked || stat.mtimeMs < cutoff) && !runtimeProcessIsAlive(pid)
+        && await assertRuntimeIdentity(owner)) {
+        if (marked) await removeMarkedRuntime(owner);
+        else await fsp.rm(dirPath, { recursive: true, force: true });
       }
     }));
 }
@@ -346,7 +359,7 @@ async function refreshOfficeCapability() {
   return officeProbePromise;
 }
 
-async function getTools() {
+async function getTools({ includeOffice = true } = {}) {
   if (!toolsPromise) toolsPromise = (async () => {
     const pandocExecutable = pandocPath();
     let pandocEnabled = false;
@@ -375,6 +388,10 @@ async function getTools() {
       sharp: true
     };
   })();
+  // PDF target discovery has no Office dependency. Leave the shared Office
+  // probe and its cached diagnostics untouched; full capability/conversion
+  // requests still await the verified engine result below.
+  if (!includeOffice) return { ...await toolsPromise };
   const [baseTools, officeEnabled] = await Promise.all([toolsPromise, refreshOfficeCapability()]);
   cachedTools = { ...baseTools, libreoffice: officeEnabled };
   return { ...cachedTools };
@@ -472,8 +489,8 @@ app.get("/api/capabilities", async (_req, res) => {
 });
 
 app.post("/api/targets", async (req, res) => {
-  const tools = await getTools();
   const ext = normalizeExt(String(req.body?.extension || "").toLowerCase());
+  const tools = await getTools({ includeOffice: categoryForExt(ext) !== "pdf" });
   res.json({ extension: ext, category: categoryForExt(ext), targets: targetsForExt(ext, tools), experimental: experimentalInputSet.has(ext) });
 });
 
@@ -505,15 +522,16 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, upload.array("file
   // 空白页：前端队列里插入的空白页条目。blanks=0,3 表示在上传文件流（不含
   // 空白页）的第 0 个文件之前、第 3 个文件之后插入空白页；从后往前插入避免
   // 索引错位，PDF 生成时空白页输出纯白 A4 页。
-  const blankAfter = new Set(
+  const blankAfter = (
     String(req.body?.blanks || "")
       .split(",")
       .map((item) => item.trim())
       .filter((item) => item !== "")
       .map(Number)
-      .filter((item) => Number.isFinite(item) && item >= 0 && item <= imageFiles.length)
+      .filter((item) => Number.isInteger(item) && item >= 0 && item <= imageFiles.length)
   );
-  for (const blankIndex of [...blankAfter].sort((a, b) => b - a)) {
+  // Equal positions represent consecutive pages and must not be deduplicated.
+  for (const blankIndex of blankAfter.sort((a, b) => b - a)) {
     imageFiles.splice(blankIndex, 0, { inputPath: "", originalName: "", category: "image", blank: true });
   }
 

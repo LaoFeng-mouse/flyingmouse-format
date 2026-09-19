@@ -68,3 +68,54 @@ test("diagnostics export publishes the whole report before remembering the direc
   assert.equal((await readSettings(f.settingsPath)).lastSaveDirectory, f.root);
   assert.deepEqual((await fsp.readdir(f.root)).sort(), ["existing-report.txt", "settings.json"]);
 });
+
+test("diagnostics export redacts source and unquoted destination names in real lifecycle lines", async (t) => {
+  const f = await fixture(t);
+  await fsp.writeFile(path.join(f.root, "debug.log"), [
+    '[2026-09-16T00:00:00.000Z] [INFO] Convert request: "客户清单 92874.txt" (txt/text) -> md (33 bytes)',
+    '[2026-09-16T00:00:01.000Z] [INFO] Convert succeeded: "客户清单 92874.txt" -> 客户清单 92874.md (md)',
+    '[2026-09-16T00:00:02.000Z] [WARN] Convert rejected: "内部报告.txt" -> pdf'
+  ].join("\n"));
+  await f.exportReport();
+  const report = await fsp.readFile(f.destination, "utf8");
+  assert.doesNotMatch(report, /客户清单|92874|内部报告/);
+  assert.match(report, /Convert request:.*\(txt\/text\) -> md \(33 bytes\)/);
+  assert.match(report, /Convert succeeded:.*-> \[REDACTED_FILE\] \(md\)/);
+  assert.match(report, /Convert rejected:.*-> pdf/);
+});
+
+test("diagnostics export strips historical YAML error bodies and keeps later startup events", async (t) => {
+  const f = await fixture(t);
+  await fsp.writeFile(path.join(f.root, "debug.log"), [
+    '[2026-09-16T00:00:00.000Z] [WARN] Convert rejected: "old.yaml" -> json',
+    'Error: YAML 解析失败：unknown tag !<PRIVATE_TAG_991> (5:1)',
+    '',
+    ' 2 | client: PRIVATE_CUSTOMER_992',
+    ' 3 | account: PRIVATE_ACCOUNT_993',
+    ' 4 | broken: [',
+    ' 5 | ',
+    '-----^',
+    '    at convertText (C:\\private\\text-docx.js:237:25)',
+    '[2026-09-16T00:00:01.000Z] [INFO] Boot started'
+  ].join("\n"));
+  await f.exportReport();
+  const report = await fsp.readFile(f.destination, "utf8");
+  assert.doesNotMatch(report, /PRIVATE_|old\.yaml/);
+  assert.match(report, /YAML/);
+  assert.match(report, /5:1/);
+  assert.match(report, /Boot started/);
+});
+
+test("diagnostics export drops an incomplete first line when a historical excerpt exceeds the log tail", async (t) => {
+  const f = await fixture(t);
+  await fsp.writeFile(path.join(f.root, "debug.log"), [
+    'Error: YAML 解析失败：invalid YAML (2:1)',
+    ` 1 | ${"padding".repeat(11000)}PRIVATE_CLIPPED_BODY_994`,
+    ' 2 | account: PRIVATE_NEXT_LINE_995',
+    '[2026-09-16T00:00:01.000Z] [INFO] Boot started'
+  ].join("\n"));
+  await f.exportReport();
+  const report = await fsp.readFile(f.destination, "utf8");
+  assert.doesNotMatch(report, /PRIVATE_/);
+  assert.match(report, /Boot started/);
+});

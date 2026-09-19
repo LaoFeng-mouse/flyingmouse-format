@@ -160,6 +160,9 @@ Invoke-CheckedNative $treeNode.Source @($treeCheckPath, $unpackedRoot)
 # states; /XJ is an additional guard after rejecting every source reparse point.
 & robocopy.exe $unpackedRoot $appRoot /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /XJ /NFL /NDL /NJH /NJS
 if ($LASTEXITCODE -ge 8) { throw "Copying win-unpacked failed with exit $LASTEXITCODE" }
+# Only trim the new layout copy. The source EXEs/ASAR and supplied unpacked
+# application are preserved, including when -SkipBuild reuses an older input.
+Invoke-CheckedNative $treeNode.Source @((Join-Path $PSScriptRoot 'trim-qpdf-distribution.js'), (Join-Path $appRoot 'resources\qpdf'))
 # The Store owns updates. This package has no electron-updater consumer and must
 # not carry a stale GitHub update configuration from electron-builder.
 $updateConfig = Join-Path $appRoot 'resources\app-update.yml'

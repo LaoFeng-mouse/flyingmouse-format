@@ -112,7 +112,8 @@
             <label class="field" id="pdfActionField" hidden>
               <span data-i18n="pdfAction.label">PDF 操作</span>
               <select id="pdfAction">
-                <option value="" data-i18n="pdfAction.split">拆分 PDF（默认）</option>
+                <option value="merge" data-i18n="pdfAction.merge" hidden disabled>合并为一个 PDF</option>
+                <option value="" data-i18n="pdfAction.split" selected>拆分 PDF（输出 ZIP）</option>
                 <option value="encrypt" data-i18n="pdfAction.encrypt">加密 PDF</option>
                 <option value="decrypt" data-i18n="pdfAction.decrypt">解密 PDF</option>
               </select>

@@ -139,3 +139,21 @@ test("purgeStaleRuntimeDirs never treats arbitrary prefix matches as owned insta
   await purgeStaleRuntimeDirs({ runtimeDir: path.join(parent, "fm-runtime") });
   assert.ok(fs.existsSync(backup), "an unscoped standalone runtime must not sweep siblings");
 });
+
+test("stale cleanup immediately reclaims a marked dead PID but preserves invalid identity and live owners", async t => {
+  const parent=await scratchDir(t,"shutdown-reclaim");
+  const [deadPid,otherPid]=await exitedRuntimePids();
+  const current=path.join(parent,'fm-runtime-99999999');await fsp.mkdir(current);
+  const marker=require('../desktop-shutdown').PENDING_CLEANUP_FILE;
+  const fixtures=[[deadPid,true],[otherPid,false],[process.pid,true]];
+  for(const [pid,valid] of fixtures){
+    const dir=path.join(parent,`fm-runtime-${pid}`);await fsp.mkdir(dir);
+    const stat=await fsp.lstat(dir);
+    await fsp.writeFile(path.join(dir,marker),JSON.stringify({schema:1,pid,dev:stat.dev,ino:valid?stat.ino:-1}));
+    await fsp.writeFile(path.join(dir,'keep-or-reclaim'),'fixture');
+  }
+  await purgeStaleRuntimeDirs({runtimeDir:current});
+  assert.equal(fs.existsSync(path.join(parent,`fm-runtime-${deadPid}`)),false);
+  assert.equal(fs.existsSync(path.join(parent,`fm-runtime-${otherPid}`)),true);
+  assert.equal(fs.existsSync(path.join(parent,`fm-runtime-${process.pid}`)),true);
+});

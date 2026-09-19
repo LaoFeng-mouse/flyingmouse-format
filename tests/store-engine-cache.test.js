@@ -13,6 +13,7 @@ const {
   prepareWritableEngineBundle,
   prepareWritableEngineBundleAsync,
   resolveWritableEngineBundle,
+  resolveOfficeEnginesRoot,
   readManifest,
   verifyIntegrity
 } = require("../store-engine-cache");
@@ -299,6 +300,49 @@ test("content key changes for a same-size critical binary update", async (t) => 
   assert.throws(() => resolveWritableEngineBundle({ ...options, bundleName: "../outside" }), /Invalid/);
 });
 
+test("default Store cache leaves native path margin after redirection and a long user folder", async t => {
+  const { bundle }=await makeBundle(t,"short-store-path");
+  fs.writeFileSync(path.join(bundle,"engine-integrity.json"),JSON.stringify({schema:1,files:{
+    [`${LO_SUB}/soffice.com`.split(path.sep).join("/")]:{size:10}
+  }}));
+  for(const user of ['34615','abcdefghijklmnopqrstuvwxyzABCDEF']){
+    const local=path.win32.join('C:\\Users',user,'AppData','Local');
+    const root=resolveOfficeEnginesRoot(local);
+    const destination=resolveWritableEngineBundle({bundledBundle:bundle,enginesRoot:root});
+    assert.match(destination.bundleName,/^lo-[a-f0-9]{32}$/);
+    assert.match(destination.key,/^[a-f0-9]{64}$/,'directory abbreviation must not abbreviate content identity');
+    const redirected=path.win32.join(local,'Packages','488B6338.354574AC174AD_7248mmq7yzyj2','LocalCache','Local');
+    const relative=path.win32.relative(local,destination.destBundle);
+    const physical=path.win32.join(redirected,`${relative}.staging`,
+      'LibreOfficePortable','App','libreoffice','share','registry','lingucomponent.xcd');
+    assert.ok(physical.length<=240,`native configuration path needs margin: ${physical.length} ${physical}`);
+  }
+});
+
+test("short directory names retain full receipt keys and never remove a legacy cache", async t => {
+  const {root,bundle}=await makeBundle(t,"short-key-integrity");
+  fs.writeFileSync(path.join(bundle,"engine-integrity.json"),JSON.stringify({schema:1,files:{
+    [`${LO_SUB}/soffice.com`.split(path.sep).join("/")]:{size:10}
+  }}));
+  let calls=0;
+  const options={bundledBundle:bundle,bundledSofficePath:path.join(bundle,LO_SUB,'soffice.com'),
+    enginesRoot:resolveOfficeEnginesRoot(root),smokeTest:()=>{calls++;return {ok:true};}};
+  const destination=resolveWritableEngineBundle(options);
+  assert.match(destination.bundleName,/^lo-[a-f0-9]{32}$/);
+  const legacy=path.join(root,'FlyingMouseFormat','engines',`libreoffice-${destination.key}`);
+  fs.mkdirSync(legacy,{recursive:true});fs.writeFileSync(path.join(legacy,'existing-engine'),'PRESERVE OLD GENERATION');
+  assert.equal(prepareWritableEngineBundle(options).source,'published');
+  const receiptPath=path.join(destination.destBundle,require('../store-engine-cache').RECEIPT_FILE);
+  const receipt=JSON.parse(fs.readFileSync(receiptPath,'utf8'));
+  assert.equal(receipt.key,destination.key);assert.equal(receipt.key.length,64);
+  assert.equal(prepareWritableEngineBundle(options).source,'cache');assert.equal(calls,1);
+  receipt.key=receipt.key.slice(0,63)+(receipt.key.endsWith('0')?'1':'0');
+  fs.writeFileSync(receiptPath,JSON.stringify(receipt));
+  assert.equal(prepareWritableEngineBundle(options).source,'published','a mismatch outside the shortened directory key must force full validation');
+  assert.equal(calls,2);assert.equal(JSON.parse(fs.readFileSync(receiptPath,'utf8')).key,destination.key);
+  assert.equal(fs.readFileSync(path.join(legacy,'existing-engine'),'utf8'),'PRESERVE OLD GENERATION');
+});
+
 test("worker preparation leaves the main event loop responsive and reports failed validation", async (t) => {
   const { root, bundle } = await makeBundle(t, "worker-incomplete", { withSoffice: false, extras: { "placeholder": "test" } });
   let ticks = 0;
@@ -538,28 +582,28 @@ for (const ownLock of [true, false]) {
     const { root, bundle } = await makeBundle(t, "worker-exit-lock");
     const enginesRoot = path.join(root, "engines");
     const lockDir = path.join(enginesRoot, ".flyingmouse-prepare.lock");
-    const workerThreads = require("node:worker_threads");
-    const RealWorker = workerThreads.Worker;
+    const childProcess = require("node:child_process");
+    const realFork = childProcess.fork;
     const modulePath = require.resolve("../store-engine-cache");
     const previousModule = require.cache[modulePath];
     class FailedWorker extends require("node:events").EventEmitter {
-      constructor(_script, { workerData }) {
-        super();
+      constructor() { super(); this.pid = process.pid; }
+      send(workerData) {
         fs.mkdirSync(lockDir, { recursive: true });
         fs.writeFileSync(path.join(lockDir, "owner.json"), JSON.stringify({ pid: process.pid,
           token: ownLock ? workerData.prepareOwnerToken : "d".repeat(24) }));
-        setImmediate(() => this.emit("exit", 1));
+        setImmediate(() => this.emit("close", 1));
       }
     }
     try {
-      workerThreads.Worker = FailedWorker;
+      childProcess.fork = () => new FailedWorker();
       delete require.cache[modulePath];
       const isolatedModule = require("../store-engine-cache");
       await assert.rejects(isolatedModule.prepareWritableEngineBundleAsync({ bundledBundle: bundle,
         bundledSofficePath: path.join(bundle, LO_SUB, "soffice.com"), enginesRoot, tmpRoot: root }), /exited without a result/);
       assert.equal(fs.existsSync(lockDir), !ownLock, "an exited worker must not unlock another active preparation");
     } finally {
-      workerThreads.Worker = RealWorker;
+      childProcess.fork = realFork;
       require.cache[modulePath] = previousModule;
     }
   });

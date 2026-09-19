@@ -2,12 +2,28 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { test } = require("node:test");
+const vm = require("node:vm");
 
 const publicRoot = path.join(__dirname, "..", "public");
 
 function readPublic(fileName) {
   return fs.readFileSync(path.join(publicRoot, fileName), "utf8");
 }
+
+test("Word targets are recognizable in both languages and PDF splitting names its ZIP output", () => {
+  const source = readPublic("app.js");
+  const labels = source.slice(source.indexOf("function targetFormatLabel("), source.indexOf("function commonTargetsFrom("));
+  const context = { state: { fileInfos: [{ category: "pdf" }] }, i18n: { language: "zh-CN" } };
+  vm.runInNewContext(labels, context);
+  assert.equal(context.targetFormatLabel("docx"), "Word（DOCX）");
+  assert.equal(context.targetFormatLabel("xlsx"), "Excel（智能表格提取）");
+  assert.equal(context.targetFormatLabel("pdf"), "PDF");
+  context.i18n.language = "en-US";
+  assert.equal(context.targetFormatLabel("docx"), "Word (DOCX)");
+  assert.equal(context.targetFormatLabel("xlsx"), "Excel (smart table extraction)");
+  assert.match(readPublic("index.html"), /data-i18n="pdfAction\.split"[^>]*>拆分 PDF（输出 ZIP）/);
+  assert.match(source, /"pdfAction\.split": "Split PDF \(ZIP output\)"/);
+});
 
 test("renderer exposes workflow hooks and drop zone copy", () => {
   const html = readPublic("index.html");

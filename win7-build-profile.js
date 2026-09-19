@@ -8,7 +8,8 @@ const STAGING_EXCLUDED_TESTS = new Set([
   "tests/pe-metadata.test.js",
   "tests/build-engine-manifest.test.js",
   "tests/pandoc-engine.test.js",
-  "tests/public-package.test.js"
+  "tests/public-package.test.js",
+  "tests/distribution-footprint.test.js"
 ]);
 
 const REQUIRED_RUNTIME_FILES = [

@@ -53,7 +53,9 @@ async function createHarness(t) {
 }
 
 function validManifest() {
-  return { schemaVersion: 1, engine: { name: "test", version: "1" }, pages: [] };
+  return { schemaVersion: 1, engine: { name: "test", version: "1" }, pages: [
+    { pageNumber: 1, width: 200, height: 200, rotation: 0, referenceImage: "page-001.png", blocks: [], tables: [] }
+  ] };
 }
 
 function options(harness, execFile, validateManifest = (manifest) => Object.freeze(manifest)) {
@@ -251,9 +253,9 @@ test("model-map escapes and missing inference graphs are rejected", async (t) =>
   assert.equal((await getStructuredPdfAvailability(harness)).enabled, false);
 });
 
-test("501 pages and cumulative raster budget fail before native launch", async (t) => {
+test("501 pages and an oversized single page fail before native launch", async (t) => {
   const harness = await createHarness(t);
-  for (const [pages, size] of [[501, [10, 10]], [51, [595, 842]]]) {
+  for (const [pages, size] of [[501, [10, 10]], [1, [4000, 4000]], [1, [9000, 10]]]) {
     const pdf = await require("pdf-lib").PDFDocument.create();
     for (let number = 0; number < pages; number += 1) pdf.addPage(size);
     await fsp.writeFile(harness.inputPath, await pdf.save());
@@ -263,12 +265,281 @@ test("501 pages and cumulative raster budget fail before native launch", async (
   }
 });
 
+test("51 A4 pages retain every page, text, table and colliding asset name across bounded native batches", async (t) => {
+  const harness = await createHarness(t);
+  const { PDFDocument } = require("pdf-lib");
+  const pdf = await PDFDocument.create();
+  for (let number = 1; number <= 51; number += 1) {
+    pdf.addPage([595, 842]).drawText(`SHEET ${number} AMOUNT ${number}.25`);
+  }
+  await fsp.writeFile(harness.inputPath, await pdf.save());
+  const original = await fsp.readFile(harness.inputPath);
+  let active = 0;
+  const batchCounts = [];
+  const runner = async (_engine, args) => {
+    active += 1;
+    assert.equal(active, 1, "only one expensive native process may run at a time");
+    try {
+      const { loadPdfjs } = require("../pdfjs");
+      const pdfjs = await loadPdfjs();
+      const task = pdfjs.getDocument({ data: new Uint8Array(await fsp.readFile(args[2])), isEvalSupported: false });
+      const batch = await task.promise;
+      batchCounts.push(batch.numPages);
+      const manifest = validManifest();
+      manifest.pages = [];
+      try {
+        for (let number = 1; number <= batch.numPages; number += 1) {
+          const page = await batch.getPage(number);
+          const text = (await page.getTextContent()).items.map(item => item.str).join('');
+          const referenceImage = `page-${number}.png`;
+          const asset = `asset-${number}.png`;
+          await fsp.writeFile(path.join(args[4], referenceImage), text);
+          await fsp.writeFile(path.join(args[4], asset), `ASSET ${text}`);
+          manifest.pages.push({ pageNumber: number, width: 1190, height: 1684, rotation: 0,
+            referenceImage, blocks: [{ type: "table", tableId: `table-${number}`, bbox: [0, 0, 100, 100], confidence: 1 },
+              { type: "figure", asset, bbox: [0, 100, 100, 200], confidence: 1 }],
+            tables: [{ id: `table-${number}`, bbox: [0, 0, 100, 100], confidence: 1, rowCount: 1, columnCount: 1,
+              cells: [{ row: 0, column: 0, rowSpan: 1, columnSpan: 1, bbox: [0, 0, 100, 100], confidence: 1, text }] }] });
+          page.cleanup();
+        }
+      } finally { await task.destroy(); }
+      assert.ok(batch.numPages * 2003960 <= 100000000, "each unchanged 144 DPI batch must respect the native pixel budget");
+      await fsp.writeFile(path.join(args[4], "manifest.json"), JSON.stringify(manifest));
+    } finally { active -= 1; }
+  };
+  await withStructuredPdf(harness.inputPath, { ...harness, execFile: runner }, async (manifest, assetRoot) => {
+    const { resolveStructureAsset } = require("../pdf-structure-contract");
+    assert.equal(manifest.pages.length, 51);
+    for (let index = 0; index < 51; index += 1) {
+      const page = manifest.pages[index];
+      const expected = `SHEET ${index + 1} AMOUNT ${index + 1}.25`;
+      assert.equal(page.pageNumber, index + 1);
+      assert.equal(page.tables[0].cells[0].text, expected);
+      assert.equal(page.blocks[0].tableId, page.tables[0].id);
+      assert.equal(await fsp.readFile(resolveStructureAsset(assetRoot, page.referenceImage), 'utf8'), expected);
+      assert.equal(await fsp.readFile(resolveStructureAsset(assetRoot, page.blocks[1].asset), 'utf8'), `ASSET ${expected}`);
+    }
+    assert.equal(new Set(manifest.pages.map(page => page.referenceImage)).size, 51);
+    assert.equal(Object.isFrozen(manifest), true);
+  });
+  assert.deepEqual(batchCounts, [8, 8, 8, 8, 8, 8, 3]);
+  assert.deepEqual(await fsp.readFile(harness.inputPath), original);
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("large valid pages hit the unchanged pixel budget before the eight-page work bound", async t => {
+  const harness = await createHarness(t);
+  const pdf = await require("pdf-lib").PDFDocument.create();
+  for (let index = 0; index < 3; index += 1) pdf.addPage([3000, 3000]);
+  await fsp.writeFile(harness.inputPath, await pdf.save());
+  const plan = await preflightStructuredPdf(harness.inputPath);
+  assert.equal(plan.pageCount, 3);
+  assert.equal(plan.totalPixels, 108000000);
+  assert.deepEqual(plan.batches, [
+    { startPage: 1, endPage: 2, totalPixels: 72000000 },
+    { startPage: 3, endPage: 3, totalPixels: 36000000 }
+  ]);
+});
+
 test("production defaults fail closed when no engine is configured", async () => {
   const boundary = createStructuredPdfBoundary({
     defaultEnginePath: "",
     defaultModelDirectory: ""
   });
   await expectCode(boundary("ignored.pdf", {}, async () => {}), "PDF_STRUCTURE_ENGINE_MISSING");
+});
+
+async function smallBatches(t, pages = 2) {
+  const harness = await createHarness(t);
+  const pdf = await require("pdf-lib").PDFDocument.create();
+  for (let number = 1; number <= pages; number += 1) pdf.addPage([100, 100]).drawText(`PAGE ${number}`, { size: 10 });
+  await fsp.writeFile(harness.inputPath, await pdf.save());
+  return { ...harness, maxBatchPixels: 40000 };
+}
+
+async function writeBatchManifest(args, mutate = () => {}) {
+  const manifest = validManifest();
+  mutate(manifest);
+  await fsp.writeFile(path.join(args[4], "page-001.png"), "reference");
+  await fsp.writeFile(path.join(args[4], "manifest.json"), JSON.stringify(manifest));
+}
+
+for (const defect of ["missing", "duplicate", "escaped asset"]) {
+  test(`a ${defect} page in a later batch rejects the entire document and cleans scratch`, async t => {
+    const harness = await smallBatches(t);
+    let calls = 0, consumed = false;
+    await expectCode(withStructuredPdf(harness.inputPath, { ...harness, execFile: async (_file, args) => {
+      calls += 1;
+      await writeBatchManifest(args, manifest => {
+        if (calls !== 2) return;
+        if (defect === "missing") manifest.pages = [];
+        if (defect === "duplicate") manifest.pages.push({ ...manifest.pages[0] });
+        if (defect === "escaped asset") manifest.pages[0].referenceImage = "../batch-001/page-001.png";
+      });
+    } }, async () => { consumed = true; }), "PDF_STRUCTURE_SCHEMA_INVALID");
+    assert.equal(calls, 2);
+    assert.equal(consumed, false);
+    assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+  });
+}
+
+test("unreferenced output bytes count across batches before another native process starts", async t => {
+  const harness = await smallBatches(t, 3);
+  const boundary = createStructuredPdfBoundary({ fileSystem: { ...fsp, async lstat(file) {
+    const stats = await fsp.lstat(file);
+    if (path.basename(file) === "unreferenced.bin") stats.size = 300 * 1024 * 1024;
+    return stats;
+  } } });
+  let calls = 0;
+  await expectCode(boundary(harness.inputPath, { ...harness, execFile: async (_file, args) => {
+    calls += 1;
+    await writeBatchManifest(args);
+    await fsp.writeFile(path.join(args[4], "unreferenced.bin"), "logical large native output");
+  } }, async () => assert.fail("must not publish over-budget output")), "PDF_STRUCTURE_RESOURCE_LIMIT");
+  assert.equal(calls, 2);
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("total blocks remain bounded across otherwise valid batches", async t => {
+  const harness = await smallBatches(t, 12);
+  let calls = 0;
+  await expectCode(withStructuredPdf(harness.inputPath, { ...harness, execFile: async (_file, args) => {
+    calls += 1;
+    await writeBatchManifest(args, manifest => {
+      manifest.pages[0].blocks = Array.from({ length: 5000 }, () =>
+        ({ type: "text", text: "X", bbox: [0, 0, 10, 10], confidence: 1 }));
+    });
+  } }, async () => assert.fail("must not publish over-budget content")), "PDF_STRUCTURE_RESOURCE_LIMIT");
+  assert.equal(calls, 11);
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("cancellation between native batches prevents the next process and consumer", async t => {
+  const harness = await smallBatches(t);
+  const controller = new AbortController();
+  let calls = 0;
+  await expectCode(withStructuredPdf(harness.inputPath, { ...harness, signal: controller.signal,
+    execFile: async (_file, args) => {
+      calls += 1;
+      await writeBatchManifest(args);
+      controller.abort();
+    } }, async () => assert.fail("canceled output must not be consumed")), "CONVERSION_CANCELED");
+  assert.equal(calls, 1);
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("native temporary files stay in a task-owned directory that is cleaned on cancellation", async t => {
+  const harness = await smallBatches(t);
+  const controller = new AbortController();
+  let nativeScratch;
+  await expectCode(withStructuredPdf(harness.inputPath, { ...harness, signal: controller.signal,
+    execFile: async (_file, args, processOptions) => {
+      nativeScratch = processOptions.env.TEMP;
+      assert.equal(processOptions.env.TMP, nativeScratch);
+      assert.equal(processOptions.env.TMPDIR, nativeScratch);
+      assert.equal(path.dirname(nativeScratch), harness.runtimeDir);
+      assert.notEqual(nativeScratch, args[4]);
+      await fsp.mkdir(path.join(nativeScratch, "flyingmouse-paddlex-test"));
+      await fsp.writeFile(path.join(nativeScratch, "flyingmouse-paddlex-test", "config.json"), "native configuration");
+      controller.abort();
+    } }, async () => assert.fail("must not consume canceled native output")), "CONVERSION_CANCELED");
+  await assert.rejects(fsp.access(nativeScratch));
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("cancellation stops a real native-boundary direct child before scratch is cleaned", async t => {
+  const harness = await smallBatches(t);
+  const controller = new AbortController();
+  let pid, childClosed = false;
+  const boundary = createStructuredPdfBoundary({ fileSystem: { ...fsp, async rm(file, options) {
+    if (path.basename(file).startsWith("fm-pdf-structure-")) assert.equal(childClosed, true);
+    return fsp.rm(file, options);
+  } } });
+  await expectCode(boundary(harness.inputPath, { ...harness, signal: controller.signal,
+    execFile: async (_file, _args, processOptions) => {
+      assert.equal(processOptions.signal, controller.signal);
+      const run = realExecFile(process.execPath, ["-e", "setInterval(() => {}, 1000)"], processOptions);
+      pid = run.child.pid;
+      const closed = new Promise(resolve => run.child.once("close", () => { childClosed = true; resolve(); }));
+      setTimeout(() => controller.abort(), 80);
+      try { return await run; } finally { await closed; }
+    } }, async () => assert.fail("canceled output must not be consumed")), "CONVERSION_CANCELED");
+  assert.ok(pid);
+  assert.throws(() => process.kill(pid, 0), error => error.code === "ESRCH");
+  assert.deepEqual(await fsp.readdir(harness.runtimeDir), []);
+});
+
+test("copied batches preserve page boxes, rotation, UserUnit, text and annotation appearance", async t => {
+  const harness = await createHarness(t);
+  const { PDFDocument, PDFName, PDFNumber, degrees } = require("pdf-lib");
+  const source = await PDFDocument.create();
+  for (let number = 1; number <= 2; number += 1) {
+    const page = source.addPage([320, 240]);
+    page.setCropBox(10, 15, 290, 210);
+    page.setRotation(degrees(90));
+    page.node.set(PDFName.of("UserUnit"), PDFNumber.of(2));
+    page.drawText(`AMOUNT ${number}234.56`, { x: 25, y: 100, size: 18 });
+    const appearance = source.context.flateStream("0 0 1 rg 0 0 25 12 re f", { Type: "XObject", Subtype: "Form", BBox: [0, 0, 25, 12] });
+    page.node.addAnnot(source.context.register(source.context.obj({ Type: "Annot", Subtype: "Stamp", Rect: [30, 30, 55, 42],
+      AP: { N: source.context.register(appearance) } })));
+  }
+  await fsp.writeFile(harness.inputPath, await source.save());
+  const { loadPdfjs } = require("../pdfjs");
+  const pdfjs = await loadPdfjs();
+  async function inspect(file) {
+    const loading = pdfjs.getDocument({ data: new Uint8Array(await fsp.readFile(file)), isEvalSupported: false });
+    const pdf = await loading.promise;
+    const pages = [];
+    try {
+      for (let index = 1; index <= pdf.numPages; index += 1) {
+        const page = await pdf.getPage(index);
+        const viewport = page.getViewport({ scale: 2 });
+        pages.push({ view: page.view, rotation: page.rotate, userUnit: page.userUnit, width: viewport.width, height: viewport.height,
+          text: (await page.getTextContent()).items.map(item => item.str).join(""),
+          annotations: (await page.getAnnotations()).map(item => ({ subtype: item.subtype, rect: item.rect, hasAppearance: item.hasAppearance })) });
+      }
+    } finally { await loading.destroy(); }
+    return pages;
+  }
+  const expected = await inspect(harness.inputPath);
+  const observed = [];
+  await withStructuredPdf(harness.inputPath, { ...harness, maxBatchPixels: 1, execFile: async (_file, args) => {
+    observed.push(...await inspect(args[2]));
+    await writeBatchManifest(args);
+  } }, async () => {});
+  assert.deepEqual(observed, expected);
+  assert.equal(observed[0].annotations[0].hasAppearance, true);
+});
+
+test("batched pages keep catalog optional-content visibility and form settings", async t => {
+  const harness = await createHarness(t);
+  const { PDFDocument, PDFName } = require("pdf-lib");
+  const source = await PDFDocument.create();
+  const group = source.context.register(source.context.obj({ Type: "OCG", Name: "Hidden source layer" }));
+  source.catalog.set(PDFName.of("OCProperties"), source.context.obj({ OCGs: [group],
+    D: { BaseState: "ON", OFF: [group], Order: [group] } }));
+  source.catalog.set(PDFName.of("AcroForm"), source.context.obj({ Fields: [], NeedAppearances: false }));
+  for (let number = 0; number < 2; number += 1) {
+    const page = source.addPage([100, 100]);
+    page.node.set(PDFName.of("Resources"), source.context.obj({ Properties: { Hidden: group } }));
+    page.node.set(PDFName.of("Contents"), source.context.register(source.context.flateStream("/OC /Hidden BDC 0 0 20 20 re f EMC")));
+  }
+  await fsp.writeFile(harness.inputPath, await source.save());
+  const pdfjs = await require("../pdfjs").loadPdfjs();
+  await withStructuredPdf(harness.inputPath, { ...harness, maxBatchPixels: 40000, execFile: async (_file, args) => {
+    const bytes = await fsp.readFile(args[2]);
+    const copied = await PDFDocument.load(bytes);
+    assert.ok(copied.catalog.get(PDFName.of("AcroForm")), "catalog form settings must survive batching");
+    const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false });
+    try {
+      const pdf = await task.promise;
+      const config = await pdf.getOptionalContentConfig();
+      const groups = Array.from(config, ([id, group]) => ({ id, visible: group.visible }));
+      assert.equal(groups.length, 1);
+      assert.equal(groups[0].visible, false, "hidden source content must stay hidden for recognition");
+    } finally { await task.destroy(); }
+    await writeBatchManifest(args);
+  } }, async () => {});
 });
 
 for (const method of ["mkdir", "mkdtemp"]) {

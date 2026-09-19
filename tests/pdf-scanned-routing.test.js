@@ -66,6 +66,36 @@ function acceptedTable() {
   };
 }
 
+for (const target of ["docx", "xlsx"]) {
+  test(`canceling a completed structured ${target} write preserves the destination`, async (t) => {
+    const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-cancel-office-publish-"));
+    t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+    await fsp.writeFile(path.join(scratch, "page.png"), png);
+    const inputPath = await createScannedTablePdf(path.join(scratch, "input.pdf"));
+    const original = await fsp.readFile(inputPath);
+    const outputPath = path.join(scratch, `existing.${target}`);
+    await fsp.writeFile(outputPath, "KEEP ORIGINAL OUTPUT");
+    const controller = new AbortController();
+    const name = target === "docx" ? "writePdfOfficeDocx" : "writePdfOfficeXlsx";
+    const writer = require(target === "docx" ? "../pdf-office-docx" : "../pdf-office-xlsx")[name];
+    const manifest = validateStructureManifest(structuredManifest({
+      tables: [acceptedTable()],
+      blocks: [{ type: "table", bbox: [0, 0, 100, 50], tableId: "t1", confidence: 0.99 }]
+    }), scratch);
+    await assert.rejects(convertStructuredPdf({ inputPath, outputPath, target, options: {
+      signal: controller.signal,
+      withStructuredPdf: async (_input, _options, consume) => consume(manifest, scratch),
+      // The public writer seam places cancellation after a real Office file is
+      // complete, before it can replace the user's existing destination.
+      [name]: async (args) => { const result = await writer(args); controller.abort(); return result; }
+    } }), (error) => error.code === "CONVERSION_CANCELED");
+    assert.equal(await fsp.readFile(outputPath, "utf8"), "KEEP ORIGINAL OUTPUT");
+    assert.deepEqual(await fsp.readFile(inputPath), original);
+    assert.equal((await fsp.readdir(scratch)).some(name => /\.attempt-|\.backup-/.test(name)), false);
+  });
+}
+
 test("composes scanned and mixed structured DOCX/XLSX writers", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-structured-compose-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
