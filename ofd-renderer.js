@@ -284,7 +284,8 @@ function parsePathObject(obj) {
   const abbreviatedData = typeof abbreviatedDataNode === "string" ? abbreviatedDataNode : abbreviatedDataNode?.["#text"] ?? "";
   const fillColorNode = getVal(obj, "FillColor");
   const strokeColorNode = getVal(obj, "StrokeColor");
-  const hasFill = obj?.["@_Fill"] === "true" || (obj?.["@_Fill"] !== "false" && fillColorNode !== void 0);
+  // CT_Path defaults Fill to false; a color only describes an enabled fill.
+  const hasFill = obj?.["@_Fill"] === "true";
   const hasStroke = obj?.["@_Stroke"] !== "false";
   const dashPatternStr = obj?.["@_DashPattern"];
   let dashPattern;
@@ -679,18 +680,19 @@ function renderTextObject(page,textObj,font,pageHeight){
   for(const tc of textCodes){
     const text=tc.text;if(!text)continue;
     const rawX=tc.x??lastX,rawY=tc.y??lastY;
+    // Missing X/Y inherits the preceding TextCode's origin, not the position
+    // reached after drawing its final glyph (GB/T 33190, text positioning).
+    lastX=rawX;lastY=rawY;
     const position=ctm?applyCTM(ctm,rawX,rawY):{x:rawX,y:rawY};
     let x=(boundary.x+position.x)*MM_TO_PT,y=(pageHeight-boundary.y-position.y)*MM_TO_PT;
     if(font.getCharacterSet){let supported=fontCharacterSets.get(font);if(!supported){supported=new Set(font.getCharacterSet());fontCharacterSets.set(font,supported);}requireCondition([...text].every(c=>supported.has(c.codePointAt(0))),'OFD_UNSUPPORTED_CONTENT','OFD 字体缺少所需字符，已停止导出以免产生乱码。');}
-    if(!tc.deltaX.length&&!tc.deltaY.length){page.drawText(text,{x,y,size:fontSize,font,color,opacity:alpha===undefined?undefined:alpha/255});lastX=rawX+font.widthOfTextAtSize(text,fontSize)/MM_TO_PT;lastY=rawY;continue;}
-    let dxTotal=0,dyTotal=0;
+    if(!tc.deltaX.length&&!tc.deltaY.length){page.drawText(text,{x,y,size:fontSize,font,color,opacity:alpha===undefined?undefined:alpha/255});continue;}
     for(const [index,char] of [...text].entries()){
       page.drawText(char,{x,y,size:fontSize,font,color,opacity:alpha===undefined?undefined:alpha/255});
-      const dx=tc.deltaX.length?tc.deltaX[Math.min(index,tc.deltaX.length-1)]:font.widthOfTextAtSize(char,size*MM_TO_PT)/MM_TO_PT;
+      const dx=tc.deltaX.length?tc.deltaX[Math.min(index,tc.deltaX.length-1)]:0;
       const dy=tc.deltaY.length?tc.deltaY[Math.min(index,tc.deltaY.length-1)]:0;
-      dxTotal+=dx;dyTotal+=dy;x+=dx*(ctm?.a||1)*MM_TO_PT;y-=dy*(ctm?.d||1)*MM_TO_PT;
+      x+=dx*(ctm?.a||1)*MM_TO_PT;y-=dy*(ctm?.d||1)*MM_TO_PT;
     }
-    lastX=rawX+dxTotal;lastY=rawY+dyTotal;
   }
 }
 
@@ -1268,6 +1270,16 @@ async function renderToPdf(doc, archive, options = {}) {
       let rendered=0;
       for (const obj of layer.objects) {
         if(++rendered%64===0)await checkpoint(options.signal);else throwIfCanceled(options.signal);
+        // Boundary is in page coordinates and clips the object's transformed
+        // drawing. Its rectangle is independent of the object's local CTM.
+        const boundary = obj.boundary;
+        pdfPage.pushOperators(
+          import_pdf_lib3.pushGraphicsState(),
+          import_pdf_lib3.rectangle(boundary.x * MM_TO_PT4,
+            (pageArea.height - boundary.y - boundary.height) * MM_TO_PT4,
+            boundary.width * MM_TO_PT4, boundary.height * MM_TO_PT4),
+          import_pdf_lib3.clip(), import_pdf_lib3.endPath()
+        );
         try {
           switch (obj.type) {
             case "text": {
@@ -1288,6 +1300,10 @@ async function renderToPdf(doc, archive, options = {}) {
         } catch (error) {
           if (error.code?.startsWith("OFD_")) throw error;
           throw ofdError("OFD_RENDER_FAILED", "OFD 第 "+(ofdPage.index+1)+" 页对象绘制失败。");
+        } finally {
+          // PDF's current path is not saved by q/Q. Clear even an unpainted
+          // path before restoring the clip so it cannot affect the next object.
+          pdfPage.pushOperators(import_pdf_lib3.endPath(), import_pdf_lib3.popGraphicsState());
         }
       }
     }

@@ -146,3 +146,41 @@ test('cumulative unique image pixel budget is checked before full pixel decoding
   await assert.rejects(renderer.parse(await fixture({content,resources:`<o:MultiMedias>${media}</o:MultiMedias>`,extra})),{code:'OFD_RESOURCE_LIMIT'});
 });
 module.exports = { fixture, ns, text, background, image, imageResources };
+
+async function textPositions(content) {
+  const { loadPdfjs } = require('../pdfjs');
+  const lib = await loadPdfjs();
+  const task = lib.getDocument({ data: await renderer.convert(await fixture({content}), {silent:true}),
+    isEvalSupported:false, useSystemFonts:true });
+  try {
+    const pdf = await task.promise;
+    const extracted = await (await pdf.getPage(1)).getTextContent();
+    return extracted.items.filter(item => item.str?.trim()).map(item => ({
+      text:item.str, x:item.transform[4], y:item.transform[5]
+    }));
+  } finally { await task.destroy(); }
+}
+
+test('omitted TextCode origins inherit the preceding origin across horizontal and vertical runs',async()=>{
+  const wrap = codes => `<o:TextObject ID="3" Boundary="20 20 150 100" Font="2" Size="6" CTM="2 0 0 2 0 0">${codes}</o:TextObject>`;
+  for (const [implicit,explicit] of [
+    ['<o:TextCode X="0" Y="6" DeltaX="6">AB</o:TextCode><o:TextCode Y="18" DeltaX="6">CD</o:TextCode>',
+      '<o:TextCode X="0" Y="6" DeltaX="6">AB</o:TextCode><o:TextCode X="0" Y="18" DeltaX="6">CD</o:TextCode>'],
+    ['<o:TextCode X="0" Y="6" DeltaY="6">AB</o:TextCode><o:TextCode X="18" DeltaY="6">CD</o:TextCode>',
+      '<o:TextCode X="0" Y="6" DeltaY="6">AB</o:TextCode><o:TextCode X="18" Y="6" DeltaY="6">CD</o:TextCode>'],
+    ['<o:TextCode X="0" Y="6">AB</o:TextCode><o:TextCode Y="18">CD</o:TextCode>',
+      '<o:TextCode X="0" Y="6">AB</o:TextCode><o:TextCode X="0" Y="18">CD</o:TextCode>']
+  ]) assert.deepEqual(await textPositions(wrap(implicit)),await textPositions(wrap(explicit)));
+});
+
+test('DeltaY-only text stays in its column while default text keeps natural horizontal spacing',async()=>{
+  const vertical = text.replace('X="0" Y="6">VISIBLE CONTROL','X="0" Y="6" DeltaY="6">ABC');
+  const actual = await textPositions(vertical);
+  assert.deepEqual(actual,await textPositions(vertical.replace('DeltaY="6"','DeltaY="6" DeltaX="0"')));
+  assert.equal(actual.length,3);
+  assert.ok(actual.every(item => item.x === actual[0].x));
+  assert.ok(actual[0].y > actual[1].y && actual[1].y > actual[2].y);
+  const horizontal = await textPositions(text.replace('VISIBLE CONTROL','ABC'));
+  assert.equal(horizontal.length,1);
+  assert.equal(horizontal[0].text,'ABC');
+});

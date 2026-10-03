@@ -38,3 +38,17 @@ and [AbbreviatedData.java](https://github.com/ofdrw/ofdrw/blob/master/ofdrw-core
 This is a deliberately bounded renderer. Unsupported constructs produce an
 explicit error; this file does not claim complete GB/T 33190 conformance.
 It retains the upstream PDF producer/creator attribution.
+
+Follow-up modifications by **牢蜂 (LaoFeng), 2026-10-03**:
+
+- Inherit omitted `TextCode` X/Y from the previous run's origin, not its final
+  glyph position; keep DeltaY-only runs in their column.
+- Default PathObject Fill to false independently of a supplied FillColor.
+- Clip text, paths, and images to their Boundary rectangle, and isolate each
+  object's graphics state and unfinished PDF path from subsequent objects.
+
+These semantics were checked against OFDRW's primary implementation:
+[TextCode.java](https://raw.githubusercontent.com/ofdrw/ofdrw/master/ofdrw-core/src/main/java/org/ofdrw/core/text/TextCode.java),
+[CT_Path.java](https://raw.githubusercontent.com/ofdrw/ofdrw/master/ofdrw-core/src/main/java/org/ofdrw/core/graph/pathObj/CT_Path.java),
+and [CT_GraphicUnit.java](https://raw.githubusercontent.com/ofdrw/ofdrw/master/ofdrw-core/src/main/java/org/ofdrw/core/pageDescription/CT_GraphicUnit.java).
+This adds rectangular Boundary clipping, not support for arbitrary Clips.

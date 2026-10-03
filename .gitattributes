@@ -1,0 +1,2 @@
+# Preserve the SHA-pinned declaration bytes in checkouts and source archives.
+/third_party/libraw/Microsoft-VC143-Redist.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

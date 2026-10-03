@@ -55,6 +55,17 @@ async function assertUnpublished(context) {
   assert.deepEqual(fs.existsSync(staging) ? await fsp.readdir(staging) : [], []);
 }
 
+test("LibRaw repository payload sources retain their SHA-pinned raw bytes", () => {
+  const entries = Object.entries(lockedEngine.files).filter(([, entry]) => entry.origin === "repository");
+  assert.ok(entries.length > 0, "the lock must include the repository-provided declaration");
+  for (const [name, entry] of entries) {
+    // This must also pass in an extracted source archive, where no Git checkout
+    // filter can repair line endings. Do not normalize before hashing.
+    const bytes = fs.readFileSync(path.resolve(__dirname, "..", entry.source));
+    assert.equal(hash(bytes), entry.sha256, `${name} bytes differ from the bundled payload lock`);
+  }
+});
+
 test("LibRaw and Microsoft runtime archives reject bytes that do not match their locks", () => {
   for (const [label, asset] of [["LibRaw", lockedEngine.archive], ["Microsoft CRT", lockedEngine.crtArchive]]) {
     assert.throws(() => verifyArchive(Buffer.from("not the official archive"), asset, label), /SHA-256 mismatch/);
