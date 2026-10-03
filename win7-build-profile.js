@@ -8,6 +8,7 @@ const STAGING_EXCLUDED_TESTS = new Set([
   "tests/pe-metadata.test.js",
   "tests/build-engine-manifest.test.js",
   "tests/pandoc-engine.test.js",
+  "tests/libraw-restore.test.js",
   "tests/public-package.test.js",
   "tests/distribution-footprint.test.js"
 ]);
@@ -138,7 +139,7 @@ function createWin7Package(basePackage, projectRoot) {
   // Python-backed docengine and docstructure runtimes are excluded from Win7;
   // their JavaScript boundary modules remain available for static imports.
   profile.build.extraResources = profile.build.win.extraResources
-    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure|pandoc/i.test(String(value))))
+    .filter((item) => ![item.from, item.to].some((value) => /docengine|docstructure|pandoc|libraw/i.test(String(value))))
     .map((item) => ({
       ...item,
       from: item.from.startsWith("bin/")

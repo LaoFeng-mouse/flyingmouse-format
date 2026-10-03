@@ -14,7 +14,9 @@ const { categoryForExt, targetsForExt, extFromName } = require("../utils");
 const { documentInput } = require("../config");
 
 const scratchRoot = path.join(os.tmpdir(), `flyingmouse-ofd-tests-${process.pid}`);
-const FIXTURE = path.join(__dirname, "fixtures", "sample.ofd");
+const localFixture = path.join(__dirname, "fixtures", "sample.ofd");
+const FIXTURE = fs.existsSync(localFixture) ? localFixture
+  : path.join(__dirname, "fixtures", "ofd", "control-image-flat-path.ofd");
 const hasFixture = fs.existsSync(FIXTURE);
 
 // E2E 需要启动真实 server；runtime 目录隔离到 scratchRoot 下

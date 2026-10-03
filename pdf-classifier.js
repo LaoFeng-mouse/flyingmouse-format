@@ -326,6 +326,39 @@ function textMetrics(textContent) {
   };
 }
 
+async function ocrImageCoverageFromOperators(operatorList, OPS, viewport, objects) {
+  const coverage = imageCoverageFromOperators(operatorList, OPS, viewport);
+  if (!(coverage > 0 && coverage < 0.001)) return coverage;
+  const imageOperations = new Set(Object.entries(OPS).filter(([name]) => /image/i.test(name)).map(([, code]) => code));
+  let count = 0;
+  for (let i = 0; i < (operatorList?.fnArray || []).length; i++) {
+    const operation = operatorList.fnArray[i];
+    if (!imageOperations.has(operation)) continue;
+    // Only positively identified tiny constant-color image tiles can be
+    // treated as decoration. Masks, unresolved images, nonuniform pixels and
+    // larger coverage retain the existing conservative OCR requirement.
+    if (operation !== OPS.paintImageXObject) return coverage;
+    const [id, width, height] = operatorList.argsArray[i] || [];
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 16 || height > 16) return coverage;
+    let image, timer;
+    try {
+      image = await new Promise((resolve, reject) => {
+        timer = setTimeout(() => resolve(null), 1000);
+        try { objects?.get(id, resolve); } catch (error) { reject(error); }
+      });
+    } catch { return coverage; }
+    finally { clearTimeout(timer); }
+    const data = image?.data;
+    const channels = data?.length / (width * height);
+    if (![3, 4].includes(channels)) return coverage;
+    for (let index = channels; index < data.length; index++) {
+      if (data[index] !== data[index % channels]) return coverage;
+    }
+    count++;
+  }
+  return count ? 0 : coverage;
+}
+
 async function classifyPdf(inputPath) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
@@ -366,6 +399,7 @@ module.exports = {
   FULL_PAGE_IMAGE_COVERAGE,
   rectangleUnionArea,
   imageCoverageFromOperators,
+  ocrImageCoverageFromOperators,
   classifyPageMetrics,
   classifyDocument,
   classifyPdf

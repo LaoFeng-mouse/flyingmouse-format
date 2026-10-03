@@ -17,6 +17,7 @@ module.exports = async function beforePack(context) {
   };
   verifyInstalled(resourcePath("pandoc"), platform, arch);
   if (platform !== "win32") return;
+  require("./restore-libraw").verifyInstalled(resourcePath("libraw"));
   const result = spawnSync(process.execPath, [path.join(root, "scripts", "build-engine-manifest.js"), resourcePath("libreoffice")], {
     cwd: root, stdio: "inherit", windowsHide: true, timeout: 120000
   });

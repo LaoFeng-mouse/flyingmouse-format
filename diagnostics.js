@@ -9,6 +9,54 @@ const SOURCE_FILE_LINE_PATTERN = /\.[^\s\\/"'<>|]{1,32}(?:$|[\s)"',;:])/u;
 const CONVERSION_FILE_EVENT_PATTERN = /(?:Convert (?:request|succeeded|rejected|failed)|Rejected convert request|Images-to-PDF|Merge-PDFs|Rejected images-to-pdf|转换失败)/i;
 const SECRET_LINE_PATTERN = /(?:\bBearer\s+|\b(?:authorization|cookie|credential|password|passwd|secret|token|api[_-]?key)["']?\s*[:=])/i;
 
+// These are fixed logger labels, not a list of words to search for in arbitrary
+// error text. A filename or parser excerpt must not become an event or code.
+const PATH_EVENT_LABELS = [
+  "Boot failed", "CLI boot failed", "Uncaught exception", "Unhandled rejection",
+  "Unhandled server error", "LibreOffice capability probe failed",
+  "Failed to remember diagnostics directory", "Failed to remember save directory",
+  "Failed to remove staged diagnostics report", "Save batch item failed",
+  "Saved converted file", "Runtime dir", "Runtime directory", "FFmpeg path",
+  "AV3A decoder path", "LibreOffice path", "Poppler path",
+  "Extracting LibreOffice engine to staging",
+  "LibreOffice writable-engine preparation failed; Office conversion remains unavailable"
+];
+const SYSTEM_ERROR_CODES = new Set([
+  "EACCES", "EPERM", "ENOENT", "ENOTDIR", "EISDIR", "EEXIST", "EBUSY",
+  "ENOSPC", "EDQUOT", "EMFILE", "ENFILE", "EROFS", "ENAMETOOLONG", "EIO",
+  "EXDEV", "ETIMEDOUT", "ECONNREFUSED", "ECONNRESET", "EADDRINUSE",
+  "EADDRNOTAVAIL", "ENETUNREACH", "EHOSTUNREACH", "EPIPE", "ENOMEM",
+  "ENOSYS", "EINVAL"
+]);
+const SYSTEM_OPERATIONS = new Set([
+  "open", "mkdir", "rmdir", "stat", "lstat", "readdir", "scandir", "read",
+  "write", "unlink", "rename", "copyfile", "realpath", "access", "spawn",
+  "chmod", "chown", "symlink", "link", "readlink", "truncate", "utimes",
+  "connect", "listen"
+]);
+
+function pathLineSummary(message, record) {
+  const prefix = record ? `${record[1]} [${record[2]}] ` : "";
+  // Reconstruct from allowlisted values; never return a sliced original prefix.
+  let event = record ? PATH_EVENT_LABELS.find(label => message === label || message.startsWith(`${label}:`)) : "";
+  let errorText = event ? message.slice(event.length).replace(/^:\s*/, "") : message;
+  if (record && /^Server starting \(runtime dir:/.test(message)) event = "Server starting";
+  if (record && /^Writable Office engine ready \((?:cache|bundled|prepared)\):/.test(message)) event = "Writable Office engine ready";
+  const error = errorText.match(/^(?:Error:\s*)?([A-Z]+)(?::(?:\s|$)|$)/);
+  const code = error && SYSTEM_ERROR_CODES.has(error[1]) ? error[1] : "";
+  const fields = [];
+  if (code) {
+    fields.push(`code=${code}`);
+    // Node filesystem errors put the syscall before the first quoted/absolute
+    // path. Do not scan past that boundary or read operation names from paths.
+    const beforePath = errorText.slice(error[0].length).split(/["'\\/]|[A-Za-z]:/u, 1)[0].trimEnd();
+    const operation = beforePath.match(/(?:^|,\s*)([a-z]+)\s*$/)?.[1];
+    if (SYSTEM_OPERATIONS.has(operation)) fields.push(`operation=${operation}`);
+  }
+  if (!event && code) event = "System error";
+  return `${prefix}${event || ""}${fields.length ? `; ${fields.join("; ")}` : ""}${event ? " " : ""}[REDACTED_PATH]`;
+}
+
 // 转换事件行（Convert request / succeeded / failed 等）整行抹掉会让诊断文件失去
 // 信息量（用户反馈 2026-08-14：日志全变成 [REDACTED_FILE] 没法看）。替换文件名
 // 后保留事件类型、类别、目标格式和字节数。
@@ -49,8 +97,9 @@ function sanitizeDiagnosticText(value, options = {}) {
     : null;
   let yamlErrorBody = false;
   return text.split(/\r?\n/).map((line) => {
-    const message = line.replace(/^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s+\[[A-Z]+\]\s*/, "");
-    if (message !== line) yamlErrorBody = false;
+    const record = line.match(/^(\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\]) \[(DEBUG|INFO|WARN|ERROR)\] (.*)$/);
+    const message = record ? record[3] : line;
+    if (record) yamlErrorBody = false;
     // Old parser messages may contain document text in both the reason (tags)
     // and the following source excerpt. New logging rules cannot erase old logs.
     if (/^(?:Error:\s*)?YAML(?:Exception:|\s*解析失败[:：]|\s+parse\s+(?:error|failed))/i.test(message)) {
@@ -63,10 +112,10 @@ function sanitizeDiagnosticText(value, options = {}) {
     if (line.includes("[REDACTED_SECRET]") || SECRET_LINE_PATTERN.test(line)) return "[REDACTED_SECRET]";
     if (
       (homePattern && homePattern.test(line))
-      || /\b[A-Za-z]:\\./.test(line)
+      || /\b[A-Za-z]:[\\/]/.test(line)
       || /\\\\[^\\\r\n]+\\[^\r\n]+/.test(line)
-      || /(?:^|[\s("'=])\/(?!\/)(?:[^/\s]+\/)+/.test(line)
-    ) return "[REDACTED_PATH]";
+      || /(?:^|[\s("'=])\/[^\s]/.test(line)
+    ) return pathLineSummary(message, record);
     // 转换事件行只抹引号内文件名，保留事件语义（Convert request/succeeded/failed 等）。
     if (CONVERSION_FILE_EVENT_PATTERN.test(line)) return redactConversionFilenames(line);
     if (SOURCE_FILE_LINE_PATTERN.test(message)) return "[REDACTED_FILE]";
@@ -122,6 +171,7 @@ function buildDiagnosticsReport(input = {}) {
     `App version: ${safeField(input.appVersion)}`,
     `OS: ${safeField(input.platform)} ${safeField(input.release)} ${safeField(input.arch)}`,
     `Package: ${safeField(input.packageType)}`,
+    `Build channel: ${safeField(input.buildChannel || "public")}`,
     `Compatible startup: ${input.noStdioInit === true}`,
     "Author: 牢蜂 (LaoFeng)",
     "License: Non-Commercial. Commercial resale or rebranding is prohibited.",

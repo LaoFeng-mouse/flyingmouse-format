@@ -10,7 +10,7 @@ const path = require("path");
 const zlib = require("zlib");
 const { finished } = require("stream/promises");
 const sharp = require("sharp");
-const { FFMPEG_PATH, DCRAW_PATH, rawInput } = require("./config");
+const { FFMPEG_PATH, DCRAW_PATH, CR2_DECODER_PATH, rawInput } = require("./config");
 const RAW_EXTENSIONS = rawInput;
 const FFMPEG_IMAGE_EXTENSIONS = new Set(["tga", "jp2", "j2k", "jxl", "qoi", "ppm"]);
 const { run } = require("./utils");
@@ -188,9 +188,12 @@ async function prepareImageInput(inputPath, inputName) {
   }
 
   // 相机 RAW 原片（CR2/NEF/ARW/DNG 等）：sharp/libvips 无 dcraw delegate，用打包内置
-  // dcraw.exe 解出 16-bit TIFF（sRGB）让下游统一走 sharp。
+  // dcraw.exe 按相机白平衡解出 sRGB TIFF，让下游统一走 sharp。
   if (RAW_EXTENSIONS.has(designExt) || isRawFileSync(inputPath)) {
-    if (!DCRAW_PATH) {
+    const rawExt = designExt || path.extname(inputPath).slice(1).toLowerCase();
+    const useLibRaw = rawExt === "cr2" && Boolean(CR2_DECODER_PATH);
+    const decoder = useLibRaw ? CR2_DECODER_PATH : DCRAW_PATH;
+    if (!decoder) {
       throw new Error("RAW 解码引擎（dcraw）不可用：未找到 dcraw.exe。");
     }
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-raw-input-"));
@@ -198,20 +201,31 @@ async function prepareImageInput(inputPath, inputName) {
     // 所在目录。先把输入复制到临时目录再解码：源目录可能只读（U 盘/系统目录），
     // 且避免在用户目录残留 .tiff。
     const tempInput = path.join(tempDir, `input.${designExt || path.extname(inputPath).replace(/^\./, "") || "raw"}`);
-    await fsp.copyFile(inputPath, tempInput);
-    // dcraw -T 输出 16-bit TIFF；-o 1 = sRGB 色彩空间（默认 ACES 线性会偏灰，勿去掉）
-    await run(DCRAW_PATH, ["-T", "-o", "1", tempInput], { timeout: 1000 * 60 * 5 });
-    const stem = path.basename(tempInput, path.extname(tempInput));
-    const tiffCandidates = [
-      path.join(tempDir, `${stem}.tiff`),
-      path.join(tempDir, `${stem}.tif`)
-    ];
-    const tiffPath = tiffCandidates.find((c) => fs.existsSync(c));
-    if (!tiffPath) {
+    try {
+      await fsp.copyFile(inputPath, tempInput);
+      // -T selects TIFF (8-bit by default); -o 1 selects sRGB.
+      // Without -w dcraw uses fixed daylight WB, ignoring the camera setting.
+      // Preserve intentional warm lighting; do not auto-neutralize every photo.
+      const args = ["-T", "-o", "1", "-w"];
+      // LibRaw defaults to input.cr2.tiff; use its explicit output option.
+      // CR2 uses maintained LibRaw because legacy dcraw crashes on e.g. EOS M100.
+      if (useLibRaw) args.push("-Z", path.join(tempDir, "input.tiff"));
+      args.push(tempInput);
+      await run(decoder, args, { timeout: 1000 * 60 * 5 });
+      const stem = path.basename(tempInput, path.extname(tempInput));
+      const tiffCandidates = [
+        path.join(tempDir, `${stem}.tiff`),
+        path.join(tempDir, `${stem}.tif`)
+      ];
+      const tiffPath = tiffCandidates.find((c) => fs.existsSync(c));
+      if (!tiffPath) throw new Error("RAW 图片解码失败：无法从该文件提取像素数据。");
+      return { inputPath: tiffPath, tempDir };
+    } catch (error) {
+      // prepareImageInput can fail before convertImage's finally is entered.
+      // Preserve the decoder's original error while removing this attempt only.
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-      throw new Error("RAW 图片解码失败：无法从该文件提取像素数据。");
+      throw error;
     }
-    return { inputPath: tiffPath, tempDir };
   }
 
   return { inputPath, tempDir: null };

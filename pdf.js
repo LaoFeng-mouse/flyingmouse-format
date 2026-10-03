@@ -37,6 +37,7 @@ const { parseXmlToJson } = require("./xml-json");
 const logger = require("./logger");
 const { extractPdfScanRegions } = require("./pdf-ocr-regions");
 const { reportConversionProgress, captureConversionProgressReporter } = require("./conversion-progress");
+const { createOfficeWorkspace } = require("./office-runtime");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const pwd = String(password || "");
@@ -85,11 +86,64 @@ function normalizedPdfText(value) {
 
 function missingPdfText(pages, editableText) {
   const actual = normalizedPdfText(editableText);
-  return pages.flatMap((page) => (page.rows || []).flatMap((row) => row)
+  const missing = pages.flatMap((page) => pdfCoverageSegments(page)
     .filter((text) => {
       const expected = normalizedPdfText(text);
-      return expected.length > 1 && !actual.includes(expected);
+      // A geometrically separated segment may be one Chinese title glyph or
+      // a table number. Do not silently discard it after cell segmentation.
+      return expected.length > 0 && !actual.includes(expected);
     }).map((text) => ({ pageNumber: page.pageNumber, text })));
+  // A table's row number is not evidence that the same page number survived.
+  // Geometrically identified numeric footers retain their surrounding marks
+  // and multiplicity instead of being matched as digits anywhere in the body.
+  const compact = String(editableText || '').normalize('NFKC').replace(/\s/gu, '');
+  const counts = new Map();
+  for (const footer of nativePdfFooters(pages)) {
+    const count = (counts.get(footer.text) || 0) + 1;
+    counts.set(footer.text, count);
+    if (compact.split(footer.text).length - 1 < count
+      && !missing.some(item => item.pageNumber === footer.pageNumber && item.text === footer.text)) {
+      missing.push({ pageNumber: footer.pageNumber, text: footer.text });
+    }
+  }
+  return missing;
+}
+
+function nativePdfFooters(pages) {
+  return pages.flatMap(page => {
+    if (!Number.isFinite(page.height) || page.height <= 0) return [];
+    return (page.lines || []).flatMap(line => {
+      if (!Number.isFinite(line.y) || line.y < page.height * 0.88 || line.y > page.height) return [];
+      const text = String(line.text || '').normalize('NFKC').replace(/\s/gu, '');
+      const match = /^([\p{P}\p{S}]+)(\d{1,6})([\p{P}\p{S}]+)$/u.exec(text);
+      return match ? [{ pageNumber: page.pageNumber, text, skeleton: match[1] + match[3] }] : [];
+    });
+  });
+}
+
+function pdfCoverageSegments(page) {
+  if (!page.lines?.length || !page.lines.every(line => line.items?.length
+    && line.items.every(item => typeof item.text === "string" && [item.x, item.end, item.height].every(Number.isFinite)))) {
+    return (page.rows || []).flatMap(row => row);
+  }
+  // A line can cross several table cells. DOCX correctly serializes all lines
+  // of one cell before the next cell; comparing a whole displayed row would
+  // falsely call those preserved words missing. Adjacent glyphs remain joined
+  // so a missing character in a per-glyph text run is still rejected.
+  return page.lines.flatMap(line => {
+    const segments = [];
+    let current = "", previous;
+    for (const item of line.items) {
+      const gap = previous ? item.x - previous.end : 0;
+      if (previous && gap > Math.max(1, Math.min(previous.height, item.height) * 0.5)) {
+        segments.push(current); current = "";
+      }
+      current += item.text;
+      previous = item;
+    }
+    if (current) segments.push(current);
+    return segments;
+  });
 }
 
 async function sourcePdfPages(inputPath, options = {}) {
@@ -99,7 +153,7 @@ async function sourcePdfPages(inputPath, options = {}) {
 function pdfPageNeedsOcr(page) {
   return !page.ocr && page.blank !== true && (
     !page.rows?.some((row) => row.some((cell) => String(cell).trim()))
-    || page.imageCoverage > 0
+    || (page.ocrImageCoverage ?? page.imageCoverage) > 0
   );
 }
 
@@ -107,6 +161,70 @@ function mergeOcrLineSpaces(value) {
   // Chinese intra-line spacing can be normalized, but a newline is paragraph
   // structure: never join the scan heading to its following order-number row.
   return String(value || '').split(/\r?\n/).map(line => String(mergeCnSpaces(line) || '').trim()).join('\n').trim();
+}
+
+function nativeOcrMergeError(pageNumber) {
+  return structureError('PDF_OCR_NATIVE_MERGE_UNVERIFIED',
+    `第 ${pageNumber} 页的原生文字与 OCR 结果无法可靠对应，已停止导出以避免重复或错误的正文。`,
+    `Native text and OCR could not be reliably aligned on page ${pageNumber}. Export was stopped to avoid duplicate or incorrect content.`);
+}
+
+function mergeNativeOcrGeometry(page, result) {
+  const geometry = result.geometry;
+  if (!geometry || result.orientation !== 0 || result.deskewAngle !== 0 || !Array.isArray(page.lines)
+    || !(page.width > 0 && page.height > 0 && geometry.width > 0 && geometry.height > 0)) return null;
+  const validBox = box => Array.isArray(box) && box.length === 4 && box.every(Number.isFinite)
+    && box[2] > box[0] && box[3] > box[1];
+  const nativeLines = page.lines.filter(line => String(line.text || '').trim());
+  if (nativeLines.some(line => !validBox(line.bbox) || !Array.isArray(line.cells))) return null;
+  const nativeBoxes = nativeLines.flatMap(line => line.items?.length ? line.items.map(item => item.bbox) : [line.bbox]);
+  if (nativeBoxes.some(box => !validBox(box))) return null;
+  const compact = text => String(text || '').replace(/\s/gu, '');
+  const ocrLines = geometry.lines;
+  if (!Array.isArray(ocrLines) || ocrLines.some(line => !Array.isArray(line.words) || line.words.some(word => !validBox(word.bbox)))
+    || compact(ocrLines.flatMap(line => line.words.map(word => word.text)).join('')) !== compact(result.text)) return null;
+  const blocks = nativeLines.map(line => ({ bbox: line.bbox, rows: [line.cells] }));
+  for (const line of ocrLines) {
+    let words = [], boxes = [];
+    const flush = () => {
+      if (words.length) blocks.push({ bbox: [Math.min(...boxes.map(box => box[0])), Math.min(...boxes.map(box => box[1])),
+        Math.max(...boxes.map(box => box[2])), Math.max(...boxes.map(box => box[3]))], rows: [[mergeOcrLineSpaces(words.join(' '))]] });
+      words = []; boxes = [];
+    };
+    for (const word of line.words) {
+      const box = word.bbox.map((coordinate, index) => coordinate*(index%2 ? page.height/geometry.height : page.width/geometry.width));
+      if (box[0] < 0 || box[1] < 0 || box[2] > page.width || box[3] > page.height) return null;
+      const overlaps = nativeBoxes.filter(native => Math.min(native[2], box[2])-Math.max(native[0], box[0]) > 0
+        && Math.min(native[3], box[3])-Math.max(native[1], box[1]) > 0);
+      if (overlaps.length) {
+        // Suppress an OCR version of native glyphs only when its full word
+        // lies within the covered source text region. A word spanning a scan and native
+        // text cannot be split safely by guessing at similar characters.
+        const intervals = overlaps.flatMap(native => {
+          // PDF.js item boxes end at the baseline; rendered descenders may
+          // extend below it. Keep horizontal containment tight, with a font-
+          // relative vertical allowance for those visible glyph pixels.
+          const horizontal = Math.min(2, (native[3]-native[1])*.2);
+          const vertical = Math.min(5, (native[3]-native[1])*.35);
+          return box[1] >= native[1]-vertical && box[3] <= native[3]+vertical
+            ? [[native[0]-horizontal, native[2]+horizontal]] : [];
+        }).sort((left, right) => left[0]-right[0]);
+        // PDFs commonly split one word into per-glyph text items. The union
+        // of their bounded intervals must cover the whole OCR word; a real
+        // uncovered gap toward scanned text still fails rather than guessing.
+        let covered = box[0];
+        for (const [left, right] of intervals) {
+          if (left > covered) break;
+          covered = Math.max(covered, right);
+        }
+        if (covered < box[2]) throw nativeOcrMergeError(page.pageNumber);
+        flush();
+      } else { words.push(word.text); boxes.push(box); }
+    }
+    flush();
+  }
+  blocks.sort((a, b) => a.bbox[1]-b.bbox[1] || a.bbox[0]-b.bbox[0]);
+  return blocks.flatMap(block => block.rows);
 }
 
 async function fillMissingPdfPageText(inputPath, pages, options = {}) {
@@ -161,18 +279,28 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
       const rendered = await (options.renderPdfTablePage || renderPdfTablePage)(inputPath, pageNumber, tempDir, 200);
       const result = options.recognizeImageTextWithWorker
         ? { text: await options.recognizeImageTextWithWorker(worker, rendered.outputPath, pageOptions), warnings: [] }
-        : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, rendered.outputPath, pageOptions);
+        : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, rendered.outputPath,
+          { ...pageOptions, includeGeometry: (page.rows || []).some(row => row.some(cell => String(cell).trim())) });
       const text = mergeOcrLineSpaces(result.text);
+      const geometricRows = mergeNativeOcrGeometry(page, result);
+      if (geometricRows) {
+        completed.set(page, { ...page, ocr: true, ocrWarnings: result.warnings || [], rows: geometricRows });
+        throwIfCanceled(options.signal);
+        reportConversionProgress({ stage: "recognizing", completed: completed.size, total: missing.length, unit: "pages" });
+        continue;
+      }
       const rows = text ? text.split(/\r?\n/).filter((line) => line.trim()).map((line) => [line]) : [];
       const omittedNative = [];
+      const matchedRows = new Set();
       for (const nativeRow of page.rows || []) {
         const native = normalizedPdfText(nativeRow.join(' '));
         if (!native) continue;
-        const index = rows.findIndex(row => normalizedPdfText(row.join(' ')) === native);
-        if (index >= 0) rows[index] = nativeRow;
+        const index = rows.findIndex((row, index) => !matchedRows.has(index) && normalizedPdfText(row.join(' ')) === native);
+        if (index >= 0) { rows[index] = nativeRow; matchedRows.add(index); }
         else {
           let restored = false;
-          for (const row of rows) {
+          for (const [rowIndex, row] of rows.entries()) {
+            if (matchedRows.has(rowIndex)) continue;
             const value = row.join(' ');
             const normalized = [];
             const spans = [];
@@ -190,13 +318,15 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
               // spelling and punctuation: 118600 must never replace 1186.00.
               row.splice(0, row.length, value.slice(0, spans[at][0]) + nativeRow.join(' ') + value.slice(spans[at + native.length - 1][1]));
               restored = true;
+              matchedRows.add(rowIndex);
               break;
             }
           }
           if (!restored) omittedNative.push(nativeRow);
         }
       }
-      completed.set(page, { ...page, ocr: true, ocrWarnings: result.warnings || [], rows: [...omittedNative, ...rows] });
+      if (omittedNative.length) throw nativeOcrMergeError(pageNumber);
+      completed.set(page, { ...page, ocr: true, ocrWarnings: result.warnings || [], rows });
       throwIfCanceled(options.signal);
       reportConversionProgress({ stage: "recognizing", completed: completed.size, total: missing.length, unit: "pages" });
     }
@@ -248,9 +378,11 @@ function restoreNativeStructureText(manifest, nativePages) {
 
 function pdfLayoutFallbackWarning(reason) {
   return { code: "PDF_DOCX_LAYOUT_FALLBACK", messages: {
-    zhCN: reason === "content" ? "版式引擎输出存在缺字，已改用原生文字重建可编辑文档；复杂版式可能变化。"
+    zhCN: reason === "images" ? "尚不能确认图片内容已完整保留，已改用文字提取和 OCR 重建；插图和复杂版式需对照原 PDF 复核。"
+      : reason === "content" ? "版式引擎输出存在缺字，已改用原生文字重建可编辑文档；复杂版式可能变化。"
       : "版式引擎不可用，已重建可编辑文字及简单表格；复杂版式可能变化。",
-    enUS: reason === "content" ? "The layout engine omitted source text. Editable text was rebuilt; complex layout may change."
+    enUS: reason === "images" ? "Image preservation could not be verified. Text extraction and OCR were used instead; compare illustrations and complex layout with the PDF."
+      : reason === "content" ? "The layout engine omitted source text. Editable text was rebuilt; complex layout may change."
       : "The layout engine is unavailable. Editable text and simple tables were rebuilt; complex layout may change."
   } };
 }
@@ -334,16 +466,22 @@ async function withAttemptOutput(outputPath, produce, signal) {
 async function convertStructuredPdf({ inputPath, outputPath, target, options = {} }) {
   const boundary = options.withStructuredPdf || withStructuredPdf;
   return boundary(inputPath, options, async (manifest, assetRoot) => {
-      const selected = selectedStructureManifest(manifest);
+      const initial = selectedStructureManifest(manifest);
+      const columns = await (options.repairScanColumnLayout || require('./pdf-scan-columns').repairScanColumnLayout)(initial, assetRoot, options);
+      const selected = columns.manifest === initial ? initial
+        : structuredClone(validateStructureManifest(columns.manifest, assetRoot));
+      const columnWarnings = Array.isArray(columns.warnings) ? columns.warnings : [];
       if (target === "xlsx") {
         const tables = selected.pages.reduce((total, page) => total + (page.tables || []).length, 0);
         if (tables === 0) throw tableNotDetectedError();
-        return withAttemptOutput(outputPath, (attemptPath) =>
+        const result = await withAttemptOutput(outputPath, (attemptPath) =>
           (options.writePdfOfficeXlsx || writePdfOfficeXlsx)({
             manifest: selected, assetRoot, outputPath: attemptPath
           }), options.signal);
+        return { ...result, warnings: [...columnWarnings, ...(result?.warnings || [])] };
       }
       if (target === "docx") {
+        let math = { pageNumbers: [] };
         const nativePages = await sourcePdfPages(inputPath, options);
         const restored = restoreNativeStructureText(selected, nativePages);
         const repaired = restored ? validateStructureManifest(selected, assetRoot) : selected;
@@ -354,6 +492,7 @@ async function convertStructuredPdf({ inputPath, outputPath, target, options = {
           // The writer already validates assets and tables. Also compare editable
           // text with the actual PDF text layer so a reference image cannot hide lost text.
           if (!options.writePdfOfficeDocx) {
+            math = await repairNativePdfDocx(attemptPath, nativePages, { ...options, inputPath, repairLayout: false });
             const validation = await validateNativePdfDocx(attemptPath);
             if (missingPdfText(nativePages, validation.editableText).length) {
               throw structureError("PDF_DOCX_TEXT_COVERAGE_FAILED", "生成的 Word 缺少原生文字，已阻止不完整输出。",
@@ -362,9 +501,9 @@ async function convertStructuredPdf({ inputPath, outputPath, target, options = {
           }
           return written;
         }, options.signal);
-        return { ...result, warnings: restored ? [{ code: "PDF_NATIVE_TEXT_RESTORED", messages: {
+        return { ...result, warnings: [...columnWarnings, ...(result?.warnings || []), ...nativeMathWarnings(math), ...(restored ? [{ code: "PDF_NATIVE_TEXT_RESTORED", messages: {
           zhCN: "已使用 PDF 原生文字补回结构识别遗漏的内容。", enUS: "Native PDF text was restored where structure recognition omitted it."
-        } }] : [] };
+        } }] : [])] };
       }
       throw structureError("PDF_STRUCTURE_TARGET_UNSUPPORTED",
         "不支持该结构化输出格式。", "Unsupported structured PDF target.");
@@ -578,7 +717,7 @@ function safePackageEntry(name) {
   return Boolean(candidate) && candidate.split("/").every((piece) => piece && piece !== "." && piece !== "..");
 }
 
-async function inspectNativeDocxPackage(zipPath) {
+async function inspectNativeDocxPackage(zipPath, includeAll = false) {
   // Read the whole package into memory and drive yauzl via fromBuffer: yauzl.open's
   // fd_slicer path can silently stall on a valid deflate stream (see openZipEntriesFromBuffer).
   let buffer;
@@ -600,6 +739,7 @@ async function inspectNativeDocxPackage(zipPath) {
     let settled = false;
     const names = new Set();
     const buffers = new Map();
+    let total = 0;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -612,8 +752,15 @@ async function inspectNativeDocxPackage(zipPath) {
         return finish(new Error("unsafe DOCX package entry"));
       }
       names.add(entry.fileName);
-      if (!NATIVE_DOCX_PARTS.has(entry.fileName)) return zipfile.readEntry();
+      if (entry.fileName.endsWith('/') || (!(includeAll === true || includeAll instanceof Set && includeAll.has(entry.fileName))
+        && !NATIVE_DOCX_PARTS.has(entry.fileName))) return zipfile.readEntry();
+      if (includeAll instanceof Set && includeAll.has(entry.fileName) && size > 200_000_000) {
+        return finish(new Error("DOCX image part is too large"));
+      }
       if (size > MAX_NATIVE_DOCX_XML_BYTES) return finish(new Error("DOCX XML part is too large"));
+      total += size;
+      if (includeAll instanceof Set && total > 200_000_000) return finish(new Error("DOCX selected images are too large"));
+      if (total > MAX_NATIVE_DOCX_PACKAGE_BYTES) return finish(new Error("DOCX expanded package is too large"));
       zipfile.openReadStream(entry, (error, stream) => {
         if (error) return finish(error);
         const chunks = [];
@@ -656,7 +803,7 @@ function qualifiedName(name) {
 function namespaceElements(parsed) {
   const elements = [];
 
-  function visit(name, value, inheritedNamespaces) {
+  function visit(name, value, inheritedNamespaces, parentIndex = -1) {
     const namespaces = new Map(inheritedNamespaces);
     if (value && typeof value === "object" && !Array.isArray(value)) {
       for (const [key, declaration] of Object.entries(value)) {
@@ -677,7 +824,9 @@ function namespaceElements(parsed) {
         });
       }
     }
+    const elementIndex = elements.length;
     elements.push({
+      parentIndex,
       namespaceURI: namespaces.get(qname.prefix) || "",
       localName: qname.localName,
       text: typeof value === "string" ? value : value?.["#text"] || "",
@@ -687,7 +836,7 @@ function namespaceElements(parsed) {
     for (const [childName, childValue] of Object.entries(value)) {
       if (childName.startsWith("@") || childName === "#text") continue;
       for (const child of Array.isArray(childValue) ? childValue : [childValue]) {
-        visit(childName, child, namespaces);
+        visit(childName, child, namespaces, elementIndex);
       }
     }
   }
@@ -720,6 +869,32 @@ function nativeDocxInvalid() {
   const error = new Error("Native PDF conversion produced an invalid DOCX package.");
   error.code = "PDF_OFFICE_OUTPUT_INVALID";
   return error;
+}
+
+const OFFICE_MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+
+function visibleFractionText(element, elements, children) {
+  if (element.namespaceURI !== OFFICE_MATH_NAMESPACE || element.localName !== "t") return false;
+  const run = elements[element.parentIndex];
+  if (!run || run.namespaceURI !== OFFICE_MATH_NAMESPACE || run.localName !== "r") return false;
+  const runIndex = element.parentIndex;
+  const properties = (children.get(runIndex) || []).filter(index => elements[index].namespaceURI === WORDPROCESSING_NAMESPACE
+    && elements[index].localName === "rPr");
+  if (properties.flatMap(index => children.get(index) || []).map(index => elements[index]).some(item => item.namespaceURI === WORDPROCESSING_NAMESPACE
+    && (item.localName === "rStyle" || ["vanish", "webHidden", "specVanish"].includes(item.localName)
+      && !["0", "false", "off"].includes(String(elementAttribute(item, WORDPROCESSING_NAMESPACE, "val")).toLowerCase())))) return false;
+  // Only count the supported, visible fraction tree; property text or a
+  // similarly named foreign element must not satisfy source coverage.
+  const allowed = new Set(["r", "num", "den", "f"]);
+  let current = run;
+  while (current?.namespaceURI === OFFICE_MATH_NAMESPACE && allowed.has(current.localName)) current = elements[current.parentIndex];
+  if (current?.namespaceURI !== OFFICE_MATH_NAMESPACE || current.localName !== "oMath") return false;
+  current = elements[current.parentIndex];
+  if (current?.namespaceURI === OFFICE_MATH_NAMESPACE && current.localName === "oMathPara") current = elements[current.parentIndex];
+  if (current?.namespaceURI !== WORDPROCESSING_NAMESPACE || current.localName !== "p") return false;
+  current = elements[current.parentIndex];
+  if (current?.namespaceURI !== WORDPROCESSING_NAMESPACE || current.localName !== "body") return false;
+  return true;
 }
 
 async function validateNativePdfDocx(outputPath) {
@@ -779,7 +954,14 @@ async function validateNativePdfDocx(outputPath) {
       }
     }
 
-    const editableText = elementsNamed(documentElements, WORDPROCESSING_NAMESPACE, "t")
+    const documentChildren = new Map();
+    documentElements.forEach((element, index) => {
+      if (!documentChildren.has(element.parentIndex)) documentChildren.set(element.parentIndex, []);
+      documentChildren.get(element.parentIndex).push(index);
+    });
+    const editableText = documentElements.filter(element =>
+      element.namespaceURI === WORDPROCESSING_NAMESPACE && element.localName === "t"
+      || visibleFractionText(element, documentElements, documentChildren))
       .map((element) => String(element.text)).join(" ");
     if (!editableText.trim()) {
       const error = new Error("Native PDF conversion produced no editable content.");
@@ -793,27 +975,326 @@ async function validateNativePdfDocx(outputPath) {
   }
 }
 
+// A labelled figure may remain an image in an otherwise editable native Word
+// document. Prove both its source role and its actual, visible DOCX pixels;
+// merely finding a media file (or a text layer) is not sufficient.
+async function preservedNativeIllustrations(inputPath, outputPath, pages, options) {
+  try {
+    const { nativeIllustrationSignatures } = require('./pdf-native-illustrations');
+    const expected = await nativeIllustrationSignatures(inputPath, pages, options);
+    if (!expected?.length) return null;
+    throwIfCanceled(options.signal);
+    const inspected = await inspectNativeDocxPackage(outputPath, new Set(['word/styles.xml']));
+    const elements = parseNamespaceDocument(inspected.buffers.get('word/document.xml').toString('utf8')).elements;
+    // This exception does not resolve arbitrary style inheritance. Ambiguous
+    // hidden text or fixed line boxes must keep the original OCR requirement.
+    const styleXml = inspected.buffers.get('word/styles.xml')?.toString('utf8');
+    if (styleXml && parseNamespaceDocument(styleXml).elements.some(element =>
+      element.namespaceURI === WORDPROCESSING_NAMESPACE && (
+        ['vanish', 'webHidden', 'specVanish'].includes(element.localName)
+        || element.localName === 'spacing' && elementAttribute(element, WORDPROCESSING_NAMESPACE, 'lineRule') === 'exact'
+      ))) return null;
+    const relationshipXml = inspected.buffers.get('word/_rels/document.xml.rels')?.toString('utf8');
+    if (!relationshipXml) return null;
+    const relationships = new Map(elementsNamed(parseNamespaceDocument(relationshipXml).elements,
+      OPC_RELATIONSHIPS_NAMESPACE, 'Relationship').map(element => [elementAttribute(element, '', 'Id'), element]));
+    const wp = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+    const pic = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+    const ancestor = (element, namespace, name) => {
+      for (let index = element.parentIndex; index >= 0; index = elements[index].parentIndex) {
+        if (elements[index].namespaceURI === namespace && elements[index].localName === name) return elements[index];
+      }
+      return null;
+    };
+    const within = (element, parent) => {
+      for (let current = element; current; current = elements[current.parentIndex]) if (current === parent) return true;
+      return false;
+    };
+    const allowed = new Map([
+      [wp, new Set(['inline', 'extent', 'effectExtent', 'docPr', 'cNvGraphicFramePr'])],
+      [DRAWINGML_NAMESPACE, new Set(['graphicFrameLocks', 'graphic', 'graphicData', 'picLocks',
+        'blip', 'stretch', 'fillRect', 'srcRect', 'xfrm', 'off', 'ext', 'prstGeom', 'avLst'])],
+      [pic, new Set(['pic', 'nvPicPr', 'cNvPr', 'cNvPicPr', 'blipFill', 'spPr'])]
+    ]);
+    const positive = value => Number.isFinite(Number(value)) && Number(value) > 0;
+    const nonzero = value => !['', '0', 'false', 'off'].includes(String(value));
+    const candidates = [];
+    for (const blip of elementsNamed(elements, DRAWINGML_NAMESPACE, 'blip')) {
+      const inline = ancestor(blip, wp, 'inline'), picture = ancestor(blip, pic, 'pic');
+      const drawing = ancestor(blip, WORDPROCESSING_NAMESPACE, 'drawing');
+      const run = ancestor(blip, WORDPROCESSING_NAMESPACE, 'r');
+      const paragraph = ancestor(blip, WORDPROCESSING_NAMESPACE, 'p');
+      if (!inline || !picture || !drawing || !run || !within(inline, drawing)) return null;
+      // Deleted/moved content, unselected compatibility branches, table cells
+      // and textboxes do not prove that an image is actually displayed.
+      const route = ['r', 'p', 'body', 'document'];
+      let routeIndex = drawing.parentIndex;
+      for (const name of route) {
+        const parent = elements[routeIndex];
+        if (parent?.namespaceURI !== WORDPROCESSING_NAMESPACE || parent.localName !== name) return null;
+        routeIndex = parent.parentIndex;
+      }
+      if (routeIndex !== -1) return null;
+      if (elements.some(element => within(element, paragraph) && element.namespaceURI === WORDPROCESSING_NAMESPACE && (
+        ['rStyle', 'pStyle'].includes(element.localName)
+        || element.localName === 'spacing' && elementAttribute(element, WORDPROCESSING_NAMESPACE, 'lineRule') === 'exact'
+      ))) return null;
+      const children = elements.filter(element => within(element, inline));
+      if (children.some(element => !allowed.get(element.namespaceURI)?.has(element.localName))) return null;
+      if (children.some(element => element.attributes.some(attr => attr.localName === 'hidden' && nonzero(attr.value)))) return null;
+      if (elements.some(element => within(element, run) && element.namespaceURI === WORDPROCESSING_NAMESPACE
+        && ['vanish', 'webHidden', 'specVanish'].includes(element.localName))) return null;
+      if (children.some(element => element.namespaceURI === DRAWINGML_NAMESPACE && (
+        ['srcRect', 'fillRect'].includes(element.localName) && element.attributes.some(attr => nonzero(attr.value))
+        || element.localName === 'xfrm' && element.attributes.some(attr => nonzero(attr.value))
+        || element.localName === 'off' && element.attributes.some(attr => nonzero(attr.value))
+        || element.localName === 'prstGeom' && elementAttribute(element, '', 'prst') !== 'rect'
+      ))) return null;
+      const extents = children.filter(element => element.namespaceURI === wp && element.localName === 'extent');
+      const pictureExtents = children.filter(element => element.namespaceURI === DRAWINGML_NAMESPACE && element.localName === 'ext');
+      if (extents.length !== 1 || pictureExtents.length !== 1
+        || children.filter(element => element.namespaceURI === DRAWINGML_NAMESPACE && element.localName === 'blip').length !== 1) return null;
+      const cx = Number(elementAttribute(extents[0], '', 'cx')), cy = Number(elementAttribute(extents[0], '', 'cy'));
+      if (!positive(cx) || !positive(cy) || Math.abs(cx - Number(elementAttribute(pictureExtents[0], '', 'cx'))) > 1
+        || Math.abs(cy - Number(elementAttribute(pictureExtents[0], '', 'cy'))) > 1) return null;
+      const relationship = relationships.get(elementAttribute(blip, OFFICE_RELATIONSHIPS_NAMESPACE, 'embed'));
+      const target = relationship && elementAttribute(relationship, '', 'Target');
+      if (!target?.startsWith('media/') || !safePackageEntry(target)
+        || elementAttribute(relationship, '', 'TargetMode')
+        || !elementAttribute(relationship, '', 'Type').endsWith('/image')) return null;
+      candidates.push({ name: `word/${target}`, displayWidth: cx / 12700, displayHeight: cy / 12700 });
+    }
+    if (candidates.length < expected.length || candidates.length > 500) return null;
+    const media = await inspectNativeDocxPackage(outputPath, new Set(candidates.map(item => item.name)));
+    const sharp = require('sharp');
+    const hashes = new Map();
+    let totalPixels = 0;
+    for (const candidate of candidates) {
+      throwIfCanceled(options.signal);
+      if (!hashes.has(candidate.name)) {
+        const bytes = media.buffers.get(candidate.name);
+        if (!bytes) return null;
+        const metadata = await sharp(bytes, { limitInputPixels: 50_000_000 }).metadata();
+        if ((metadata.pages || 1) !== 1) return null;
+        totalPixels += metadata.width * metadata.height;
+        if (!Number.isFinite(totalPixels) || totalPixels > 100_000_000) return null;
+        const { data, info } = await sharp(bytes, { limitInputPixels: 50_000_000 }).toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        for (let index = 3; index < data.length; index += 4) if (data[index] !== 255) return null;
+        const rgb = await sharp(data, { raw: info, limitInputPixels: 50_000_000 }).removeAlpha().raw().toBuffer();
+        hashes.set(candidate.name, { width: info.width, height: info.height, pixelHash: crypto.createHash('sha256').update(rgb).digest('hex') });
+      }
+      Object.assign(candidate, hashes.get(candidate.name));
+    }
+    for (const image of expected) {
+      const index = candidates.findIndex(candidate => candidate.width === image.width && candidate.height === image.height
+        && candidate.pixelHash === image.pixelHash && Math.abs(candidate.displayWidth - image.displayWidth) <= .5
+        && Math.abs(candidate.displayHeight - image.displayHeight) <= .5);
+      if (index < 0) return null;
+      candidates.splice(index, 1); // Repeated source images need repeated visible drawings.
+    }
+    return [...new Set(expected.map(image => image.pageNumber))];
+  } catch (error) {
+    throwIfCanceled(options.signal);
+    return null; // Unknown representations retain the existing OCR requirement.
+  }
+}
+
+function repairNativePdfDocxXml(documentXml, pages) {
+  // This postprocessor targets the bundled engine's stable w: serialization.
+  // Alternate namespace spellings remain valid and are left unchanged; never
+  // rewrite a locally rebound prefix or an unknown producer's XML structure.
+  if (!/<w:document\b[^>]*\bxmlns:w=["']http:\/\/schemas\.openxmlformats\.org\/wordprocessingml\/2006\/main["']/.test(documentXml)
+    || (documentXml.match(/\bxmlns:w\s*=/g) || []).length !== 1) return documentXml;
+  const attr = (tag, name) => new RegExp('\\b' + name + '=["\']([^"\']*)["\']').exec(tag)?.[1];
+  let xml = documentXml.replace(/<w:tbl\b[\s\S]*?<\/w:tbl>/g, table => {
+    // An inner table can have an unrelated grid. Do not infer widths across it.
+    if ((table.match(/<w:tbl\b/g) || []).length !== 1 || !/<w:tblLayout\b[^>]*w:type=["']fixed["']/.test(table)) return table;
+    const grid = /<w:tblGrid\b[^>]*>[\s\S]*?<\/w:tblGrid>/.exec(table)?.[0];
+    if (!grid || /<w:(?:gridSpan|vMerge|hMerge)\b/.test(table)) return table;
+    const columns = grid.match(/<w:gridCol\b[^>]*\/>/g) || [];
+    const oldWidths = columns.map(tag => Number(attr(tag, 'w:w')));
+    const rows = table.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) || [];
+    const widths = rows.map(row => (row.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) || []).map(cell => {
+      const properties = /<w:tcPr\b[^>]*>[\s\S]*?<\/w:tcPr>/.exec(cell)?.[0] || '';
+      const size = /<w:tcW\b[^>]*\/>/.exec(properties)?.[0] || '';
+      return attr(size, 'w:type') === 'dxa' ? Number(attr(size, 'w:w')) : NaN;
+    }));
+    const positive = values => values.every(value => Number.isSafeInteger(value) && value > 0);
+    if (!columns.length || !rows.length || !positive(oldWidths)
+      || widths.some(row => row.length !== columns.length || !positive(row))
+      || widths.some(row => row.some((value, index) => value !== widths[0][index]))) return table;
+    const gridTotal = oldWidths.reduce((sum, value) => sum + value, 0);
+    const cellTotal = widths[0].reduce((sum, value) => sum + value, 0);
+    const tableProperties = /<w:tblPr\b[^>]*>[\s\S]*?<\/w:tblPr>/.exec(table)?.[0] || '';
+    const tableWidth = /<w:tblW\b[^>]*\/>/.exec(tableProperties)?.[0] || '';
+    // The native exporter rounds grid and cell coordinates independently. Only
+    // an automatic table width may tolerate a <=1% rounding discrepancy.
+    if (gridTotal !== cellTotal && !(attr(tableWidth, 'w:type') === 'auto' && Number(attr(tableWidth, 'w:w')) === 0
+      && Math.abs(gridTotal - cellTotal) <= gridTotal * 0.01)) return table;
+    let column = 0;
+    const fixedGrid = grid.replace(/<w:gridCol\b[^>]*\/>/g, tag => tag.replace(/\bw:w=["'][^"']*["']/, 'w:w="' + widths[0][column++] + '"'));
+    return table.replace(grid, fixedGrid);
+  });
+  // Font metrics and wrapping can differ between PDF, Word and LibreOffice.
+  // A minimum row height retains the native design without hiding overflow.
+  xml = xml.replace(/<w:trHeight\b[^>]*\/>/g, tag => tag.replace(/\bw:hRule=["']exact["']/, 'w:hRule="atLeast"'));
+  // Bare empty cell paragraphs otherwise inherit the document's paragraph
+  // after-gap. Exact rows hid that gap; minimum rows must not expand every
+  // blank form field. Keep normal font size and automatic single spacing so
+  // typing into the repaired blank cells remains readable.
+  xml = xml.replace(/<w:tc\b[\s\S]*?<\/w:tc>/g, cell => cell.replace(/<w:p\s*\/>/g,
+    '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:p>'));
+
+  // Page-to-section correspondence is not guaranteed for multi-page native
+  // output. Repair a footer only when its final body position is provable.
+  if (pages.length !== 1) return xml;
+
+  const bodyElements = [], stack = [];
+  let current = null;
+  // Track every XML element, not just p/tbl: a textbox's inner paragraph is
+  // never a direct body paragraph. Quoted attributes may themselves contain >.
+  const tags = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<\/?[A-Za-z_][^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*>/g;
+  for (const token of xml.matchAll(tags)) {
+    if (/^<[!?]/.test(token[0])) continue;
+    const name = /^<\/?([^\s/>]+)/.exec(token[0])[1];
+    const closing = /^<\//.test(token[0]), empty = /\/>$/.test(token[0]);
+    if (closing) stack.pop();
+    else if (stack.at(-1) === 'w:body') current = { start: token.index, name };
+    if (!closing && !empty) stack.push(name);
+    if ((closing || empty) && stack.at(-1) === 'w:body' && current) {
+      const end = token.index + token[0].length, part = xml.slice(current.start, end);
+      const text = [...part.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)]
+        .map(match => parseXmlToJson('<text>' + match[1] + '</text>').text || '').join('').normalize('NFKC').replace(/\s/gu, '');
+      const complex = /<w:(?:drawing|pict|fldChar|instrText|hyperlink|object|br|tab)\b/.test(part);
+      bodyElements.push({ ...current, end, part, text, eligible: current.name === 'w:p'
+        && !/<w:(?:drawing|pict|fldChar|instrText|hyperlink|object)\b/.test(part),
+        content: current.name !== 'w:sectPr' && (current.name !== 'w:p' || Boolean(text) || complex) });
+      current = null;
+    }
+  }
+  const paragraphs = bodyElements.filter(element => element.eligible);
+  const lastContent = bodyElements.filter(element => element.content).at(-1);
+  const footers = nativePdfFooters(pages), replacements = [];
+  for (const skeleton of new Set(footers.map(footer => footer.skeleton))) {
+    const expected = footers.filter(footer => footer.skeleton === skeleton);
+    const candidates = paragraphs.filter(paragraph => paragraph.text === skeleton || expected.some(footer => footer.text === paragraph.text));
+    // Only one unambiguous sequence is safe. A missing/extra paragraph or a
+    // conflicting existing page number must fall through to coverage failure.
+    if (candidates.length !== expected.length || candidates.length !== 1
+      || candidates[0] !== lastContent
+      || candidates.some((candidate, index) => candidate.text !== skeleton && candidate.text !== expected[index].text)) continue;
+    candidates.forEach((candidate, index) => {
+      if (candidate.text !== skeleton) return;
+      let first = true;
+      const part = candidate.part.replace(/<w:t\b[^>]*>[\s\S]*?<\/w:t>/g, tag => {
+        if (!first) return ''; first = false;
+        return tag.replace(/>[\s\S]*<\/w:t>$/, '>' + xmlDocxText(expected[index].text) + '</w:t>');
+      }).replace(/<w:tab\s*\/>/g, '');
+      replacements.push({ ...candidate, part });
+    });
+  }
+  for (const replacement of replacements.sort((a, b) => b.start - a.start)) xml = xml.slice(0, replacement.start) + replacement.part + xml.slice(replacement.end);
+  return xml;
+}
+
+async function repairNativePdfDocx(outputPath, pages, options = {}) {
+  const inspected = await inspectNativeDocxPackage(outputPath, true);
+  const original = inspected.buffers.get('word/document.xml').toString('utf8');
+  const layout = options.repairLayout === false ? original : repairNativePdfDocxXml(original, pages);
+  const math = options.inputPath
+    ? await require('./pdf-native-math').repairNativeMathXml(options.inputPath, layout, pages, options)
+    : { xml: layout, repairedCount: 0, pageNumbers: [] };
+  const repaired = math.xml;
+  if (repaired === original) return math;
+  inspected.buffers.set('word/document.xml', Buffer.from(repaired, 'utf8'));
+  const repairedPath = outputPath + '.layout';
+  await writeDocxZip(repairedPath, [...inspected.buffers].map(([entryPath, content]) => ({ path: entryPath, content })));
+  // The caller revalidates the rewritten package before publishing anything.
+  await fsp.rename(repairedPath, outputPath);
+  return math;
+}
+
+function nativeMathWarnings(math) {
+  if (!math.pageNumbers?.length) return [];
+  const operators = math.operatorCount > 0, pages = math.pageNumbers;
+  return [{ code: operators ? 'PDF_NATIVE_MATH_RESTORED' : 'PDF_NATIVE_FRACTIONS_RESTORED', pageNumbers: pages, messages: {
+    zhCN: `第 ${pages.join('、')} 页的${operators ? '数学公式及运算符' : '分式'}已根据原文位置恢复为可编辑内容，请对照原 PDF 复核；排版可能重排。`,
+    enUS: `${operators ? 'Equations and operators' : 'Fractions'} on pages ${pages.join(', ')} were restored as editable content using source geometry. Compare with the PDF; layout may reflow.`
+  } }];
+}
+
 async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
   const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
   const source = pages || await sourcePdfPages(inputPath, options);
   let fallbackReason = "engine";
   if (docenginePath) {
+    let nativeStage = 'prepare';
+    let illustrationPages = [];
+    let math = { pageNumbers: [] };
     try {
       await withAttemptOutput(outputPath, async (attemptPath) => {
-        await (options.run || run)(docenginePath, ["convert", inputPath, attemptPath], { timeout: 1000 * 60 * 10 });
-        const validation = await (options.validateNativeDocx || validateNativePdfDocx)(attemptPath);
-        const missing = missingPdfText(source, validation.editableText);
-        if (missing.length || source.some(pdfPageNeedsOcr)) {
-          throw structureError("PDF_DOCX_TEXT_COVERAGE_FAILED", "版式输出缺少原生文字。", "Layout output omitted native text.");
+        // Python's native ZIP/PDF stack may reject Windows paths which Node
+        // supports. Keep both input and output in an owned short workspace,
+        // then publish through Node under the full original destination name.
+        // The existing Office workspace helper also handles an overlong TEMP.
+        const workspace = createOfficeWorkspace({ runtimeDir: options.nativeTempRoot || os.tmpdir(),
+          profileFallbackRoot: options.nativeFallbackRoot });
+        try {
+          const engineInput = path.join(workspace.root, "source.pdf");
+          const engineOutput = path.join(workspace.root, "result.docx");
+          await fsp.copyFile(inputPath, engineInput, fs.constants.COPYFILE_EXCL);
+          nativeStage = 'run';
+          await (options.run || run)(docenginePath, ["convert", engineInput, engineOutput], { timeout: 1000 * 60 * 10, signal: options.signal });
+          nativeStage = 'validate';
+          await (options.validateNativeDocx || validateNativePdfDocx)(engineOutput);
+          nativeStage = 'repair';
+          math = await repairNativePdfDocx(engineOutput, source, { ...options, inputPath: engineInput });
+          nativeStage = 'validate';
+          const validation = await (options.validateNativeDocx || validateNativePdfDocx)(engineOutput);
+          const missing = missingPdfText(source, validation.editableText);
+          if (missing.length) {
+            throw structureError("PDF_DOCX_TEXT_COVERAGE_FAILED", "版式输出缺少原生文字。", "Layout output omitted native text.");
+          }
+          const imagePages = source.filter(pdfPageNeedsOcr);
+          if (imagePages.length) {
+            illustrationPages = await preservedNativeIllustrations(inputPath, engineOutput, imagePages, options);
+            if (!illustrationPages) throw structureError("PDF_DOCX_IMAGE_COVERAGE_UNVERIFIED",
+              "尚不能确认版式输出完整保留了图片内容。", "Image preservation in the layout output could not be verified.");
+          }
+          throwIfCanceled(options.signal);
+          nativeStage = 'publish';
+          await fsp.copyFile(engineOutput, attemptPath, fs.constants.COPYFILE_EXCL);
+          return validation;
+        } finally {
+          const info = await fsp.lstat(workspace.root).catch(() => null);
+          if (info?.isDirectory() && !info.isSymbolicLink()) await fsp.rm(workspace.root, { recursive: true, force: true }).catch(() => {});
         }
-        return validation;
-      });
-      return { warnings: [] };
+      }, options.signal);
+      const warnings = illustrationPages.length ? [{ code: 'PDF_NATIVE_ILLUSTRATIONS_PRESERVED', pageNumbers: illustrationPages,
+        messages: {
+          zhCN: `第 ${illustrationPages.join('、')} 页带图注的插图已保留，原生正文可编辑；图内文字和符号仍为图片，请对照原 PDF 复核版式。`,
+          enUS: `Captioned illustrations on pages ${illustrationPages.join(', ')} were preserved with editable native text. Text and symbols inside figures remain images; compare the layout with the PDF.`
+        }
+      }] : [];
+      warnings.push(...nativeMathWarnings(math));
+      return { warnings };
     } catch (error) {
-      if (error?.code === "PDF_DOCX_TEXT_COVERAGE_FAILED") {
-        fallbackReason = "content";
-        logger.warn("PDF layout output failed native text coverage; rebuilding editable text.");
+      // Cancellation must not start another conversion engine or recovery path.
+      throwIfCanceled(options.signal);
+      if (['CONVERSION_CANCELED', 'CONVERSION_CANCELLED'].includes(error?.code)) throw error;
+      if (error?.code === 'PDF_NATIVE_MATH_UNVERIFIED') throw error;
+      const knownCodes = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENAMETOOLONG', 'ENOSPC',
+        'PDF_OFFICE_OUTPUT_INVALID', 'PDF_DOCX_NO_EDITABLE_CONTENT', 'PDF_DOCX_TEXT_COVERAGE_FAILED', 'PDF_DOCX_IMAGE_COVERAGE_UNVERIFIED',
+        'CONVERSION_CANCELED', 'CONVERSION_CANCELLED']);
+      const code = knownCodes.has(error?.code) ? error.code : 'NATIVE_FAILURE';
+      const exitCode = Number.isInteger(error?.exitCode) ? error.exitCode : Number.isInteger(error?.code) ? error.code : null;
+      logger.warn('PDF native attempt failed: ' + JSON.stringify({ stage: nativeStage, code, exitCode }));
+      if (["PDF_DOCX_TEXT_COVERAGE_FAILED", "PDF_DOCX_IMAGE_COVERAGE_UNVERIFIED"].includes(error?.code)) {
+        fallbackReason = error.code === 'PDF_DOCX_IMAGE_COVERAGE_UNVERIFIED' ? 'images' : 'content';
+        logger.warn(fallbackReason === 'images'
+          ? 'PDF layout image preservation was not verified; checking image content with OCR.'
+          : "PDF layout output failed native text coverage; rebuilding editable text.");
       } else {
         try {
           return await (options.convertStructuredPdf || convertStructuredPdf)({
@@ -879,12 +1360,17 @@ ${body.join("\n")}
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
-  await withAttemptOutput(outputPath, (attemptPath) => writeDocxZip(attemptPath, [
-    { path: "[Content_Types].xml", content: contentTypes },
-    { path: "_rels/.rels", content: rels },
-    { path: "word/document.xml", content: documentXml }
-  ]));
-  return { warnings: [pdfLayoutFallbackWarning(fallbackReason), ...pdfOcrWarnings(completePages)] };
+  const math = await withAttemptOutput(outputPath, async (attemptPath) => {
+    await writeDocxZip(attemptPath, [
+      { path: "[Content_Types].xml", content: contentTypes },
+      { path: "_rels/.rels", content: rels },
+      { path: "word/document.xml", content: documentXml }
+    ]);
+    const repaired = await repairNativePdfDocx(attemptPath, source, { ...options, inputPath, repairLayout: false });
+    await validateNativePdfDocx(attemptPath);
+    return repaired;
+  }, options.signal);
+  return { warnings: [pdfLayoutFallbackWarning(fallbackReason), ...pdfOcrWarnings(completePages), ...nativeMathWarnings(math)] };
 }
 
 async function loadPdfForPageCopy(inputPath) {
@@ -1294,6 +1780,7 @@ module.exports = {
   writeDocxZip,
   convertPdfToDocx,
   validateNativePdfDocx,
+  repairNativePdfDocxXml,
   splitPdfToZip,
   mergePdfFiles,
   renderPdfPages,

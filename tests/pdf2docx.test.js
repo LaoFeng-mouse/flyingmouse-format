@@ -108,12 +108,20 @@ test("rejects a DOCX whose document image relationship has no media part", async
   await assert.rejects(validateNativePdfDocx(outputPath), (error) => error.code === "PDF_OFFICE_OUTPUT_INVALID");
 });
 
+async function nativeInputFixture(scratch) {
+  const document = await require('pdf-lib').PDFDocument.create();
+  document.addPage([595, 842]);
+  const filename = path.join(scratch, 'input.pdf');
+  await fsp.writeFile(filename, await document.save());
+  return filename;
+}
+
 test("native image-only output is removed and falls back to structured DOCX", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-native-fallback-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
   const outputPath = path.join(scratch, "out.docx");
   let structured = 0;
-  await convertPdfToDocx("input.pdf", outputPath, null, {
+  await convertPdfToDocx(await nativeInputFixture(scratch), outputPath, null, {
     docenginePath: "fixture-engine",
     pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2]),
@@ -132,7 +140,7 @@ test("native DOCX with editable text keeps the fast path", async (t) => {
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
   const outputPath = path.join(scratch, "out.docx");
   let structured = 0;
-  await convertPdfToDocx("input.pdf", outputPath, null, {
+  await convertPdfToDocx(await nativeInputFixture(scratch), outputPath, null, {
     docenginePath: "fixture-engine",
     pdfTextPages: [{ pageNumber: 1, rows: [["Editable result"]] }],
     run: async (_engine, args) => fixtureDocx(args[2], "Editable result"),
@@ -197,7 +205,7 @@ test("native validation and structured fallback failures preserve an existing de
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
   const outputPath = path.join(scratch, "out.docx");
   await fsp.writeFile(outputPath, "KEEP");
-  await assert.rejects(convertPdfToDocx("input.pdf", outputPath, null, {
+  await assert.rejects(convertPdfToDocx(await nativeInputFixture(scratch), outputPath, null, {
     docenginePath: "fixture-engine",
     pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2], "Looks editable"),
@@ -211,7 +219,7 @@ test("native and structured failures leave no destination when none existed", as
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-native-no-output-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
   const outputPath = path.join(scratch, "out.docx");
-  await assert.rejects(convertPdfToDocx("input.pdf", outputPath, null, {
+  await assert.rejects(convertPdfToDocx(await nativeInputFixture(scratch), outputPath, null, {
     docenginePath: "fixture-engine",
     pdfTextPages: [],
     run: async (_engine, args) => fixtureDocx(args[2], "Looks editable", { malformed: true }),

@@ -102,6 +102,16 @@ function bundledDocenginePath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
+function bundledCr2DecoderPath() {
+  const resourcesPath = process.resourcesPath || "";
+  return [
+    process.env.FLYINGMOUSE_CR2_DECODER_PATH,
+    resourcesPath && path.join(resourcesPath, "libraw", "dcraw_emu.exe"),
+    path.join(ROOT, "bin", "libraw", "dcraw_emu.exe"),
+    path.join(process.cwd(), "bin", "libraw", "dcraw_emu.exe")
+  ].filter(Boolean).find(candidate => fs.existsSync(candidate)) || "";
+}
+
 function bundledQpdfPath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
@@ -142,6 +152,7 @@ const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
+const CR2_DECODER_PATH = bundledCr2DecoderPath();
 const DOCENGINE_PATH = bundledDocenginePath();
 const QPDF_PATH = bundledQpdfPath();
 const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
@@ -219,6 +230,7 @@ module.exports = {
   PDFTOPPM_PATH,
   TESSDATA_PATH,
   DCRAW_PATH,
+  CR2_DECODER_PATH,
   DOCENGINE_PATH,
   QPDF_PATH,
   DOCSTRUCTURE_ENGINE_PATH,

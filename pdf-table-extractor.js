@@ -22,6 +22,92 @@ function normalizeConfidence(value) {
   return clamp(numeric > 1 ? numeric / 100 : numeric);
 }
 
+function normalizeTextStyle(value) {
+  const style = {};
+  if (!value || typeof value !== "object") return style;
+  for (const key of ["fontName", "fontFamily", "sourceFontName"]) {
+    if (typeof value[key] === "string" && value[key].trim()) style[key] = value[key].trim();
+  }
+  if (Number.isFinite(value.fontSizePt) && value.fontSizePt > 0) style.fontSizePt = value.fontSizePt;
+  for (const key of ["bold", "italic"]) if (typeof value[key] === "boolean") style[key] = value[key];
+  return style;
+}
+
+function wordBounds(words) {
+  const x = Math.min(...words.map(word => word.x));
+  const y = Math.min(...words.map(word => word.y));
+  return { x, y, width: Math.max(...words.map(word => word.x + word.width)) - x,
+    height: Math.max(...words.map(word => word.y + word.height)) - y };
+}
+
+function commonTextStyle(words) {
+  if (!words.length) return {};
+  const style = { ...words[0].style };
+  for (const key of Object.keys(style)) {
+    if (!words.every(word => word.style?.[key] === style[key])) delete style[key];
+  }
+  return style;
+}
+
+function textRuns(words, preserveLines = false, mergeChinese = false) {
+  const rows = preserveLines ? clusterRows(words).map(row => row.words) : [words];
+  return rows.flatMap((row, rowIndex) => row.map((word, index) => {
+    let prefix = index ? " " : rowIndex ? "\n" : "";
+    if (mergeChinese && index && /[\u4e00-\u9fff]$/.test(row[index - 1].text) && /^[\u4e00-\u9fff]/.test(word.text)) prefix = "";
+    const text = mergeChinese ? word.text.replace(/([\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, "$1") : word.text;
+    return { text: prefix + text, x: word.x, y: word.y, width: word.width, height: word.height, style: { ...word.style } };
+  }));
+}
+
+function horizontalAlignment(words, bounds) {
+  if (!bounds || !words.length) return undefined;
+  const width = bounds.right - bounds.left;
+  const lines = clusterRows(words).map(row => {
+    const box = wordBounds(row.words);
+    const left = box.x - bounds.left, right = bounds.right - box.x - box.width;
+    const tolerance = Math.max(0.75, Math.min(box.height * 0.2, width * 0.02));
+    return { box, left, right, tolerance };
+  });
+  const alignments = lines.map(({ box, left, right, tolerance }) => {
+    if (left < -tolerance || right < -tolerance || left + right <= tolerance * 2) return undefined;
+    if (Math.abs(left - right) <= tolerance && Math.min(left, right) > tolerance) return "center";
+    const edge = Math.max(1, box.height * 0.6);
+    if (left <= edge && right > edge + tolerance && right - left > tolerance * 2) return "left";
+    if (right <= edge && left > edge + tolerance && left - right > tolerance * 2) return "right";
+    return undefined;
+  });
+  if (alignments[0] && alignments.every(value => value === alignments[0])) return alignments[0];
+  // A nearly full-width line cannot establish alignment by itself. A second
+  // line with clear margins can establish the shared center, provided every
+  // line agrees within the geometry tolerance and stays inside the cell.
+  if (lines.length > 1 && alignments.includes("center")
+    && lines.every(({ left, right, tolerance }) => left >= -tolerance && right >= -tolerance
+      && Math.abs(left - right) / 2 <= tolerance)) return "center";
+  return undefined;
+}
+
+function cellTextStyle(words, bounds, nativeText = true) {
+  if (!words.length) return null;
+  const horizontal = nativeText ? horizontalAlignment(words, bounds) : undefined;
+  return { style: commonTextStyle(words), bbox: wordBounds(words), runs: textRuns(words, nativeText),
+    ...(horizontal ? { horizontal } : {}) };
+}
+
+function cloneTextMetadata(value) {
+  if (!value) return value;
+  return { ...value, ...(value.style ? { style: { ...value.style } } : {}),
+    ...(value.bbox ? { bbox: { ...value.bbox } } : {}),
+    ...(value.runs ? { runs: value.runs.map(run => ({ ...run, style: { ...run.style } })) } : {}) };
+}
+
+function pagePointMetadata(page) {
+  const scale = page.pagePointScale;
+  if (!Number.isFinite(scale) || scale <= 0) return {};
+  return { pagePointScale: scale,
+    ...(Number.isFinite(page.width) && page.width > 0 ? { pageWidthPt: page.width * scale } : {}),
+    ...(Number.isFinite(page.height) && page.height > 0 ? { pageHeightPt: page.height * scale } : {}) };
+}
+
 function normalizeWords(words) {
   if (!Array.isArray(words)) return [];
   if (words.length > MAX_WORDS_PER_PAGE) throw new Error("PDF page has too many text items");
@@ -36,7 +122,8 @@ function normalizeWords(words) {
       y: Number(entry.y) || 0,
       width: Math.max(0, Number(entry.width) || 0),
       height: Math.max(1, Number(entry.height) || 1),
-      confidence: normalizeConfidence(entry.confidence == null ? 1 : entry.confidence)
+      confidence: normalizeConfidence(entry.confidence == null ? 1 : entry.confidence),
+      style: normalizeTextStyle(entry.style)
     }))
     .sort((a, b) => a.y - b.y || a.x - b.x);
 }
@@ -76,6 +163,11 @@ function splitRowBlocks(rows) {
     blocks[blocks.length - 1].push(row);
   });
   return blocks;
+}
+
+function gridCellText(words, preserveLines) {
+  if (!preserveLines) return words.map((entry) => entry.text).join(" ");
+  return clusterRows(words).map((row) => row.words.map((entry) => entry.text).join(" ")).join("\n");
 }
 
 function clusterAnchors(rows, pageWidth) {
@@ -124,12 +216,23 @@ function makeBorderlessTable(rows, pageWidth, pageNumber) {
   const cellWords = rows.map((row) => wordsToCells(row, anchors));
   const populatedRows = cellWords.filter((row) => row.filter((cell) => cell.length).length >= 2);
   if (populatedRows.length < 2) return null;
+  // Independent signatures, prose and page numbers can happen to share one
+  // x anchor. Require two repeated occupied columns on nearby rows before
+  // advertising an unruled table; rejected text remains in the Raw sheet.
+  const nearbyRepeatedColumns = cellWords.slice(1).some((row, index) => {
+    const previous = cellWords[index];
+    const repeated = row.filter((cell, column) => cell.length && previous[column].length).length;
+    const height = median([...rows[index].words, ...rows[index + 1].words].map(word => word.height));
+    return repeated >= 2 && rows[index + 1].center - rows[index].center <= Math.max(24, height * 3.5);
+  });
+  if (!nearbyRepeatedColumns) return null;
   const allWords = rows.flatMap((row) => row.words);
   return {
     rows: cellWords.map((row) => row.map((cell) => cell.map((entry) => entry.text).join(" "))),
     merges: [],
     confidence: confidenceOfWords(allWords, 0.85),
     cellConfidence: cellWords.map((row) => row.map((cell) => confidenceOfWords(cell))),
+    cellStyles: cellWords.map(row => row.map(cell => cellTextStyle(cell, null, false))),
     pages: [pageNumber],
     columnAnchors: anchors,
     bounds: {
@@ -256,6 +359,7 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
   }
   const rows = Array.from({ length: rowCount }, () => Array(columnCount).fill(""));
   const cellConfidence = Array.from({ length: rowCount }, () => Array(columnCount).fill(0));
+  const cellStyles = Array.from({ length: rowCount }, () => Array(columnCount).fill(null));
   const merges = [];
   const damagedMergeCandidates = [];
   for (const cells of groups.values()) {
@@ -267,8 +371,10 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
     const populatedCells = cells.filter((cell) => cellWords[cell.row][cell.column].length > 0).length;
     if (rectangular && populatedCells <= 1) {
       const entries = cells.flatMap((cell) => cellWords[cell.row][cell.column]).sort((a, b) => a.y - b.y || a.x - b.x);
-      rows[startRow][startCol] = entries.map((entry) => entry.text).join(" ");
+      rows[startRow][startCol] = gridCellText(entries, !allowDamagedMergeRecovery);
       cellConfidence[startRow][startCol] = confidenceOfWords(entries);
+      cellStyles[startRow][startCol] = cellTextStyle(entries,
+        { left: xs[startCol], top: ys[startRow], right: xs[endCol + 1], bottom: ys[endRow + 1] }, !allowDamagedMergeRecovery);
       if (cells.length > 1) merges.push({ startRow, startCol, endRow, endCol });
     } else {
       if (rectangular && cells.length > 1) {
@@ -276,8 +382,10 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
       }
       for (const cell of cells) {
         const entries = cellWords[cell.row][cell.column].sort((a, b) => a.y - b.y || a.x - b.x);
-        rows[cell.row][cell.column] = entries.map((entry) => entry.text).join(" ");
+        rows[cell.row][cell.column] = gridCellText(entries, !allowDamagedMergeRecovery);
         cellConfidence[cell.row][cell.column] = confidenceOfWords(entries);
+        cellStyles[cell.row][cell.column] = cellTextStyle(entries,
+          { left: xs[cell.column], top: ys[cell.row], right: xs[cell.column + 1], bottom: ys[cell.row + 1] }, !allowDamagedMergeRecovery);
       }
     }
   }
@@ -290,9 +398,11 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
     const entries = candidate.cells.flatMap((cell) => cellWords[cell.row][cell.column]).sort((a, b) => a.y - b.y || a.x - b.x);
     rows[candidate.startRow][candidate.startCol] = entries.map((entry) => entry.text).join(" ");
     cellConfidence[candidate.startRow][candidate.startCol] = confidenceOfWords(entries);
+    cellStyles[candidate.startRow][candidate.startCol] = cellTextStyle(entries, null, false);
     for (let row = candidate.startRow + 1; row <= candidate.endRow; row += 1) {
       rows[row][candidate.startCol] = "";
       cellConfidence[row][candidate.startCol] = 0;
+      cellStyles[row][candidate.startCol] = null;
     }
     merges.push({ startRow: candidate.startRow, startCol: candidate.startCol, endRow: candidate.endRow, endCol: candidate.endCol });
   }
@@ -301,8 +411,10 @@ function makeGridTable(words, lines, pageNumber, allowDamagedMergeRecovery = fal
     merges,
     confidence: confidenceOfWords(words, 0.95),
     cellConfidence,
+    cellStyles,
     pages: [pageNumber],
     columnAnchors: xs,
+    rowAnchors: ys,
     bounds: { left: xs[0], top: ys[0], right: xs[xs.length - 1], bottom: ys[ys.length - 1] },
     damagedMergeCandidates: damagedMergeCandidates.map((candidate) => ({
       startRow: candidate.startRow, endRow: candidate.endRow,
@@ -323,6 +435,29 @@ function rawRowsFromWords(words) {
   // 此处内联而非 require，避免 runtime↔extractor 模块依赖纠缠。
   const mergeCnSpaces = (text) => String(text || "").replace(/([\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, "$1");
   return clusterRows(words).map((row) => [mergeCnSpaces(row.words.map((entry) => entry.text).join(" "))]);
+}
+
+function rawBlocksFromWords(words, pageWidth) {
+  return clusterRows(words).flatMap((row) => {
+    const gapLimit = Math.max(12, median(row.words.map((word) => word.height)) * 2.5, Number(pageWidth) * 0.025);
+    const groups = [];
+    for (const word of row.words) {
+      const group = groups.at(-1);
+      if (!group || word.x - Math.max(...group.map((entry) => entry.x + entry.width)) > gapLimit) groups.push([word]);
+      else group.push(word);
+    }
+    return groups.map((group) => {
+      const x = Math.min(...group.map((word) => word.x));
+      const y = Math.min(...group.map((word) => word.y));
+      return {
+        text: group.map((word) => word.text).join(" ").replace(/([\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])/g, "$1"),
+        x, y, width: Math.max(...group.map((word) => word.x + word.width)) - x,
+        height: Math.max(...group.map((word) => word.y + word.height)) - y,
+        style: commonTextStyle(group),
+        runs: textRuns(group, false, true)
+      };
+    });
+  });
 }
 
 function editDistance(left, right) {
@@ -634,6 +769,8 @@ function detectTablesOnPage(input = {}) {
     .sort((a, b) => a.bounds.top - b.bounds.top || a.bounds.left - b.bounds.left);
   rawWords.push(...words.filter((entry) => rejectedIds.has(entry.id)));
   const warnings = [];
+  const unresolvedFonts = new Set(words.filter(word => word.style.sourceFontName && !word.style.fontName).map(word => word.style.sourceFontName));
+  if (unresolvedFonts.size) warnings.push(`P${String(pageNumber).padStart(3, "0")}: ${unresolvedFonts.size} PDF font names unresolved; generic font family retained`);
   tables.forEach((table, index) => {
     const corrected = input.source === "ocr" ? repairArithmeticColumns(table) : 0;
     if (corrected) warnings.push(`P${String(pageNumber).padStart(3, "0")}-T${String(index + 1).padStart(2, "0")}: ${corrected} numeric cells corrected by arithmetic consistency`);
@@ -644,8 +781,10 @@ function detectTablesOnPage(input = {}) {
     source: input.source === "ocr" ? "ocr" : "text",
     width: Number(input.width) || 0,
     height: Number(input.height) || 0,
+    ...pagePointMetadata(input),
     tables,
     rawRows: rawRowsFromWords(rawWords),
+    rawBlocks: rawBlocksFromWords(rawWords, input.width),
     warnings
   };
 }
@@ -710,15 +849,49 @@ function cloneTableAsSheet(table, name, source) {
     rows: table.rows.map((row) => [...row]),
     merges: table.merges.map((merge) => ({ ...merge })),
     cellConfidence: table.cellConfidence.map((row) => [...row]),
+    cellStyles: (table.cellStyles || table.rows.map(row => row.map(() => null))).map(row => row.map(cloneTextMetadata)),
     confidence: table.confidence,
     pages: [...table.pages],
     columnAnchors: [...(table.columnAnchors || [])],
+    rowAnchors: [...(table.rowAnchors || [])],
     bounds: { ...table.bounds },
     pageWidth: table.pageWidth || 0,
     pageHeight: table.pageHeight || 0,
+    ...pagePointMetadata({ width: table.pageWidth, height: table.pageHeight, pagePointScale: table.pagePointScale }),
     kind: table.kind || "unknown",
     damagedMergeCandidates: (table.damagedMergeCandidates || []).map((candidate) => ({ ...candidate }))
   };
+}
+
+function singlePageForm(page) {
+  if (page.source !== "text" || page.tables?.length !== 1 || ![page.width, page.height].every(Number.isFinite)
+    || !(page.width > 0 && page.height > 0)) return null;
+  const table = page.tables[0];
+  const blocks = page.rawBlocks;
+  const count = table.rows?.[0]?.length || 0;
+  const increasing = (values, length) => Array.isArray(values) && values.length === length
+    && values.every((value, index) => Number.isFinite(value) && (index === 0 || value > values[index - 1]));
+  if (table.kind !== "grid" || count < 2 || !increasing(table.columnAnchors, count + 1)
+    || !increasing(table.rowAnchors, table.rows.length + 1) || !blocks?.length || blocks.length > 80) return null;
+  const bounds = table.bounds;
+  if (!bounds || ![bounds.left, bounds.top, bounds.right, bounds.bottom].every(Number.isFinite)) return null;
+  const tolerance = Math.max(1, page.height * 0.0015);
+  if (bounds.left < -tolerance || bounds.top < -tolerance || bounds.right > page.width + tolerance
+    || bounds.bottom > page.height + tolerance || bounds.right <= bounds.left || bounds.bottom <= bounds.top
+    || Math.abs(table.columnAnchors[0] - bounds.left) > tolerance
+    || Math.abs(table.columnAnchors.at(-1) - bounds.right) > tolerance
+    || Math.abs(table.rowAnchors[0] - bounds.top) > tolerance
+    || Math.abs(table.rowAnchors.at(-1) - bounds.bottom) > tolerance) return null;
+  const beforeBlocks = [], afterBlocks = [];
+  for (const block of blocks) {
+    if (![block.x, block.y, block.width, block.height].every(Number.isFinite) || block.width <= 0 || block.height <= 0
+      || block.x < -tolerance || block.y < -tolerance || block.x + block.width > page.width + tolerance
+      || block.y + block.height > page.height + tolerance) return null;
+    if (block.y + block.height <= bounds.top + tolerance) beforeBlocks.push(cloneTextMetadata(block));
+    else if (block.y >= bounds.bottom - tolerance) afterBlocks.push(cloneTextMetadata(block));
+    else return null; // Sidebars and overlapping text cannot be safely attached to this form.
+  }
+  return { pageWidth: page.width, pageHeight: page.height, ...pagePointMetadata(page), beforeBlocks, afterBlocks };
 }
 
 function buildWorkbookModel(pages = []) {
@@ -734,6 +907,8 @@ function buildWorkbookModel(pages = []) {
         merges: [],
         cellConfidence: [],
         confidence: 0,
+        rawBlocks: (page.rawBlocks || []).map(cloneTextMetadata),
+        ...pagePointMetadata(page),
         pages: [page.pageNumber]
       });
       warnings.push(`P${String(page.pageNumber).padStart(3, "0")}: no table detected; raw text retained`);
@@ -744,13 +919,22 @@ function buildWorkbookModel(pages = []) {
     page.tables.forEach((table, index) => {
       table.pageWidth = page.width;
       table.pageHeight = page.height;
+      if (Number.isFinite(page.pagePointScale) && page.pagePointScale > 0) table.pagePointScale = page.pagePointScale;
       const continuation = candidates.find((sheet) => !continued.has(sheet) && canContinue(sheet, table, page));
       if (continuation) {
         continued.add(continuation);
+        // One coordinate factor cannot describe pages rendered at different
+        // scales. Font sizes in runs remain independently expressed in points.
+        if (continuation.pagePointScale !== table.pagePointScale) {
+          delete continuation.pagePointScale;
+          delete continuation.pageWidthPt;
+          delete continuation.pageHeightPt;
+        }
         const firstDataRow = sameHeader(continuation, table) ? 1 : 0;
         const rowOffset = continuation.rows.length - firstDataRow;
         continuation.rows.push(...table.rows.slice(firstDataRow).map((row) => [...row]));
         continuation.cellConfidence.push(...table.cellConfidence.slice(firstDataRow).map((row) => [...row]));
+        continuation.cellStyles.push(...(table.cellStyles || table.rows.map(row => row.map(() => null))).slice(firstDataRow).map(row => row.map(cloneTextMetadata)));
         continuation.merges.push(...table.merges.filter((merge) => merge.startRow >= firstDataRow).map((merge) => ({
           startRow: merge.startRow + rowOffset,
           endRow: merge.endRow + rowOffset,
@@ -774,6 +958,10 @@ function buildWorkbookModel(pages = []) {
         const sheet = cloneTableAsSheet(table, name, page.source);
         sheet.pageWidth = page.width;
         sheet.pageHeight = page.height;
+        if (pages.length === 1) {
+          const form = singlePageForm(page);
+          if (form) sheet.pageForm = form;
+        }
         sheets.push(sheet);
       }
     });
@@ -782,7 +970,9 @@ function buildWorkbookModel(pages = []) {
         name: `P${String(page.pageNumber).padStart(3, "0")}-Raw`,
         source: page.source,
         rows: page.rawRows.map((row) => [...row]),
-        merges: [], cellConfidence: [], confidence: 0, pages: [page.pageNumber]
+        merges: [], cellConfidence: [], confidence: 0, pages: [page.pageNumber],
+        rawBlocks: (page.rawBlocks || []).map(cloneTextMetadata),
+        ...pagePointMetadata(page)
       });
       warnings.push(`P${String(page.pageNumber).padStart(3, "0")}: non-table text retained in Raw sheet`);
     }

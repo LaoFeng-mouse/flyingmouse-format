@@ -38,6 +38,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: .\scripts\restore-ci-engines.ps1
 
+      - name: Restore SHA-pinned CR2 engine and Microsoft runtime
+        run: npm run restore:libraw
+
       - name: Validate locked document structure engine
         shell: powershell
         run: node scripts/lock-docstructure-engine.js --verify --root bin/docstructure --lock docstructure-engine-lock.json
