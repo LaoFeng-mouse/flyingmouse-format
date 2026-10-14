@@ -2,7 +2,7 @@
 // Numerator/denominator membership comes from source coordinates, never from
 // guessing a flattened expression. Ambiguous confirmed fractions fail closed.
 const fs = require('node:fs/promises');
-const { loadPdfjs } = require('./pdfjs');
+const { loadPdfjs, getPdfjsDocumentOptions } = require('./pdfjs');
 const { parseXmlToJson } = require('./xml-json');
 const { throwIfCanceled } = require('./conversion-cancellation');
 
@@ -184,8 +184,8 @@ async function nativeMathGeometry(inputPath,pages,{signal}={}) {
   const lib=await loadPdfjs();let task;
   const cancel=()=>{if(task)void task.destroy().catch(()=>{});};
   try {
-    task=lib.getDocument({data:new Uint8Array(await fs.readFile(inputPath)),isEvalSupported:false,disableFontFace:true,
-      useSystemFonts:true,stopAtErrors:true});signal?.addEventListener('abort',cancel,{once:true});throwIfCanceled(signal);
+    task=lib.getDocument(getPdfjsDocumentOptions({data:new Uint8Array(await fs.readFile(inputPath)),isEvalSupported:false,disableFontFace:true,
+      useSystemFonts:true,stopAtErrors:true}));signal?.addEventListener('abort',cancel,{once:true});throwIfCanceled(signal);
     const pdf=await task.promise,fractionResult=[],operatorResult=[];
     for(const source of candidates) {
       throwIfCanceled(signal);

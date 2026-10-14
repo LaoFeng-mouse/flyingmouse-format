@@ -1,5 +1,5 @@
 const fsp = require("node:fs/promises");
-const { loadPdfjs } = require("./pdfjs");
+const { loadPdfjs, getPdfjsDocumentOptions } = require("./pdfjs");
 
 const MIN_NATIVE_CHARACTERS = 24;
 const MIN_PRINTABLE_RATIO = 0.8;
@@ -362,12 +362,12 @@ async function ocrImageCoverageFromOperators(operatorList, OPS, viewport, object
 async function classifyPdf(inputPath) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
-  const loadingTask = pdfjs.getDocument({
+  const loadingTask = pdfjs.getDocument(getPdfjsDocumentOptions({
     data,
     disableFontFace: true,
     useSystemFonts: true,
     isEvalSupported: false
-  });
+  }));
 
   try {
     const pdf = await loadingTask.promise;

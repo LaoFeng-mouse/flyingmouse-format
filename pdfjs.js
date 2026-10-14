@@ -2,7 +2,40 @@
 // 第三批抽取自 server.js（零逻辑改动，纯搬移）。
 
 const path = require("path");
+const fsp = require("fs/promises");
 const { fileURLToPath, pathToFileURL } = require("url");
+
+// PDF.js 6's Node factory treats a file URL string as a filesystem path, but
+// the JS decoder fallback requires a file URL for dynamic import on Windows.
+// Keep both paths local and use URL objects when reading decoder resources.
+class LocalPdfjsBinaryDataFactory {
+  constructor(options) {
+    this.urls = options;
+  }
+
+  async fetch({ kind, filename }) {
+    if (!["cMapUrl", "standardFontDataUrl", "wasmUrl"].includes(kind)
+      || typeof filename !== "string" || !/^[a-zA-Z0-9_.-]+$/.test(filename)
+      || filename === "." || filename === "..") {
+      throw new Error("Invalid PDF.js resource request");
+    }
+    const baseUrl = this.urls[kind];
+    if (!baseUrl) throw new Error(`Ensure that the \`${kind}\` API parameter is provided.`);
+    const resourceUrl = new URL(filename, baseUrl);
+    if (resourceUrl.protocol !== "file:") throw new Error("PDF.js resources must be local files");
+    return new Uint8Array(await fsp.readFile(resourceUrl));
+  }
+}
+
+function getPdfjsDocumentOptions(options = {}) {
+  return {
+    ...options,
+    wasmUrl: pathToFileURL(path.join(__dirname, "node_modules", "pdfjs-dist", "wasm") + path.sep).href,
+    BinaryDataFactory: LocalPdfjsBinaryDataFactory,
+    useWorkerFetch: false,
+    isEvalSupported: false
+  };
+}
 
 function normalizePdfjsEntry(value) {
   let normalized = String(value || "");
@@ -94,6 +127,7 @@ function createPdfjsLoader(options) {
 const loadPdfjs = createPdfjsLoader();
 
 module.exports = {
+  getPdfjsDocumentOptions,
   normalizePdfjsEntry,
   isMissingPdfjsEntry,
   resolvePdfjsEntrySpecifiers,

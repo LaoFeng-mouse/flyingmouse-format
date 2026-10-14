@@ -13,7 +13,7 @@ const { PDFTOPPM_PATH, DOCENGINE_PATH } = require("./config");
 const { run, commandExists } = require("./utils");
 const { inspectImageMetadata } = require("./image");
 const { ocrAvailable, createOcrWorker } = require("./ocr");
-const { loadPdfjs } = require("./pdfjs");
+const { loadPdfjs, getPdfjsDocumentOptions } = require("./pdfjs");
 const { imageCoverageFromOperators, ocrImageCoverageFromOperators } = require("./pdf-classifier");
 const { LIMITS, assertPdfPages } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
@@ -108,12 +108,12 @@ function groupPdfItemsIntoRows(items, viewport) {
 async function extractPdfRowsByPage(inputPath) {
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
-  const loadingTask = pdfjsLib.getDocument({
+  const loadingTask = pdfjsLib.getDocument(getPdfjsDocumentOptions({
     data,
     disableFontFace: true,
     useSystemFonts: true,
     isEvalSupported: false
-  });
+  }));
   const pages = [];
   try {
     const pdf = await loadingTask.promise;
@@ -298,12 +298,12 @@ function camelotTablesQualityOk(tables) {
 async function extractComplexPdfTableModel(inputPath, options = {}) {
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
-  const loadingTask = pdfjsLib.getDocument({
+  const loadingTask = pdfjsLib.getDocument(getPdfjsDocumentOptions({
     data,
     disableFontFace: true,
     useSystemFonts: true,
     isEvalSupported: false
-  });
+  }));
   let tempDir;
   const rendered = new Map();
   let worker = null;

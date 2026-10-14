@@ -74,8 +74,22 @@ test("PDF extraction disables PDF.js eval support", () => {
   assert.notStrictEqual(functionEnd, -1);
   assert.match(
     extractSource,
-    /pdfjsLib\.getDocument\(\{\s*data,\s*disableFontFace:\s*true,\s*useSystemFonts:\s*true,\s*isEvalSupported:\s*false\s*\}\)/s
+    /pdfjsLib\.getDocument\(getPdfjsDocumentOptions\(\{\s*data,\s*disableFontFace:\s*true,\s*useSystemFonts:\s*true,\s*isEvalSupported:\s*false\s*\}\)\)/s
   );
+});
+
+test("PDF.js decoder resources stay local and cannot enable eval or worker fetch", async () => {
+  const { getPdfjsDocumentOptions } = require("../pdfjs");
+  const options = getPdfjsDocumentOptions({ isEvalSupported: true, useWorkerFetch: true,
+    wasmUrl: "https://example.invalid/", maxImageSize: 100 });
+  assert.equal(options.isEvalSupported, false);
+  assert.equal(options.useWorkerFetch, false);
+  assert.equal(options.maxImageSize, 100);
+  assert.equal(options.wasmUrl, pathToFileURL(path.join(__dirname, "..", "node_modules", "pdfjs-dist", "wasm") + path.sep).href);
+  const factory = new options.BinaryDataFactory(options);
+  await assert.rejects(factory.fetch({ kind: "wasmUrl", filename: "../package.json" }), /Invalid PDF.js resource/);
+  await assert.rejects(factory.fetch({ kind: "wasmUrl", filename: "file:///outside" }), /Invalid PDF.js resource/);
+  await assert.rejects(factory.fetch({ kind: "untrusted", filename: "jbig2.wasm" }), /Invalid PDF.js resource/);
 });
 
 test("PDF.js loader imports the modern layout when it resolves", async () => {

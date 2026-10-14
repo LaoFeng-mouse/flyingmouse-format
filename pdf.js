@@ -851,6 +851,90 @@ function parseNamespaceDocument(xml) {
   return { root: elements[0], elements };
 }
 
+function orderedNamespaceElements(xml) {
+  // The legacy JSON projection groups equal tag names and trims text. Keep it
+  // unchanged for existing consumers; this projection is only for the narrow
+  // inline-image writer's exact, ordered content contract.
+  if (/<!DOCTYPE\b/i.test(xml)) throw nativeDocxInvalid();
+  const { XMLParser } = require('fast-xml-parser');
+  // An empty entity map enables numeric XML references without HTML names.
+  const parsed = new XMLParser({ preserveOrder: true, ignoreAttributes: false,
+    attributeNamePrefix: '@', trimValues: false, parseTagValue: false,
+    parseAttributeValue: false, htmlEntities: {}, ignoreDeclaration: true, ignorePiTags: true }).parse(xml);
+  const elements = [];
+  function visit(nodes, inheritedNamespaces, parentIndex = -1) {
+    for (const node of nodes) {
+      const name = Object.keys(node).find(key => key !== ':@' && key !== '#text');
+      if (!name) continue;
+      const namespaces = new Map(inheritedNamespaces), rawAttributes = node[':@'] || {};
+      for (const [key, value] of Object.entries(rawAttributes)) {
+        if (key === '@xmlns') namespaces.set('', value);
+        else if (key.startsWith('@xmlns:')) namespaces.set(key.slice(7), value);
+      }
+      const attributes = [];
+      for (const [key, value] of Object.entries(rawAttributes)) {
+        if (key === '@xmlns' || key.startsWith('@xmlns:')) continue;
+        const attribute = qualifiedName(key.slice(1));
+        attributes.push({ namespaceURI: attribute.prefix ? namespaces.get(attribute.prefix) || '' : '',
+          localName: attribute.localName, value });
+      }
+      const qname = qualifiedName(name), children = node[name], index = elements.length;
+      if (!Array.isArray(children)) throw nativeDocxInvalid();
+      elements.push({ parentIndex, namespaceURI: namespaces.get(qname.prefix) || '',
+        localName: qname.localName, attributes,
+        text: children.filter(child => Object.hasOwn(child, '#text')).map(child => String(child['#text'])).join('') });
+      visit(children, namespaces, index);
+    }
+  }
+  visit(parsed, new Map());
+  return elements;
+}
+
+function nativeInlineParagraphs(documentXml, imageHashes) {
+  const elements = orderedNamespaceElements(documentXml), paragraphs = [], paragraphByIndex = new Map();
+  const word = (element, name) => element?.namespaceURI === WORDPROCESSING_NAMESPACE && element.localName === name;
+  elements.forEach((element, index) => {
+    if (word(element, 'p')) {
+      let ancestor = elements[element.parentIndex];
+      while (ancestor && !word(ancestor, 'body')) ancestor = elements[ancestor.parentIndex];
+      if (ancestor) { const tokens = []; paragraphs.push(tokens); paragraphByIndex.set(index, tokens); }
+    }
+  });
+  for (const element of elements) {
+    let token;
+    const parent = elements[element.parentIndex];
+    if (word(element, 't') && word(parent, 'r')) token = { text: String(element.text) };
+    else if (word(element, 'tab') && word(parent, 'r')) token = { text: '\t' };
+    else if ((word(element, 'br') || word(element, 'cr')) && word(parent, 'r')) token = { text: '\n' };
+    else if (element.namespaceURI === DRAWINGML_NAMESPACE && element.localName === 'blip') {
+      const hash = imageHashes.get(elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, 'embed'));
+      if (!hash) throw nativeDocxInvalid();
+      token = { imageSha256: hash };
+    } else continue;
+    let parentIndex = element.parentIndex;
+    while (parentIndex >= 0 && !paragraphByIndex.has(parentIndex)) parentIndex = elements[parentIndex].parentIndex;
+    if (parentIndex < 0) throw nativeDocxInvalid();
+    const tokens = paragraphByIndex.get(parentIndex);
+    if (Object.hasOwn(token, 'text') && Object.hasOwn(tokens.at(-1) || {}, 'text')) tokens.at(-1).text += token.text;
+    else tokens.push(token);
+  }
+  // docx inserts empty paragraphs to carry section breaks. Empty body
+  // paragraphs contain no content tokens and do not affect this contract.
+  return paragraphs.filter(tokens => tokens.some(token => token.imageSha256 || token.text.length));
+}
+
+function inlineParagraphsEqual(actual, expected) {
+  if (!Array.isArray(expected) || !Array.isArray(actual) || actual.length !== expected.length) return false;
+  return expected.every((paragraph, index) => Array.isArray(paragraph) && paragraph.length === actual[index].length
+    && paragraph.every((token, tokenIndex) => {
+      const received = actual[index][tokenIndex];
+      if (!token || typeof token !== 'object' || Object.keys(token).length !== 1) return false;
+      return typeof token.text === 'string' ? received.text === token.text
+        : typeof token.imageSha256 === 'string' && /^[a-f0-9]{64}$/.test(token.imageSha256)
+          && received.imageSha256 === token.imageSha256;
+    }));
+}
+
 function elementsNamed(elements, namespaceURI, localName) {
   return elements.filter((element) =>
     element.namespaceURI === namespaceURI && element.localName === localName);
@@ -897,7 +981,7 @@ function visibleFractionText(element, elements, children) {
   return true;
 }
 
-async function validateNativePdfDocx(outputPath) {
+async function validateNativePdfDocx(outputPath, options = {}) {
   try {
     const inspected = await inspectNativeDocxPackage(outputPath);
     const contentTypes = inspected.buffers.get("[Content_Types].xml")?.toString("utf8");
@@ -928,6 +1012,7 @@ async function validateNativePdfDocx(outputPath) {
     const blips = elementsNamed(documentElements, DRAWINGML_NAMESPACE, "blip");
     const blipIds = blips
       .map((element) => elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, "embed"));
+    const imageTargets = new Map();
     if (blipIds.some((id) => !id)) throw nativeDocxInvalid();
     if (blipIds.length) {
       const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
@@ -951,6 +1036,7 @@ async function validateNativePdfDocx(outputPath) {
         if (!relationship || relationship.mode || !relationship.type.endsWith("/image")
           || !relationship.target.startsWith("media/") || !safePackageEntry(relationship.target)
           || !inspected.names.has(`word/${relationship.target}`)) throw nativeDocxInvalid();
+        imageTargets.set(id, `word/${relationship.target}`);
       }
     }
 
@@ -963,10 +1049,31 @@ async function validateNativePdfDocx(outputPath) {
       element.namespaceURI === WORDPROCESSING_NAMESPACE && element.localName === "t"
       || visibleFractionText(element, documentElements, documentChildren))
       .map((element) => String(element.text)).join(" ");
-    if (!editableText.trim()) {
+    const hasEditableContent = Boolean(editableText.trim());
+    // This exception is used only after the inline route proves its complete
+    // expected image sequence. Native/OCR callers still require editable text.
+    const allowImageOnlyInline = options.includeInlineParagraphs === true
+      && options.allowImageOnlyInline === true && imageTargets.size > 0;
+    if (!hasEditableContent && !allowImageOnlyInline) {
       const error = new Error("Native PDF conversion produced no editable content.");
       error.code = "PDF_DOCX_NO_EDITABLE_CONTENT";
       throw error;
+    }
+    if (options.includeInlineParagraphs) {
+      const imageHashes = new Map();
+      if (imageTargets.size) {
+        const media = await inspectNativeDocxPackage(outputPath, new Set(imageTargets.values()));
+        const hashesByTarget = new Map();
+        for (const [id, target] of imageTargets) {
+          if (!hashesByTarget.has(target)) {
+            const bytes = media.buffers.get(target);
+            if (!bytes) throw nativeDocxInvalid();
+            hashesByTarget.set(target, crypto.createHash('sha256').update(bytes).digest('hex'));
+          }
+          imageHashes.set(id, hashesByTarget.get(target));
+        }
+      }
+      return { hasEditableContent, editableText, inlineParagraphs: nativeInlineParagraphs(documentXml, imageHashes) };
     }
     return { hasEditableContent: true, editableText };
   } catch (error) {
@@ -1306,6 +1413,46 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
             "PDF_DOCX_NO_EDITABLE_CONTENT", "PDF_DOCX_TEXT_COVERAGE_FAILED"].includes(structureFailure?.code)) throw structureFailure;
         }
       }
+    }
+  }
+
+  // Short raster labels embedded in native prose must retain their visible
+  // pixels without sending the surrounding editable text through whole-page
+  // OCR. Touching glyphs stay in the same visible crop to avoid reconstructing
+  // hidden text. The converter accounts for every glyph and image, and the
+  // remaining editable segments still pass coverage before atomic publication.
+  if (source.some(pdfPageNeedsOcr)) {
+    const notApplicable = Symbol('inline-image-docx-not-applicable');
+    try {
+      return await withAttemptOutput(outputPath, async attemptPath => {
+        const convertInline = options.convertInlineImagePdfToDocx
+          || require('./pdf-inline-image-docx').convertInlineImagePdfToDocx;
+        const result = await convertInline({ inputPath, outputPath: attemptPath, pages: source, options });
+        if (!result) throw notApplicable;
+        const expectedInline = result.expectedInlineParagraphs;
+        const includeInlineParagraphs = expectedInline !== undefined;
+        const allowImageOnlyInline = includeInlineParagraphs
+          && Number.isSafeInteger(result.rasterizedLineCount) && result.rasterizedLineCount > 0
+          && result.hasEditableContent === false
+          && inlineParagraphsEqual(expectedInline, expectedInline)
+          && expectedInline.some(paragraph => paragraph.some(token => typeof token.imageSha256 === 'string'));
+        const validation = await validateNativePdfDocx(attemptPath,
+          { includeInlineParagraphs, allowImageOnlyInline });
+        if (result.expectedInlineParagraphs !== undefined
+          && !inlineParagraphsEqual(validation.inlineParagraphs, result.expectedInlineParagraphs)) {
+          throw structureError('PDF_DOCX_TEXT_COVERAGE_FAILED',
+            '图文重建输出的正文、标点或图片顺序与原文不一致，已停止导出。',
+            'The inline-image output changed text, punctuation or image order; export was stopped.');
+        }
+        if (missingPdfText(result.textCoveragePages || source, validation.editableText).length) {
+          throw structureError('PDF_DOCX_TEXT_COVERAGE_FAILED',
+            '图文重建输出缺少原生文字，已停止导出。',
+            'The inline-image output omitted native text; export was stopped.');
+        }
+        return result;
+      }, options.signal);
+    } catch (error) {
+      if (error !== notApplicable) throw error;
     }
   }
 

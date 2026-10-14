@@ -20,8 +20,45 @@ const {
   imageCoverageFromOperators,
   rectangleUnionArea
 } = require("../pdf-classifier");
-const { loadPdfjs } = require("../pdfjs");
+const { loadPdfjs, getPdfjsDocumentOptions } = require("../pdfjs");
 const { createScannedTablePdf } = require("./helpers/scanned-pdf-fixture");
+
+test("PDF.js resolves the local JBIG2/CCITT decoder through WASM and the JS fallback", async () => {
+  // A generated 32x16 checkerboard encoded as CCITT Group 4. PDF.js 6 uses
+  // the same external jbig2 decoder for CCITT and JBIG2 image streams.
+  const document = await PDFDocument.create();
+  const page = document.addPage([100, 100]);
+  const image = document.context.stream(Buffer.from("MxTMX////yaimYv/////4AIAIA==", "base64"), {
+    Type: "XObject", Subtype: "Image", Width: 32, Height: 16,
+    ColorSpace: "DeviceGray", BitsPerComponent: 1, Filter: "CCITTFaxDecode",
+    DecodeParms: { K: -1, Columns: 32, Rows: 16, BlackIs1: false }
+  });
+  const name = page.node.newXObject("Checkerboard", document.context.register(image));
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(80, 0, 0, 40, 10, 10), drawObject(name), popGraphicsState());
+  const bytes = await document.save();
+  const pdfjs = await loadPdfjs();
+  const decoded = [];
+  for (const useWasm of [true, false]) {
+    const task = pdfjs.getDocument(getPdfjsDocumentOptions({ data: bytes.slice(), useWasm, stopAtErrors: true }));
+    try {
+      const pdf = await task.promise;
+      const parsedPage = await pdf.getPage(1);
+      const operators = await parsedPage.getOperatorList();
+      const index = operators.fnArray.indexOf(pdfjs.OPS.paintImageXObject);
+      assert.notEqual(index, -1, "the image operation must survive decoding");
+      const object = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("decoder did not return image pixels")), 5000);
+        parsedPage.objs.get(operators.argsArray[index][0], value => { clearTimeout(timer); resolve(value); });
+      });
+      assert.ok(object?.data?.length > 0, "missing decoder resources must not silently drop pixels");
+      assert.equal(object.width, 32);
+      assert.equal(object.height, 16);
+      assert.ok(object.data.includes(0) && object.data.includes(255));
+      decoded.push(Buffer.from(object.data));
+    } finally { await task.destroy(); }
+  }
+  assert.deepEqual(decoded[0], decoded[1], "WASM and JS must recover the same pixels");
+});
 
 async function createImagePdf(outputPath, { text, images }) {
   const document = await PDFDocument.create();

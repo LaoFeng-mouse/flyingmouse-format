@@ -16,6 +16,7 @@ const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
+const { assertPdfInputHeader } = require("./pdf-input");
 
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
@@ -637,6 +638,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
 
   try {
     reportConversionProgress({ stage: "merging" });
+    for (const file of pdfFiles) await assertPdfInputHeader(file.inputPath, file.originalName);
     await mergePdfFiles(pdfFiles, outputPath);
     reportConversionProgress({ stage: "validating" });
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
@@ -657,7 +659,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
     logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    if (error.code === "PDF_ENCRYPTED_INPUT") {
+    if (["PDF_ENCRYPTED_INPUT", "PDF_INVALID_INPUT"].includes(error.code)) {
       res.status(422).json({ error: error.message, errorCode: error.code, messages: error.messages });
       return;
     }
@@ -746,6 +748,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
 
   try {
     reportConversionProgress({ stage: "converting" });
+    if (category === "pdf") await assertPdfInputHeader(file.path, originalName);
     if (category === "image") {
       conversionResult = await convertImage(file.path, outputPath, requestedTarget, { inputName: originalName });
     } else if (category === "subtitle") {
@@ -888,6 +891,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
       "PDF_ENCRYPT_UNAVAILABLE",
       "PDF_ENCRYPT_NO_PASSWORD",
       "PDF_ENCRYPTED_INPUT",
+      "PDF_INVALID_INPUT",
       "PRESENTATION_HTML_EMPTY",
       "BMP_UNSUPPORTED_VARIANT",
       "JSON_CSV_PATH_COLLISION",

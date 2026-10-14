@@ -219,3 +219,59 @@ test("encrypted PDF merge and fallback splitting reject before publishing empty 
   assert.equal(response.status, 422, JSON.stringify(payload));
   assert.equal(payload.errorCode, "PDF_ENCRYPTED_INPUT");
 });
+
+test("PDF merge identifies a disguised non-PDF input without publishing a partial result", async (t) => {
+  const source = await PDFDocument.create();
+  source.addPage().drawText("This valid PDF must not be silently merged on its own.");
+  const valid = Buffer.from(await source.save());
+  const invalid = Buffer.from("FlyingMouse Format diagnostics\nThis is a text report, not PDF data.\n");
+  const invalidName = "原始题目（诊断文本）.pdf";
+  const { downloads } = require("../config");
+  const registeredBefore = new Set(downloads.keys());
+  const { server, url } = await require("../server").startServer(0);
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  const form = new FormData();
+  form.append("files", new Blob([valid], { type: "application/pdf" }), "正常题目.pdf");
+  form.append("files", new Blob([invalid], { type: "application/pdf" }), invalidName);
+  const response = await fetch(`${url}/api/merge-pdfs`, { method: "POST", body: form });
+  const payload = await response.json();
+  assert.equal(response.status, 422, JSON.stringify(payload));
+  assert.equal(payload.errorCode, "PDF_INVALID_INPUT");
+  assert.ok(payload.error.includes(invalidName), payload.error);
+  assert.ok(payload.messages.zhCN.includes(invalidName));
+  assert.ok(payload.messages.enUS.includes(invalidName));
+  assert.equal(payload.downloadUrl, undefined);
+  assert.deepEqual(new Set(downloads.keys()), registeredBefore);
+});
+
+test("PDF conversion identifies non-PDF content before invoking an Office converter", async (t) => {
+  const originalName = "题目（实际是文本）.pdf";
+  const { downloads } = require("../config");
+  const registeredBefore = new Set(downloads.keys());
+  const { server, url } = await require("../server").startServer(0);
+  t.after(() => new Promise((resolve) => { server.closeAllConnections(); server.close(resolve); }));
+  const form = new FormData();
+  form.append("file", new Blob(["FlyingMouse Format diagnostics\nNot PDF data."], { type: "application/pdf" }), originalName);
+  form.append("targetFormat", "docx");
+  const response = await fetch(`${url}/api/convert`, { method: "POST", body: form });
+  const payload = await response.json();
+  assert.equal(response.status, 422, JSON.stringify(payload));
+  assert.equal(payload.errorCode, "PDF_INVALID_INPUT");
+  assert.ok(payload.error.includes(originalName), payload.error);
+  assert.equal(payload.downloadUrl, undefined);
+  assert.deepEqual(new Set(downloads.keys()), registeredBefore);
+});
+
+test("PDF input header check preserves parser handling of prefixes and damaged PDF bodies", async () => {
+  const { assertPdfInputHeader } = require("../pdf-input");
+  const source = await PDFDocument.create();
+  source.addPage().drawText("Header may span the validation read boundary.");
+  const prefixed = path.join(suiteRoot, "prefixed.pdf");
+  await fsp.writeFile(prefixed, Buffer.concat([Buffer.alloc(65533, 32), Buffer.from(await source.save())]));
+  await assertPdfInputHeader(prefixed, "prefixed.pdf");
+  assert.equal((await PDFDocument.load(await fsp.readFile(prefixed))).getPageCount(), 1);
+  const damaged = path.join(suiteRoot, "damaged.pdf");
+  await fsp.writeFile(damaged, "%PDF-1.7\nThis file has a PDF header but no objects.\n");
+  await assertPdfInputHeader(damaged, "damaged.pdf");
+  await assert.rejects(async () => (await PDFDocument.load(await fsp.readFile(damaged))).getPageCount());
+});

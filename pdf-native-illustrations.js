@@ -3,7 +3,7 @@
 // that arbitrary raster content is an illustration from its coverage alone.
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
-const { loadPdfjs } = require('./pdfjs');
+const { loadPdfjs, getPdfjsDocumentOptions } = require('./pdfjs');
 const { throwIfCanceled } = require('./conversion-cancellation');
 
 const MAX_IMAGE_PIXELS = 50_000_000;
@@ -275,11 +275,11 @@ async function nativeIllustrationSignatures(inputPath, pages, { signal } = {}) {
   try {
     const lib = await loadPdfjs();
     throwIfCanceled(signal);
-    task = lib.getDocument({ data: new Uint8Array(await fs.readFile(inputPath)), disableFontFace: true,
+    task = lib.getDocument(getPdfjsDocumentOptions({ data: new Uint8Array(await fs.readFile(inputPath)), disableFontFace: true,
       useSystemFonts: true, isEvalSupported: false, maxImageSize: MAX_IMAGE_PIXELS,
       // Without stopAtErrors, PDF.js silently drops an oversized image. A
       // surviving smaller figure could then incorrectly certify the page.
-      stopAtErrors: true });
+      stopAtErrors: true }));
     signal?.addEventListener('abort', cancel, { once: true });
     throwIfCanceled(signal);
     const pdf = await task.promise, result = [];
