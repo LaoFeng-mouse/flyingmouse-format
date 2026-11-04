@@ -68,7 +68,9 @@ Windows 会将 Store 应用的 LocalAppData 写入重定向到更深的 `Package
 
 `office-runtime.js` 为转换与 Store 验证共用短、独占、已验证可写的配置目录。Windows 过深的 TEMP 回退到当前用户 LocalAppData；无法创建时仅让 Office 任务失败。`office-process.js` 在期限到达后仅终止本次启动的原生进程树，记录超时、清理状态和有界原生输出。Store helper 通过包内 `office-smoke-runner.js` 复用相同执行器。
 
-原生 PDF→Word 显式请求有长度上限的暂存目录，Windows、macOS 和 Linux 均拒绝过深的 TEMP 并尝试用户所属的短路径备用目录；普通 POSIX Office 任务保留原有路径策略。输入与输出只在本次独占目录暂存，成功后再写回完整目标名称，清理不触及备用目录中的其他文件。
+0.8.4 候选将 `office-convert.js` 的中间输入和输出也放入有长度上限的独占工作目录；仅缩短 Office 配置目录不足以覆盖这些路径。原始文件复制为短输入名后交给引擎，保留扩展名，成功后写回调用方指定的完整目标名称。原文件不改写，失败收尾仅清理身份仍匹配的本次工作目录。深层 TEMP、长中文名称及实际包内 Office 转换须重新验收；缓存准备的 CSV→PDF 冒烟不能替代这些转换路径的验证。
+
+原生 PDF→Word 显式请求有长度上限的暂存目录，Windows、macOS 和 Linux 均拒绝过深的 TEMP 并尝试用户所属的短路径备用目录；0.8.4 的 Office 文档中转也使用同一长度上限。输入与输出只在本次独占目录暂存，成功后再写回完整目标名称，清理不触及备用目录中的其他文件。
 
 ## PDF 与 OCR 路由
 
