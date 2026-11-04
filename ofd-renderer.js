@@ -1035,7 +1035,42 @@ function mapToStandardFont(ofdFont) {
   return import_pdf_lib3.StandardFonts.Helvetica;
 }
 function readBinaryFile2(archive,filePath){return filePath?readBinaryFile(archive,filePath):null;}
-async function registerFontkit(pdfDoc){const fontkit=require('@pdf-lib/fontkit');pdfDoc.registerFontkit(fontkit.default||fontkit);return true;}
+async function registerFontkit(pdfDoc) {
+  const imported = require('@pdf-lib/fontkit');
+  const fontkit = imported.default || imported;
+  pdfDoc.registerFontkit({
+    create(bytes) {
+      const font = fontkit.create(bytes);
+      // pdf-lib expects one font with metrics and createSubset(), not a TTC
+      // collection. Windows may only supply msyh.ttc, whose first face is the
+      // regular Microsoft YaHei face. Keep collection order deterministic.
+      const faces = font.fonts;
+      // fontkit also recognizes DFont collections. Only TTC has a supported
+      // system-fallback policy; do not guess a face for other container types.
+      requireCondition(!faces || Buffer.from(bytes).subarray(0,4).toString('ascii') === 'ttcf', 'OFD_UNSUPPORTED_CONTENT', 'OFD 字体集合格式暂不支持。');
+      requireCondition(!faces || faces.length > 0, 'OFD_UNSUPPORTED_CONTENT', 'OFD 字体集合不含可读取的字体。');
+      return faces ? faces[0] : font;
+    }
+  });
+  return true;
+}
+async function embedFontBytes(pdfDoc, bytes, {collectionFallback=false} = {}) {
+  const isCollection = Buffer.from(bytes).subarray(0,4).toString('ascii') === 'ttcf';
+  // Only system fallback collections have a defined first-face policy. An
+  // embedded collection needs an explicit face mapping, which is unsupported.
+  requireCondition(!isCollection || collectionFallback, 'OFD_UNSUPPORTED_CONTENT', 'OFD 内嵌字体集合暂不支持。');
+  try { return await pdfDoc.embedFont(bytes, {subset:true}); }
+  catch (error) {
+    // A raw TTC cannot be embedded as a standalone PDF font. If extracting its
+    // selected face fails, do not leave an invalid full collection in the PDF.
+    if (isCollection) throw error;
+    return pdfDoc.embedFont(bytes, {subset:false});
+  }
+}
+function isCJKFont(ofdFont) {
+  const name = (ofdFont.name || '').toLowerCase();
+  return /[\u4e00-\u9fff]/.test(ofdFont.name || '') || /song|hei|kai|fang|sim|noto|pingfang|hiragino|source han|wenquanyi|stkaiti|stsong|stheiti|stfangsong|fz|adobe/.test(name);
+}
 var KNOWN_CJK_FONTS = [
   // Google Noto CJK (TTF preferred)
   "NotoSansSC-Regular.ttf",
@@ -1103,9 +1138,7 @@ function getSystemFontDirs() {
     `${home}/.local/share/fonts`
   ];
 }
-var cachedCJKFontPath = null;
 function findSystemCJKFont() {
-  if (cachedCJKFontPath !== null) return cachedCJKFontPath ?? void 0;
   const fs3 = require("fs");
   const path3 = require("path");
   const dirs = getSystemFontDirs();
@@ -1114,7 +1147,6 @@ function findSystemCJKFont() {
       const fullPath = path3.join(dir, fontFile);
       try {
         if (fs3.existsSync(fullPath)) {
-          cachedCJKFontPath = fullPath;
           return fullPath;
         }
       } catch {
@@ -1128,7 +1160,6 @@ function findSystemCJKFont() {
           for (const entry of entries) {
             if (entry.isFile() && KNOWN_CJK_FONTS.includes(entry.name)) {
               const fp = path3.join(d, entry.name);
-              cachedCJKFontPath = fp;
               return fp;
             }
           }
@@ -1146,12 +1177,9 @@ function findSystemCJKFont() {
     } catch {
     }
   }
-  cachedCJKFontPath = void 0;
   return void 0;
 }
-var cachedCJKFontBytes = null;
 function getCJKFontBytes(fontDir) {
-  if (cachedCJKFontBytes) return cachedCJKFontBytes;
   const fs3 = require("fs");
   const path3 = require("path");
   if (fontDir) {
@@ -1159,8 +1187,7 @@ function getCJKFontBytes(fontDir) {
       const fullPath = path3.join(fontDir, fontFile);
       try {
         if (fs3.existsSync(fullPath)) {
-          cachedCJKFontBytes = fs3.readFileSync(fullPath);
-          return cachedCJKFontBytes;
+          return fs3.readFileSync(fullPath);
         }
       } catch {
       }
@@ -1170,8 +1197,7 @@ function getCJKFontBytes(fontDir) {
       for (const entry of entries) {
         if (/\.(ttf|otf)$/i.test(entry)) {
           try {
-            cachedCJKFontBytes = fs3.readFileSync(path3.join(fontDir, entry));
-            return cachedCJKFontBytes;
+            return fs3.readFileSync(path3.join(fontDir, entry));
           } catch {
             continue;
           }
@@ -1183,8 +1209,7 @@ function getCJKFontBytes(fontDir) {
   const systemPath = findSystemCJKFont();
   if (systemPath) {
     try {
-      cachedCJKFontBytes = require("fs").readFileSync(systemPath);
-      return cachedCJKFontBytes;
+      return require("fs").readFileSync(systemPath);
     } catch {
     }
   }
@@ -1201,22 +1226,23 @@ async function renderToPdf(doc, archive, options = {}) {
   const defaultFont = await pdfDoc.embedFont(import_pdf_lib3.StandardFonts.Helvetica);
   const embeddedFontCache = /* @__PURE__ */ new Map();
   const imageCache = new Map();
+  const usedFonts = new Set(doc.pages.flatMap(page => page.layers.flatMap(layer =>
+    layer.objects.filter(obj => obj.type === 'text' && obj.textCodes.some(code => code.text)).map(obj => obj.font))));
   let cjkFont = null;
-  if (hasFontkit) {
+  if (hasFontkit && [...usedFonts].some(id => {
+    const font = doc.fonts.get(id);
+    return font && !font.fontFile && isCJKFont(font);
+  })) {
     const cjkBytes = getCJKFontBytes(options.fontDir);
     if (cjkBytes) {
       try {
-        cjkFont = await pdfDoc.embedFont(cjkBytes, { subset: true });
-      } catch {
-        try {
-          cjkFont = await pdfDoc.embedFont(cjkBytes, { subset: false });
-        } catch {
-        }
-      }
+        cjkFont = await embedFontBytes(pdfDoc, cjkBytes, {collectionFallback:true});
+      } catch {}
     }
   }
   for (const [fontId, ofdFont] of doc.fonts) {
     await checkpoint(options.signal);
+    if (!usedFonts.has(fontId)) continue;
     let pdfFont = null;
     if (!pdfFont && hasFontkit && ofdFont.fontFile) {
       const fontPath = ofdFont.fontFile;
@@ -1228,12 +1254,7 @@ async function renderToPdf(doc, archive, options = {}) {
           const fontBytes = readBinaryFile2(archive, fontPath);
           if (fontBytes && fontBytes.length > 100) {
             try {
-              let embedded;
-              try {
-                embedded = await pdfDoc.embedFont(fontBytes, { subset: true });
-              } catch {
-                embedded = await pdfDoc.embedFont(fontBytes, { subset: false });
-              }
+              const embedded = await embedFontBytes(pdfDoc, fontBytes);
               embeddedFontCache.set(fontPath, embedded);
               pdfFont = embedded;
             } catch {
@@ -1244,9 +1265,7 @@ async function renderToPdf(doc, archive, options = {}) {
     }
     if (ofdFont.fontFile && !pdfFont) throw ofdError("OFD_UNSUPPORTED_CONTENT", "OFD 内嵌字体无法读取，已停止导出以免替换文字。");
     if (!pdfFont && cjkFont) {
-      const fontName = (ofdFont.name || "").toLowerCase();
-      const isCJK = /[\u4e00-\u9fff]/.test(ofdFont.name || "") || fontName.includes("song") || fontName.includes("hei") || fontName.includes("kai") || fontName.includes("fang") || fontName.includes("sim") || fontName.includes("noto") || fontName.includes("pingfang") || fontName.includes("hiragino") || fontName.includes("source han") || fontName.includes("wenquanyi") || fontName.includes("stkaiti") || fontName.includes("stsong") || fontName.includes("stheiti") || fontName.includes("stfangsong") || fontName.includes("fz") || fontName.includes("adobe");
-      if (isCJK) {
+      if (isCJKFont(ofdFont)) {
         pdfFont = cjkFont;
       }
     }

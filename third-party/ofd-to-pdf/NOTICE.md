@@ -52,3 +52,19 @@ These semantics were checked against OFDRW's primary implementation:
 [CT_Path.java](https://raw.githubusercontent.com/ofdrw/ofdrw/master/ofdrw-core/src/main/java/org/ofdrw/core/graph/pathObj/CT_Path.java),
 and [CT_GraphicUnit.java](https://raw.githubusercontent.com/ofdrw/ofdrw/master/ofdrw-core/src/main/java/org/ofdrw/core/pageDescription/CT_GraphicUnit.java).
 This adds rectangular Boundary clipping, not support for arbitrary Clips.
+
+Follow-up modifications by **牢蜂 (LaoFeng), 2026-11-04**:
+
+- Resolve system-fallback TrueType collections to their first face before passing them to
+  pdf-lib. Collection order is deterministic; for Windows `msyh.ttc` this is
+  Microsoft YaHei. Embed a subset of that face, never the raw TTC as a PDF font.
+  This does not identify arbitrary embedded collection faces by `FontName`;
+  embedded TTC fonts remain explicitly unsupported, including mislabeled TTFs.
+  Other collection formats such as Macintosh DFont are rejected by the fontkit
+  adapter, even when mislabeled with a supported standalone font extension.
+- Load fallback fonts only for used text fonts, so an unrelated system font
+  cannot break image-only or blank pages. Keep font-directory selection local
+  to each conversion, and retain explicit rejection of missing glyphs.
+- Exercise real TTC parsing and PDF text extraction with collections built at
+  test time from pdfjs-dist's licensed Liberation Sans font. Windows system
+  fonts are not redistributed by these tests.

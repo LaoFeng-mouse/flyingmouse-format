@@ -1344,9 +1344,9 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
         // Python's native ZIP/PDF stack may reject Windows paths which Node
         // supports. Keep both input and output in an owned short workspace,
         // then publish through Node under the full original destination name.
-        // The existing Office workspace helper also handles an overlong TEMP.
+        // Require bounded staging on every host, including a deep macOS TEMP.
         const workspace = createOfficeWorkspace({ runtimeDir: options.nativeTempRoot || os.tmpdir(),
-          profileFallbackRoot: options.nativeFallbackRoot });
+          profileFallbackRoot: options.nativeFallbackRoot, requireShortPaths: true });
         try {
           const engineInput = path.join(workspace.root, "source.pdf");
           const engineOutput = path.join(workspace.root, "result.docx");

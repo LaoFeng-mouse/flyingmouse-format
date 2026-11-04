@@ -9,6 +9,7 @@ const MAX_PROFILE_PATH_LENGTH = 160;
 function createOfficeWorkspace(options = {}) {
   const io = options.fs || fs;
   const platform = options.platform || process.platform;
+  const requireShortPaths = platform === "win32" || options.requireShortPaths === true;
   const fallback = options.profileFallbackRoot || (platform === "win32"
     ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "FlyingMouseFormat", "o")
     : path.join(os.homedir(), ".cache", "flyingmouse-format", "office"));
@@ -16,7 +17,7 @@ function createOfficeWorkspace(options = {}) {
   const failures = [];
   for (const base of candidates) {
     // Six random characters are appended by mkdtemp, and the profile is /p.
-    if (platform === "win32" && path.join(base, "office-XXXXXX", "p").length > MAX_PROFILE_PATH_LENGTH) {
+    if (requireShortPaths && path.join(base, "office-XXXXXX", "p").length > MAX_PROFILE_PATH_LENGTH) {
       failures.push({ code: "ENAMETOOLONG", length: base.length });
       continue;
     }

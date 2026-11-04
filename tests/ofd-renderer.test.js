@@ -86,7 +86,112 @@ test('namespace shadowing cannot smuggle same local names and incomplete path co
 });
 test('repeated conversions preserve supported Chinese characters rather than question marks',{skip:process.platform !== 'win32'},async()=>{
   const input=await fixture({content:text.replace('VISIBLE CONTROL','飞鼠转换测试'),resources:'<o:Fonts><o:Font ID="2" FontName="SimHei"/></o:Fonts>'});
-  for(let i=0;i<2;i++) assert.ok((await renderer.convert(input,{silent:true})).length>500);
+  for(let i=0;i<2;i++) {
+    const bytes=await renderer.convert(input,{silent:true});
+    assert.ok(bytes.length>500);
+    assert.equal(await extractedPdfText(bytes),'飞鼠转换测试');
+  }
+});
+
+// Build a real TTC from pdfjs-dist's licensed Liberation font, without copying
+// proprietary Windows fonts into the repository or depending on installed fonts.
+async function collectionFontDir(t) {
+  const fs = require('node:fs/promises');
+  const path = require('node:path');
+  const root = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'fm-ofd-fonts-'));
+  t.after(async () => {
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(require('node:os').tmpdir()));
+    assert.ok(path.basename(root).startsWith('fm-ofd-fonts-'));
+    await fs.rm(root, {recursive:true, force:true});
+  });
+  const regular = await fs.readFile(path.join(path.dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts/LiberationSans-Regular.ttf'));
+  const font = Buffer.from(regular);
+  const header = Buffer.alloc(16);
+  header.write('ttcf'); header.writeUInt32BE(0x10000,4); header.writeUInt32BE(1,8); header.writeUInt32BE(16,12);
+  for(let i=0;i<font.readUInt16BE(4);i++) {
+    const offset=12+i*16+8;
+    font.writeUInt32BE(font.readUInt32BE(offset)+header.length,offset);
+  }
+  await fs.writeFile(path.join(root,'msyh.ttc'),Buffer.concat([header,font]));
+  return {root,regular};
+}
+
+function freshRenderer() {
+  delete require.cache[require.resolve('../ofd-renderer')];
+  return require('../ofd-renderer');
+}
+
+async function extractedPdfText(bytes) {
+  const lib=await require('../pdfjs').loadPdfjs();
+  const task=lib.getDocument({data:bytes,isEvalSupported:false,useSystemFonts:false});
+  try {
+    const pdf=await task.promise;
+    return (await (await pdf.getPage(1)).getTextContent()).items.map(item=>item.str||'').join('');
+  } finally { await task.destroy(); }
+}
+
+test('TrueType collection fallback embeds a concrete face and preserves real PDF text',async t=>{
+  const {root}=await collectionFontDir(t);
+  const input=await fixture({resources:'<o:Fonts><o:Font ID="2" FontName="SimHei"/></o:Fonts>'});
+  const isolated=freshRenderer();
+  for(let i=0;i<2;i++) {
+    const bytes=await isolated.convert(input,{silent:true,fontDir:root});
+    assert.ok(bytes.length>500);
+    assert.equal(await extractedPdfText(bytes),'VISIBLE CONTROL');
+  }
+  await assert.rejects(isolated.convert(await fixture({content:text.replace('VISIBLE CONTROL','飞鼠'),resources:'<o:Fonts><o:Font ID="2" FontName="SimHei"/></o:Fonts>'}),{silent:true,fontDir:root}),{code:'OFD_UNSUPPORTED_CONTENT'});
+  const collection=await require('node:fs/promises').readFile(require('node:path').join(root,'msyh.ttc'));
+  for(const filename of ['embedded.ttc','embedded.ttf']) {
+    const embedded=await fixture({resources:`<o:Fonts><o:Font ID="2" FontName="LiberationSans"><o:FontFile>${filename}</o:FontFile></o:Font></o:Fonts>`,extra:{['Doc_0/'+filename]:collection}});
+    await assert.rejects(isolated.convert(embedded,{silent:true,fontDir:root}),{code:'OFD_UNSUPPORTED_CONTENT'});
+  }
+});
+
+test('image and blank OFD pages do not embed an unused collection fallback',async t=>{
+  const {root}=await collectionFontDir(t);
+  const png=await sharp({create:{width:8,height:8,channels:3,background:'red'}}).png().toBuffer();
+  for(const input of [await fixture({content:''}),await fixture({content:image,resources:imageResources,extra:{'Doc_0/Image.png':png}})]) {
+    const bytes=await freshRenderer().convert(input,{silent:true,fontDir:root});
+    const {PDFDocument,PDFDict,PDFName}=require('pdf-lib');
+    const pdf=await PDFDocument.load(bytes);
+    assert.equal(pdf.getPageCount(),1);
+    assert.ok(!pdf.context.enumerateIndirectObjects().some(([,value])=>value instanceof PDFDict && value.has(PDFName.of('FontFile2'))));
+  }
+});
+
+test('embedded DFont collections cannot masquerade as a standalone TTF',async t=>{
+  const {regular}=await collectionFontDir(t);
+  // A real Macintosh resource-fork font collection containing the licensed
+  // standalone font. The DFont header intentionally has no TTC magic.
+  const header=Buffer.alloc(16),data=Buffer.alloc(4+regular.length),map=Buffer.alloc(50);
+  header.writeUInt32BE(16,0); header.writeUInt32BE(16+data.length,4);
+  header.writeUInt32BE(data.length,8); header.writeUInt32BE(map.length,12);
+  data.writeUInt32BE(regular.length,0); regular.copy(data,4);
+  map.writeUInt16BE(28,24); map.writeUInt16BE(50,26); map.writeUInt16BE(0,28);
+  map.write('sfnt',30); map.writeUInt16BE(0,34); map.writeUInt16BE(10,36);
+  map.writeUInt16BE(128,38); map.writeInt16BE(-1,40);
+  const dfont=Buffer.concat([header,data,map]);
+  assert.equal(require('@pdf-lib/fontkit').create(dfont).fonts.length,1);
+  const input=bytes=>fixture({resources:'<o:Fonts><o:Font ID="2" FontName="LiberationSans"><o:FontFile>embedded.ttf</o:FontFile></o:Font></o:Fonts>',extra:{'Doc_0/embedded.ttf':bytes}});
+  const isolated=freshRenderer();
+  assert.equal(await extractedPdfText(await isolated.convert(await input(regular),{silent:true})),'VISIBLE CONTROL');
+  await assert.rejects(isolated.convert(await input(dfont),{silent:true}),{code:'OFD_UNSUPPORTED_CONTENT'});
+});
+
+test('fontDir selection stays local to each conversion',async t=>{
+  const {root,regular}=await collectionFontDir(t);
+  const fs=require('node:fs/promises'),path=require('node:path');
+  const bad=path.join(root,'invalid'); await fs.mkdir(bad);
+  await fs.writeFile(path.join(root,'NotoSansSC-Regular.ttf'),regular);
+  await fs.writeFile(path.join(bad,'NotoSansSC-Regular.ttf'),Buffer.from('invalid font'));
+  const input=await fixture({resources:'<o:Fonts><o:Font ID="2" FontName="SimHei"/></o:Fonts>'});
+  const isolated=freshRenderer();
+  const good=await isolated.convert(input,{silent:true,fontDir:root});
+  const other=await isolated.convert(input,{silent:true,fontDir:bad});
+  const {PDFDocument,PDFDict,PDFName}=require('pdf-lib');
+  const hasEmbedded=async bytes=>(await PDFDocument.load(bytes)).context.enumerateIndirectObjects().some(([,value])=>value instanceof PDFDict && value.has(PDFName.of('FontFile2')));
+  assert.equal(await hasEmbedded(good),true);
+  assert.equal(await hasEmbedded(other),false);
 });
 test('semantic layer and template groups are ordered while same-group XML order is retained',async()=>{
   const template=`<o:Page xmlns:o="${ns}"><o:Content><o:Layer ID="10">${background}</o:Layer></o:Content></o:Page>`;
