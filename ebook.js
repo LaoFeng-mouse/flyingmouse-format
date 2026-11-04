@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const yauzl = require("yauzl");
 const yazl = require("yazl");
+const parse5 = require("parse5");
 const { Readable } = require("stream");
 const { throwIfCanceled } = require("./conversion-cancellation");
 const { captureConversionProgressReporter } = require("./conversion-progress");
@@ -396,21 +397,64 @@ function prepareChapterHtml(chapter, entries) {
   return html;
 }
 
+// Parse before filtering: deleting tag-shaped strings can turn malformed source
+// such as <scr<script>ipt> into a newly executable script in the saved HTML.
+// Keep document structure and mathematical text, with inert attributes only.
+const EPUB_HTML_TAGS = new Set(("a abbr address article aside b bdi bdo blockquote br caption cite code col colgroup "
+  + "dd del details dfn div dl dt em figcaption figure footer h1 h2 h3 h4 h5 h6 header hgroup hr i img ins kbd li main mark nav "
+  + "ol p pre q rp rt ruby s samp section small span strong sub summary sup table tbody td tfoot th thead time tr u ul var wbr "
+  + "math mi mn mo mrow mfrac msup msub msubsup munder mover munderover msqrt mroot mtable mtr mtd mtext mspace semantics").split(" "));
+const EPUB_DROP_CONTENT = new Set("script style iframe object embed base link meta template noscript form input button select textarea audio video source track canvas applet frame frameset".split(" "));
+const EPUB_INERT_ATTRIBUTES = new Set(("id class title lang dir alt width height colspan rowspan scope headers start reversed type value open "
+  + "align valign border cellpadding cellspacing datetime cite display mathvariant stretchy fence form").split(" "));
+
+function sanitizeEpubHtml(html) {
+  const fragment = parse5.parseFragment(html);
+  function clean(parent, depth) {
+    if (depth > 128) throw ebookError("EPUB_HTML_TOO_DEEP", "EPUB 章节嵌套过深，无法安全导出 HTML。");
+    const kept = [];
+    for (const node of parent.childNodes || []) {
+      if (node.nodeName === "#text") { kept.push(node); continue; }
+      if (!node.tagName || EPUB_DROP_CONTENT.has(node.tagName)) continue;
+      clean(node, depth + 1);
+      if (!EPUB_HTML_TAGS.has(node.tagName)) {
+        kept.push(...(node.childNodes || []));
+        continue;
+      }
+      node.attrs = (node.attrs || []).filter(attr => {
+        if (attr.namespace || attr.prefix) return false;
+        if (attr.name === "href") {
+          if (node.tagName !== "a") return false;
+          // HTML parsing has decoded character references. URL parsing also
+          // ignores ASCII tabs/newlines, so normalize those before checking.
+          attr.value = attr.value.trim().replace(/[\t\r\n]/g, "");
+          return /^(?:https?:|mailto:|#)/i.test(attr.value);
+        }
+        if (attr.name === "src") {
+          if (node.tagName !== "img") return false;
+          if (!/^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[a-z0-9+/]*={0,2}$/i.test(attr.value)) {
+            throw ebookError("EPUB_IMAGE_UNSUPPORTED", "EPUB 图片未能转换为安全的内嵌资源。");
+          }
+          return true;
+        }
+        return EPUB_INERT_ATTRIBUTES.has(attr.name);
+      });
+      kept.push(node);
+    }
+    parent.childNodes = kept;
+    for (const child of kept) child.parentNode = parent;
+  }
+  clean(fragment, 0);
+  return parse5.serialize(fragment);
+}
+
 function mergeEpubHtml(xhtmls, entries) {
   const bodies = xhtmls.map((chapter) => {
     const html = prepareChapterHtml(chapter, entries);
     const match = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
     return match ? match[1] : html;
   }).join("\n");
-  const cleaned = bodies
-    .replace(/\sepub:[a-zA-Z-]+="[^"]*"/g, "")
-    .replace(/\sxmlns:[a-zA-Z]+="[^"]*"/g, "")
-    .replace(/<link\b[^>]*>/g, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, "")
-    .replace(/<(script|iframe|object|embed)\b[\s\S]*?<\/\1>/gi, "")
-    .replace(/<(script|iframe|object|embed|base|link)\b[^>]*>/gi, "")
-    .replace(/\s(?:on[a-z]+|srcset|style)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\shref\s*=\s*(["'])(?!https?:|mailto:|#)[\s\S]*?\1/gi, "");
+  const cleaned = sanitizeEpubHtml(bodies);
   return `<!DOCTYPE html>\n<html><head><meta charset="utf-8"><title>book</title></head>\n<body>\n${cleaned}\n</body></html>`;
 }
 

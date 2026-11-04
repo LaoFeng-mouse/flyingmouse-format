@@ -208,3 +208,51 @@ test("the latest dropped folder wins even when an earlier folder finishes scanni
   assert.equal(app.state.files[0].name, "latest-folder.txt");
   assert.equal(app.state.folderName, "latest-folder");
 });
+
+for (const failurePoint of ["file", "directory", "next batch"]) {
+  test(`an unreadable dropped ${failurePoint} reports failure and preserves the current queue`, async () => {
+    const app = harness();
+    await app.accept([{ name: "kept.txt", size: 1 }]);
+    const error = Object.assign(new Error("Synthetic permission denial"), { name: "NotReadableError" });
+    let reads = 0;
+    const entry = { isDirectory: true, name: "unreadable", createReader: () => ({ readEntries(done, fail) {
+      if (failurePoint === "directory" || (failurePoint === "next batch" && reads++)) { fail?.(error); return; }
+      done([{ isFile: true, file(success, failure) {
+        if (failurePoint === "file") failure?.(error);
+        else success({ name: "partial.txt", size: 2 });
+      } }]);
+    } }) };
+    const dropping = app.context.dropZone.listeners.drop({ preventDefault() {}, dataTransfer: {
+      files: [], items: [{ webkitGetAsEntry: () => entry }]
+    } });
+    let timeout;
+    try {
+      await Promise.race([dropping, new Promise((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error("Folder drop did not settle after its read failed")), 500);
+      })]);
+    } finally { clearTimeout(timeout); }
+    assert.equal(app.state.files.length, 1);
+    assert.equal(app.state.files[0].name, "kept.txt");
+    assert.equal(app.statuses.at(-1).type, "error");
+    assert.match(app.statuses.at(-1).message, /Could not read the dropped folder/);
+    assert.equal(app.context.convertButton.disabled, false);
+  });
+}
+
+test("an obsolete dropped-folder failure cannot replace a newer selection's status", async () => {
+  const app = harness();
+  let failFile, reads = 0;
+  const entry = { isDirectory: true, name: "old", createReader: () => ({ readEntries(done) {
+    done(reads++ ? [] : [{ isFile: true, file(_done, fail) { failFile = fail; } }]);
+  } }) };
+  const dropping = app.context.dropZone.listeners.drop({ preventDefault() {}, dataTransfer: {
+    files: [], items: [{ webkitGetAsEntry: () => entry }]
+  } });
+  await new Promise(resolve => setImmediate(resolve));
+  await app.accept([{ name: "new.txt", size: 1 }]);
+  const lastStatus = app.statuses.at(-1);
+  failFile(new Error("late failure"));
+  await dropping;
+  assert.equal(app.state.files[0].name, "new.txt");
+  assert.equal(app.statuses.at(-1), lastStatus);
+});

@@ -695,7 +695,14 @@ async function writePdfOfficeDocx({
       expectedTables: expectedTablesFromManifest(manifest)
     });
     await publishAtomically(temporaryPath, outputPath, fileSystem);
-    return validation;
+    const hasReferences = Number.isSafeInteger(validation.referenceImageCount) && validation.referenceImageCount > 0;
+    return { ...validation, warnings: [...(validation.warnings || []), {
+      code: "PDF_STRUCTURE_REVIEW_REQUIRED",
+      messages: {
+        zhCN: `Word 中的文字和表格由结构识别重建，可能存在错字、漏字或错列；请${hasReferences ? "对照文末原件对照页" : "对照原 PDF"}逐项核对文字、金额和表格列。黄色内容需重点复核，未标黄内容也不代表完全准确。`,
+        enUS: `Word text and tables were reconstructed by recognition and may contain incorrect or missing text or misplaced cells. Review text, amounts and table columns against ${hasReferences ? "the original reference pages at the end" : "the original PDF"}. Yellow content needs particular attention; unhighlighted content is not guaranteed accurate.`
+      }
+    }] };
   } catch (error) {
     try {
       const temporaryInfo = await fileSystem.lstat(temporaryPath);

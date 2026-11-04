@@ -7,7 +7,7 @@ const { reportConversionProgress } = require("./conversion-progress");
 
 const { RUNTIME_DIR, DOCSTRUCTURE_ENGINE_PATH, DOCSTRUCTURE_MODEL_DIR } = require("./config");
 const { structureError, validateStructureManifest } = require("./pdf-structure-contract");
-const { loadPdfjs } = require("./pdfjs");
+const { loadPdfjs, getPdfjsDocumentOptions } = require("./pdfjs");
 const { cancellationError, throwIfCanceled } = require("./conversion-cancellation");
 const { STRUCTURE_LIMITS } = require("./resource-policy");
 const logger = require("./logger");
@@ -199,8 +199,8 @@ async function preflightStructuredPdf(inputPath, options = {}) {
   try {
     throwIfCanceled(options.signal);
     const pdfjs = await (options.loadPdfjs || loadPdfjs)();
-    loading = pdfjs.getDocument({ data: new Uint8Array(await fileSystem.readFile(inputPath)),
-      isEvalSupported: false, useSystemFonts: true, verbosity: 0 });
+    loading = pdfjs.getDocument(getPdfjsDocumentOptions({ data: new Uint8Array(await fileSystem.readFile(inputPath)),
+      isEvalSupported: false, useSystemFonts: true, verbosity: 0 }));
     const document = await loading.promise;
     if (document.numPages < 1) throw stableError("PDF_STRUCTURE_PARSE_FAILED");
     if (document.numPages > STRUCTURED_PDF_LIMITS.maxPages) throw stableError("PDF_STRUCTURE_RESOURCE_LIMIT");

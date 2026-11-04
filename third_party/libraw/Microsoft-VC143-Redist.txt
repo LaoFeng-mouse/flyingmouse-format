@@ -1,0 +1,3 @@
+Distributable Code for Microsoft Visual Studio 2022 (Includes Utilities & BuildServer Files)
+
+For the latest version of this Redist file, please visit https://aka.ms/vs/17/redist.txt.

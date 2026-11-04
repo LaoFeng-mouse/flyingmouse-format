@@ -1,14 +1,19 @@
 # AGENTS.md
 
-现役版本、渠道状态与产物来源统一查 [0.7.10 修复与发布记录](docs/REPAIR-0.7.10.md)，用户变化见[发布说明](docs/release-notes-0710.md)。GitHub 发布、本地 MSIX、商店认证和客户端安装必须分别验证；不要用后续测试或文档提交改写已验收二进制的构建来源。CAD 工作仍暂停，本地音乐专用模块不在公开分支。
+## 当前工作入口
 
-Windows 构建使用 package.json 配置和锁定引擎，需准备 MSVC。完整重建 EXE/ASAR 后由 afterSign 附加原生入口。不得关闭 GPU 或渲染器沙箱、全局重置 ACL 或按 Unknown Account 名称批量删除权限。
+本仓库维护飞鼠格式公开源码。当前 0.8.3 通用更新包含 ICO、媒体、电子书安全及依赖兼容修复，并保留既有 PDF/Word、OFD、Excel 和 CR2 修复。开始任务先读 [HANDOFF](docs/HANDOFF.md) 的公开变体验证与发布状态；调整转换逻辑时读 [架构](docs/ARCHITECTURE.md)，准备构建或发布时读 [发布流程](docs/RELEASE.md)。版本功能摘要见 [0.8.3 更新说明](docs/release-notes-083.md)。
+
+- 现有安装器与此源码不等同；完整重建入口、Runtime、ASAR 后才能声明新包包含运行代码修改。
+- 公开源码只提供普通音频转换；平台专用音乐模块、登录凭据接入和本地专用安装器不得进入本分支，参见 [分发与合规规范](docs/分发与合规规范.md)。
+- 来源源码的历史测试和安装结果仅说明修复来源；公开变体的测试、构建、安装和发布状态分别核对，不能沿用为本分支验收。
+- 私人原文件、账号数据、机器验证收据及旧快照留在原位置，不纳入 Git 导出。
 
 ## Project boundary
 
 FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器。主产品必须使用原版鼠鼠 UI；它与“鼠鼠打印”是两个独立项目，禁止跨项目修改或混合发布物。
 
-当前技术栈：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、偏好与保存目录记忆。PDF 按原生/扫描内容分流，见 [架构](docs/ARCHITECTURE.md)；OFD 仅通过 `ofd-convert.js` 转 PDF，不走 LibreOffice。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27，禁止降低根 manifest 的主线依赖。分渠道发布状态以 [0.7.10 修复说明](docs/REPAIR-0.7.10.md) 为准，不能从源码版本推断已安装版本。
+当前技术栈：Electron 43、Windows 10/11 x64、鼠鼠 UI、中英文切换、批量转换、偏好与保存目录记忆。PDF 按原生/扫描内容分流，见 [架构](docs/ARCHITECTURE.md)；OFD 仅通过 `ofd-convert.js` 转 PDF，不走 LibreOffice。Windows 7 SP1 x64 只通过独立 staging 派生 Electron 22.3.27，禁止降低根 manifest 的主线依赖。当前候选与发布状态以 [现役交接](docs/HANDOFF.md) 为准，不能从源码版本推断已安装或已发布版本。
 
 ## Source map
 
@@ -23,10 +28,13 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - `office-readiness.js`、`store-engine-cache.js`、`store-engine-worker.js`：Office 准备状态、Store 可写缓存与后台验证。
 - `desktop-shutdown.js`、`owned-tasks.js`：有界退出、所属进程/Worker 收尾及临时目录身份校验。Store 默认逻辑缓存根使用 `%LOCALAPPDATA%/FMF/e` 和短目录名以避免 AppData 重定向后的路径溢出；完整内容键校验不得因目录缩短而删减。
 - `ocr.js`、`subtitles.js`：带质量/方向诊断的 OCR、多页 TIFF 和字幕时间轴转换。
-- `resource-policy.js`：统一图片、批量、PDF 与 OCR 资源上限和稳定错误码。
+- `resource-policy.js` / `upload-budget.js`：统一转换资源上限、上传磁盘预算和稳定错误码。
+- `ico-format.js` / `image.js`：ICO 容器校验、位图/PNG 帧读取及图片转换；保留透明度、比例与格式损失提示。
+- `media.js` / `ebook.js`：普通媒体流选择与编码、电子书内容提取和安全导出。
+- `scripts/patch-dependency-compat.js` / `third-party/dependency-patches/`：安装和构建时校验依赖兼容补丁、原始来源及许可。
 - `text-conversion.js`：统一 ATX/Fenced Turndown 与严格 CSV 解析。
-- `pdf-table-extractor.js` / `pdf-table-runtime.js`：复杂 PDF 表格几何识别、OCR 回退与工作簿模型。
-- `ofd-convert.js`：OFD（国标 GB/T 33190）→ PDF，`@miconvert/ofd-to-pdf` 纯 JS 链路，仅支持转 PDF 不走 LibreOffice。
+- `pdf-table-extractor.js` / `pdf-table-runtime.js` / `pdf-table.js`：PDF 表格模型与写出；`pdf-text-render-style.js` 保守识别描边强调，`xlsx-normal-font.js` 固定源表单列宽的 Normal 字体度量。
+- `ofd-convert.js` / `ofd-renderer.js`：OFD → PDF 的本地维护解析/渲染与逐页 Poppler 可见性校验。仅转 PDF；缺失页面、资源及未实现内容明确拒绝，验证完成才发布结果。第三方来源及许可见 `third-party/ofd-to-pdf/`。
 - `logger.js`：主进程、服务端和渲染器共用的分级日志。
 - `win7-build-profile.js` / `scripts/build-win7.js`：派生并构建隔离的 Windows 7 manifest；根依赖不得被改写。
 - `pe-metadata.js` / `scripts/inspect-pe.js`：读取 PE32/PE32+ 的目标 OS 版本，发布时检查解包应用 EXE。
@@ -57,7 +65,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 图片或扫描 PDF → TXT 使用 Tesseract OCR；图片 DOCX/Markdown 与 PDF Markdown 需传递质量和重排版式提示。多页 TIFF 必须逐页识别，动画仅识别首帧时明确提示。
 - SRT/VTT/ASS/SSA 互转及 TXT 导出保留时间轴和 Unicode；样式/位置/精度损失要提示，不能静默丢弃无法表示的绘图或事件。
 - 音频源不得暴露 MP4/WebM/MKV/MOV 等视频容器目标。
-- 音频仅支持普通格式（MP3/WAV/FLAC/AAC/OGG/OPUS/WMA），不支持任何音乐平台加密特殊格式（DRM 规避法律风险，公开版已移除解锁模块，见 docs/分发与合规规范.md）。
+- 仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式。公开源码、构建白名单、CLI、HTTP 和 UI 必须保持相同边界，不能以运行时开关隐藏平台专用代码后公开。
 
 ## Security boundaries
 
@@ -67,6 +75,7 @@ FlyingMouse Format（飞鼠格式）是 Windows Electron 离线文件转换器�
 - 文件名进入路径前继续使用 `path.basename` 收敛。
 - 本地安装包当前未签名；不得把证书、密码、令牌或私钥写入仓库。
 - PDF.js 必须只从当前应用自己的 `node_modules/pdfjs-dist` 加载；旧版入口回退不得借用父目录依赖，所有 `getDocument` 调用保持 `isEvalSupported: false`。
+- 电子书 HTML 导出保持结构化清理与 URL 协议限制；特殊标签拼接不能恢复活动脚本。取消转换后不得继续发布结果，临时文件只按所属任务清理。
 
 ## Runtime paths and diagnostics
 
@@ -84,12 +93,16 @@ Electron 启动时设置：
 
 ## Commands
 
+主线依赖要求 Node.js **22.13.0 或更新版本**。从当前锁文件在独立物理目录执行 `npm ci`，完整测试还需按 README 准备锁定引擎。已有的共享或旧版依赖目录须先确认用途；不要将其作为新版本安装目标。
+
 ```powershell
-npm install
+npm ci
+npm run verify:dependency-compat
 npm run desktop
 npm test
 npm run test:ci
 npm audit --omit=dev
+npm audit
 npm run dist
 npm run dist:lite
 npm run dist:appx
@@ -105,6 +118,8 @@ npm audit --omit=dev --prefix output\win7-stage
 
 ## Packaging and release
 
+- `npm ci` 的 `postinstall` 应用四份受维护补丁：ExcelJS 的 StreamBuf、WorkbookReader、XML 解析器，以及仅供构建使用的 temp/rimraf 适配。补丁脚本检查上游版本、完整输入/输出摘要及替换次数；构建前运行 `npm run verify:dependency-compat`。规则、来源与许可见 [补丁说明](third-party/dependency-patches/NOTICE.md)，不得删除规则或改写依赖版本来隐藏失败。
+- ExcelJS 保留普通与流式公共 API。三个 ExcelJS 补丁是生产依赖必需项，temp 补丁只在锁文件确认的生产专用安装中允许缺席；正式构建必须验证四项。依赖升级需运行真实 Workbook/流/CSV/ZIP 回归，并分别报告生产及全量 npm 审计。审计零告警只覆盖当次锁定的 npm 依赖。
 - `build.files` 是显式白名单；新增被服务端引用的根目录 JS 模块时必须同步加入。
 - Windows 完整版按 `package.json` 打包 FFmpeg、AVS3、LibreOffice、Poppler、tessdata、Pandoc、docengine 和 docstructure 等引擎；`windows-lite-profile.js` 仅移除高级 docstructure。Windows OCR core 保留在 `app.asar.unpacked/node_modules/tesseract.js-core`，不得另加一份重复资源；macOS 资源由自己的配置定义。
 - 保持 `signExecutable: false`，不要使用 `signAndEditExecutable: false`，后者会跳过图标嵌入。
@@ -115,9 +130,10 @@ npm audit --omit=dev --prefix output\win7-stage
 - Store Office 默认逻辑缓存路径为 `%LOCALAPPDATA%\FMF\e\lo-<32位内容摘要前缀>`，避免 AppData 重定向后路径过长；完整内容键与文件清单校验仍保留。先显示窗口，再在自有独立子进程复制、校验与验证。只有 Office 任务等待，失败要可诊断；仅复用与内容及验证收据相符的缓存。见 [架构](docs/ARCHITECTURE.md)。
 - 改动包内内容后必须整体重建 EXE 与 ASAR（完整性哈希绑定），不能只替换 ASAR；签名包需重签名。源码说明更新不等于现有安装包已重建。见 [发布流程](docs/RELEASE.md)。
 - Windows 10/11 x64 使用 `native/launcher.cpp` 兼容启动入口；`afterSign` 完成原 Electron EXE 的 ASAR 绑定后，将其改名为 `FlyingMouse Format Runtime.exe`，再安装主入口。禁止在 `afterPack` 提前替换。需要 MSVC x64/Windows SDK；Win7 派生禁用该 hook，macOS 跳过。Store 打包同时验证入口、Runtime、ASAR 和公开功能边界。
-- 发布前必须检查：完整测试、当前能力表中实际支持格式的真实转换样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。AV3A 和平台加密音频不在当前输入能力表内；遗留 AVS3 资源或环境变量不能作为转换支持的证据，不得沿用已移除路径的 AV3A 发布门槛。
+- 发布前必须检查：完整测试、当前能力表中实际支持格式的真实转换样本、`npm audit --omit=dev`、ASAR 文件、引擎资源、EXE 产品版本、安装包 SHA-256、鼠鼠内嵌图标、桌面快捷方式、GitHub 资产摘要。AV3A 不在当前输入能力表内；平台专用音乐只在本地渠道单独记录真实样本结果。遗留 AVS3 资源或环境变量不能作为转换支持的证据，不得沿用已移除路径的 AV3A 发布门槛。
 - `dist/win-unpacked` 是本机开发/验收入口；公开交付使用 Release 安装包。
 - Win7 构建只允许使用 Node.js 18–22（推荐 22 LTS）和专用 `win7-package-lock.json` 经 `npm ci` 重建 `output/win7-stage/`；子进程必须绑定当前 Node，源码复制须兼容 Unicode 路径。产物写入精确的 `dist/FlyingMouse Format-Setup-<version>-win7-x64.exe`；脚本必须锁定 staging manifest/lockfile，校验本地 builder 与 `extraResources` 各自在允许根目录内的 canonical containment 并拒绝 reparse point；测试可以清理 staging，不得覆盖标准安装包或移动既有版本标签。
+- Win7 profile 使用独立旧锁，移除主线现代依赖覆盖、补丁安装钩子及仅适用于主线的依赖补丁测试。主线 Node 最低版本与现代依赖不得直接套用到 Legacy staging，也不得降低根项目依赖。
 - Windows 7 发布证据必须同时记录：主线测试、staging 测试、内层 EXE PE 5.2、当前系统冒烟、旧依赖审计及“真实 Win7 设备待验收”。
 - Win7 staging 测试由 `win7-build-profile.js` 过滤出能在 staging 自洽运行的文件；数量以当次日志为准。根专属真实引擎/打包管线测试由主线执行，不能把历史测试数量当成当前验收。
 - GitHub remote：`https://github.com/LaoFeng-mouse/flyingmouse-format.git`。
@@ -127,7 +143,8 @@ npm audit --omit=dev --prefix output\win7-stage
 - `README.md`：面向用户的中英文介绍、下载与格式范围。
 - `docs/ARCHITECTURE.md`：运行架构、状态和数据边界。
 - `docs/RELEASE.md`：本机测试、打包、桌面同步与 GitHub 发布清单。
-- `docs/HANDOFF.md`：恢复工作入口；分渠道状态、来源与剩余风险指向 `docs/REPAIR-0.7.10.md`。
+- `docs/HANDOFF.md`：公开源码现役状态与下一步；明确区分来源本地版的历史结果、本公开变体验证和公开发布。
+- `docs/release-notes-083.md`：0.8.3 通用功能与限制；版本修复记录保留所属日期，不替代现役交接。
 - `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
 

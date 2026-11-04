@@ -138,6 +138,38 @@ test("deep Windows runtime uses an exclusive short profile and removes only its 
   assert.equal(await fsp.readFile(sentinel, "utf8"), "preserve");
 });
 
+for (const platform of ["win32", "darwin", "linux"]) {
+  test(`explicit short native workspace request bounds deep TEMP on ${platform}`, async (t) => {
+    const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-bounded-"));
+    t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+    const deep = path.join(scratch, "deep-".repeat(35));
+    const fallback = path.join(scratch, "short");
+    await fsp.mkdir(deep, { recursive: true });
+    await fsp.mkdir(fallback);
+    const sentinel = path.join(fallback, "user-file.txt");
+    await fsp.writeFile(sentinel, "preserve");
+    let workspace;
+    await probeLibreOffice("soffice", {
+      runtimeDir: deep, profileFallbackRoot: fallback, platform, requireShortPaths: true,
+      executor: async (_command, args) => {
+        const profile = profilePathFromArgs(args);
+        workspace = path.dirname(profile);
+        assert.ok(profile.length <= 160, `Profile must reserve space for native files: ${profile.length}`);
+        assert.ok(workspace.startsWith(fallback + path.sep));
+        for (const filename of ["source.pdf", "result.docx"]) {
+          const stagedPath = path.join(workspace, filename);
+          assert.ok(stagedPath.length < 200);
+          await fsp.writeFile(stagedPath, "owned temporary file");
+        }
+        return { stdout: "LibreOffice 26.2.1.2" };
+      }
+    });
+    await assert.rejects(fsp.stat(workspace), /ENOENT/);
+    assert.equal(await fsp.readFile(sentinel, "utf8"), "preserve");
+    assert.deepEqual(await fsp.readdir(fallback), ["user-file.txt"]);
+  });
+}
+
 test("silent native timeouts retain a stable timeout code and cleanup diagnostics", async (t) => {
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-timeout-"));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));

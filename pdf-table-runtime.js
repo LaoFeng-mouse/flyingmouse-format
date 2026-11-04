@@ -20,6 +20,37 @@ function multiplyMatrices(left, right) {
   ];
 }
 
+// Internal PDF.js font ids are not installed font names. Only resolved font
+// names identify a face; an unresolved generic family remains generic.
+function pdfWordStyle(item, textContent, matrix, viewport) {
+  const metadata = textContent?.styles?.[item.fontName];
+  if (!metadata || typeof metadata !== "object") return null;
+  const style = {};
+  if (typeof metadata.fontFamily === "string" && metadata.fontFamily.trim()) style.fontFamily = metadata.fontFamily.trim();
+  const sourceName = typeof metadata.fontName === "string" ? metadata.fontName.trim() : "";
+  if (sourceName) {
+    style.sourceFontName = sourceName;
+    const name = sourceName.replace(/^[A-Z]{6}\+/, "");
+    if (/^FangSong(?:[-,]|$)/i.test(name)) style.fontName = "仿宋";
+    else if (/^SimSun(?:[-,]|$)/i.test(name)) style.fontName = "宋体";
+    else if (/^TimesNewRoman(?:PS)?(?:[-,]|MT|$)/i.test(name)) style.fontName = "Times New Roman";
+    else if (/^Arial(?:[-,]|MT|$)/i.test(name)) style.fontName = "Arial";
+    else if (!/^(?:KSO[\da-f]+|g_\w+|serif|sans-serif|monospace)(?:[-,]|$)/i.test(name)) style.fontName = name;
+    if (/bold/i.test(name)) style.bold = true;
+    if (/italic|oblique/i.test(name)) style.italic = true;
+  }
+  for (const key of ["bold", "italic"]) if (typeof metadata[key] === "boolean") style[key] = metadata[key];
+  // Native PDFs may embolden a regular face with text stroking (Tr 2).
+  // Only the independently aligned operator trace can establish this flag.
+  if (item.sourceBold === true) style.bold = true;
+  // The transformed font vector includes PDF UserUnit and rotation. Dividing
+  // by explicit viewport scale yields points, not rendered pixel height.
+  const scale = Number(viewport?.scale);
+  const size = Math.hypot(matrix[2], matrix[3]) / scale;
+  if (Number.isFinite(scale) && scale > 0 && Number.isFinite(size) && size > 0) style.fontSizePt = cleanNumber(size);
+  return style;
+}
+
 function pdfTextContentToWords({ textContent, viewport }) {
   const items = textContent && Array.isArray(textContent.items) ? textContent.items : [];
   const viewportTransform = viewport && Array.isArray(viewport.transform)
@@ -55,13 +86,15 @@ function pdfTextContentToWords({ textContent, viewport }) {
     const ys = corners.map((point) => point[1]);
     const x = Math.min(...xs);
     const y = Math.min(...ys);
+    const style = pdfWordStyle(item, textContent, matrix, viewport);
     return [{
       text,
       x: cleanNumber(x),
       y: cleanNumber(y),
       width: cleanNumber(Math.max(...xs) - x),
       height: cleanNumber(Math.max(...ys) - y),
-      confidence: 1
+      confidence: 1,
+      ...(style ? { style } : {})
     }];
   });
 }
@@ -287,6 +320,8 @@ async function buildPdfTableWorkbook(pages, dependencies) {
       pageNumber: page.pageNumber,
       width: page.width || (page.viewport && page.viewport.width),
       height: page.height || (page.viewport && page.viewport.height),
+      ...(Number.isFinite(Number(page.viewport?.scale)) && Number(page.viewport.scale) > 0
+        ? { pagePointScale: 1 / Number(page.viewport.scale) } : {}),
       source,
       words,
       lines

@@ -102,6 +102,16 @@ function bundledDocenginePath() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
+function bundledCr2DecoderPath() {
+  const resourcesPath = process.resourcesPath || "";
+  return [
+    process.env.FLYINGMOUSE_CR2_DECODER_PATH,
+    resourcesPath && path.join(resourcesPath, "libraw", "dcraw_emu.exe"),
+    path.join(ROOT, "bin", "libraw", "dcraw_emu.exe"),
+    path.join(process.cwd(), "bin", "libraw", "dcraw_emu.exe")
+  ].filter(Boolean).find(candidate => fs.existsSync(candidate)) || "";
+}
+
 function bundledQpdfPath() {
   const resourcesPath = process.resourcesPath || "";
   const candidates = [
@@ -142,6 +152,7 @@ const LIBREOFFICE_PATH = bundledLibreOfficePath();
 const PDFTOPPM_PATH = bundledPdftoppmPath();
 const TESSDATA_PATH = bundledTessdataPath();
 const DCRAW_PATH = bundledDcrawPath();
+const CR2_DECODER_PATH = bundledCr2DecoderPath();
 const DOCENGINE_PATH = bundledDocenginePath();
 const QPDF_PATH = bundledQpdfPath();
 const DOCSTRUCTURE_ENGINE_PATH = bundledDocstructureEnginePath();
@@ -179,12 +190,14 @@ const audioInput = new Set(["mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "
 // 注意（2026-08-15 起）：仅支持普通音频格式转换。其他音乐平台特殊格式
 // （NCM/KGG/mflac/mgg/kgma/mmp4/kwm/vpr 等）已下架——这些是
 // DRM 规避格式，存在法律风险，见 docs/分发与合规规范.md。
-const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "m4s", "wmv", "flv"]);
+// MST is accepted only when media.js verifies an MPEG transport-stream video.
+// Windows Installer transforms also use .mst and must never be treated as video.
+const videoInput = new Set(["mp4", "mov", "mkv", "webm", "avi", "m4v", "m4s", "wmv", "flv", "mts", "m2ts", "ts", "mst"]);
 const mediaAudioTargets = ["mp3", "wav", "flac", "m4a", "ogg", "aac", "opus", "wma"];
 const mediaVideoTargets = ["mp4", "webm", "mkv", "mov", "gif"];
 const mediaTargets = [...mediaVideoTargets, ...mediaAudioTargets];
 const experimentalInputsByCategory = Object.freeze({
-  image: ["heic", "heif", "ico", "tga", "ai", "psd", "jp2", "j2k", "jxl", "qoi", "ppm"],
+  image: ["heic", "heif", "tga", "ai", "psd", "jp2", "j2k", "jxl", "qoi", "ppm"],
   raw: [...rawInput],
   document: ["wpd", "wps", "wpt"],
   spreadsheet: ["et", "ett"],
@@ -219,6 +232,7 @@ module.exports = {
   PDFTOPPM_PATH,
   TESSDATA_PATH,
   DCRAW_PATH,
+  CR2_DECODER_PATH,
   DOCENGINE_PATH,
   QPDF_PATH,
   DOCSTRUCTURE_ENGINE_PATH,

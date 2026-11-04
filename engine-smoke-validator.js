@@ -1,12 +1,12 @@
 // Separate process used by the synchronous Store engine bootstrap. Resolve only
 // this application's PDF.js, including when this file resides inside app.asar.
 const fs = require("fs");
-const { loadPdfjs } = require("./pdfjs");
+const { loadPdfjs, getPdfjsDocumentOptions } = require("./pdfjs");
 
 async function validateSmokePdf(pdfPath) {
   const bytes = fs.readFileSync(pdfPath);
   const pdfjs = await loadPdfjs();
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false });
+  const task = pdfjs.getDocument(getPdfjsDocumentOptions({ data: new Uint8Array(bytes), isEvalSupported: false }));
   let document;
   try {
     document = await task.promise;

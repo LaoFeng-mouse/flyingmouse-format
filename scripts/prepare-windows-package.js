@@ -6,6 +6,7 @@ const { verifyInstalled } = require("./restore-pandoc");
 
 module.exports = async function beforePack(context) {
   const root = context.packager.projectDir;
+  require("./patch-dependency-compat").verifyDependencyCompatibility({ root, requireBuild: true });
   const platform = context.electronPlatformName;
   // electron-builder's Arch enum: x64=1, arm64=3. Avoid the host architecture
   // when validating a requested cross-architecture package.
@@ -17,6 +18,7 @@ module.exports = async function beforePack(context) {
   };
   verifyInstalled(resourcePath("pandoc"), platform, arch);
   if (platform !== "win32") return;
+  require("./restore-libraw").verifyInstalled(resourcePath("libraw"));
   const result = spawnSync(process.execPath, [path.join(root, "scripts", "build-engine-manifest.js"), resourcePath("libreoffice")], {
     cwd: root, stdio: "inherit", windowsHide: true, timeout: 120000
   });

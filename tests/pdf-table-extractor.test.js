@@ -29,6 +29,17 @@ test("detects a regular borderless table from repeated row and column anchors", 
   assert.deepEqual(page.tables[0].merges, []);
 });
 
+test("unrelated signature prose and footer fragments need repeated adjacent column boundaries before becoming a table", () => {
+  const page=detectTablesOnPage({pageNumber:1,width:1000,height:700,source:'text',words:[
+    word('Department supervisor signature',100,450,1,230),word('Department reviewer signature',650,450,1,240),
+    word('Send this as',60,520,1,75),word('XLSX',150,520,1,35),word('spreadsheet.',220,520,1,90),
+    word('Page 14',60,590,1,50),word('of 14',150,590,1,35)
+  ]});
+  assert.equal(page.tables.length,0);
+  const retained=page.rawRows.flat().join(' ');
+  for(const text of ['Department supervisor signature','Department reviewer signature','spreadsheet.','Page 14'])assert.ok(retained.includes(text));
+});
+
 test("separates two borderless tables divided by a large vertical gap", () => {
   const page = detectTablesOnPage({
     pageNumber: 2,

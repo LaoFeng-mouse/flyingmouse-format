@@ -70,6 +70,31 @@ test("readable digital text cannot mask a severely garbled separate scan line", 
   assert.equal(calls, 5);
 });
 
+test("quality refusal distinguishes an unreliable local line from whole-page confidence and retains the PDF page", async t => {
+  const input = await inputFixture(t);
+  for (const [data, reason, zhCN, enUS] of [
+    [recognition("uncertain scan", 40), "PAGE_CONFIDENCE_LOW", /整体识别置信度不足/, /overall OCR confidence/],
+    [{ data: { text: "Readable body text plus unreliable detail", confidence: 79,
+      blocks: [{ paragraphs: [{ lines: [
+        { words: [{ text: "Readable body text".repeat(12), confidence: 96 }] },
+        { words: [{ text: "unreliable", confidence: 30 }] }
+      ] }] }] } }, "UNRELIABLE_LINES", /部分文字行识别不可靠/, /Some text lines/]
+  ]) {
+    await assert.rejects(recognizeImageResultWithWorker({ recognize: async () => data }, input, { pageNumber: 7 }), error => {
+      assert.equal(error.code, "OCR_LOW_CONFIDENCE");
+      assert.equal(error.errorCode, "OCR_LOW_CONFIDENCE");
+      assert.equal(error.details.reason, reason);
+      assert.equal(error.details.pageNumber, 7);
+      assert.match(error.messages.zhCN, /第 7 页/);
+      assert.match(error.messages.enUS, /page 7/);
+      assert.match(error.messages.zhCN, zhCN);
+      assert.match(error.messages.enUS, enUS);
+      assert.ok(!JSON.stringify(error).includes("Readable body text"));
+      return true;
+    });
+  }
+});
+
 test("a successful layout retry ends orientation search and reports recovery", async (t) => {
   const input = await inputFixture(t);
   const modes = [];

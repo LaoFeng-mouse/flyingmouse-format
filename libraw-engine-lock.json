@@ -1,0 +1,66 @@
+{
+  "version": "0.22.2",
+  "platform": "win32-x64",
+  "archive": {
+    "url": "https://www.libraw.org/data/LibRaw-0.22.2-Win64.zip",
+    "sha256": "ac64fa12bb00a7581332d4c6ab918c0533fb3f119d6b668d47a6875410dca948"
+  },
+  "crtVersion": "14.44.35112",
+  "crtArchive": {
+    "version": "14.44.35211",
+    "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+    "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5",
+    "directory": "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT"
+  },
+  "files": {
+    "dcraw_emu.exe": {
+      "origin": "extracted",
+      "source": "LibRaw-0.22.2/bin/dcraw_emu.exe",
+      "sha256": "8df090a80c784fa03182b91ab1679fd08e5fc139d54b0bfb8b003024ef741129"
+    },
+    "libraw.dll": {
+      "origin": "extracted",
+      "source": "LibRaw-0.22.2/bin/libraw.dll",
+      "sha256": "6a459c22039abf0eac4d263673337c8ed5f223acbd372fcf77610debf80ac8cd"
+    },
+    "COPYRIGHT": {
+      "origin": "extracted",
+      "source": "LibRaw-0.22.2/COPYRIGHT",
+      "sha256": "574c88f5dd59414cfc896293a63defbc2d525a418ed413d7ab7dcc43cf79c509"
+    },
+    "LICENSE.CDDL": {
+      "origin": "extracted",
+      "source": "LibRaw-0.22.2/LICENSE.CDDL",
+      "sha256": "0e3098d2d54a12434715f6679ea408d57da5e8d613c385c58ecc6fe5d30cc81f"
+    },
+    "LICENSE.LGPL": {
+      "origin": "extracted",
+      "source": "LibRaw-0.22.2/LICENSE.LGPL",
+      "sha256": "eea173a556abac0370461e57e12aab266894ea6be3874c2be05fd87871f75449"
+    },
+    "msvcp140.dll": {
+      "origin": "crt",
+      "source": "msvcp140.dll",
+      "sha256": "0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"
+    },
+    "vcruntime140.dll": {
+      "origin": "crt",
+      "source": "vcruntime140.dll",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    "vcruntime140_1.dll": {
+      "origin": "crt",
+      "source": "vcruntime140_1.dll",
+      "sha256": "1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"
+    },
+    "LibRaw-0.22.2-Win64.zip": {
+      "origin": "archive",
+      "sha256": "ac64fa12bb00a7581332d4c6ab918c0533fb3f119d6b668d47a6875410dca948"
+    },
+    "Microsoft-VC143-Redist.txt": {
+      "origin": "repository",
+      "source": "third_party/libraw/Microsoft-VC143-Redist.txt",
+      "sha256": "da53b097e02b08e0fc69706102a60bc384fe756426ae4dc4a855e96f95cb2b9c"
+    }
+  }
+}

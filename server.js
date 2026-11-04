@@ -9,12 +9,14 @@ const express = require("express");
 const mime = require("mime-types");
 const { createBudgetedUpload } = require("./upload-budget");
 const { createProgressHttpLifecycle, reportConversionProgress } = require("./conversion-progress");
+const { cancellationError, throwIfCanceled } = require("./conversion-cancellation");
 const sanitize = require("sanitize-filename");
 const sharp = require("sharp");
 const ExcelJS = require("exceljs");
 const yazl = require("yazl");
 const yauzl = require("yauzl");
 const { PDFDocument } = require("pdf-lib");
+const { assertPdfInputHeader } = require("./pdf-input");
 
 const { createTurndownService, htmlToMarkdown, markdownToHtml, csvToJsonObjects, jsonToCsv, csvToMarkdown, csvToHtmlTable } = require("./text-conversion");
 const { convertRasterImage } = require("./image-conversion");
@@ -158,6 +160,7 @@ const {
   PDFTOPPM_PATH,
   TESSDATA_PATH,
   DCRAW_PATH,
+  CR2_DECODER_PATH,
   imageInput,
   designInput,
   rawInput,
@@ -409,7 +412,8 @@ async function getToolDiagnostics() {
     ocr: { enabled: tools.ocr, version: require("tesseract.js/package.json").version },
     pdfjs: { enabled: tools.pdf, version: require("pdfjs-dist/package.json").version },
     pdfStructure: { ...cachedToolDetails.pdfStructure },
-    sharp: { enabled: tools.sharp, version: sharp.versions.sharp }
+    sharp: { enabled: tools.sharp, version: sharp.versions.sharp },
+    cr2: { enabled: Boolean(CR2_DECODER_PATH || DCRAW_PATH), executable: CR2_DECODER_PATH || DCRAW_PATH, cameraWhiteBalance: true }
   };
 }
 
@@ -575,13 +579,16 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, conversionProgress
 
   try {
     reportConversionProgress({ stage: "merging" });
-    await convertImagesToPdf(imageFiles, outputPath);
+    await withRequestCancellation(req, res, signal => convertImagesToPdf(imageFiles, outputPath, { signal }));
     reportConversionProgress({ stage: "validating" });
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     const mimeType = "application/pdf";
-    logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
-    const registered = registerDownload(outputPath, downloadName, mimeType);
     const previewSize = (await fsp.stat(outputPath)).size;
+    // A disconnected caller cannot receive or release this result. Complete all
+    // asynchronous output checks before registering the owned download.
+    if (req.aborted || res.destroyed) throw cancellationError();
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
     conversionProgress.outputReady(req);
     res.json({
       ok: true,
@@ -634,13 +641,15 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
 
   try {
     reportConversionProgress({ stage: "merging" });
-    await mergePdfFiles(pdfFiles, outputPath);
+    for (const file of pdfFiles) await assertPdfInputHeader(file.inputPath, file.originalName);
+    await withRequestCancellation(req, res, signal => mergePdfFiles(pdfFiles, outputPath, { signal }));
     reportConversionProgress({ stage: "validating" });
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
-    logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
     const mimeType = "application/pdf";
-    const registered = registerDownload(outputPath, downloadName, mimeType);
     const previewSize = (await fsp.stat(outputPath)).size;
+    if (req.aborted || res.destroyed) throw cancellationError();
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
     conversionProgress.outputReady(req);
     res.json({
       ok: true,
@@ -654,7 +663,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
     logger.error(`Merge-PDFs failed: "${combinedName}"`, error);
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     await fsp.rm(outputPath, { force: true }).catch(() => {});
-    if (error.code === "PDF_ENCRYPTED_INPUT") {
+    if (["PDF_ENCRYPTED_INPUT", "PDF_INVALID_INPUT"].includes(error.code)) {
       res.status(422).json({ error: error.message, errorCode: error.code, messages: error.messages });
       return;
     }
@@ -662,7 +671,7 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
   }
 });
 
-async function withEpubRequestCancellation(req, res, operation) {
+async function withRequestCancellation(req, res, operation) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   const closed = () => { if (!res.writableFinished) abort(); };
@@ -670,7 +679,9 @@ async function withEpubRequestCancellation(req, res, operation) {
   res.once("close", closed);
   if (req.aborted || res.destroyed) abort();
   try {
-    return await operation(controller.signal);
+    const result = await operation(controller.signal);
+    throwIfCanceled(controller.signal);
+    return result;
   } finally {
     req.removeListener("aborted", abort);
     res.removeListener("close", closed);
@@ -741,6 +752,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
 
   try {
     reportConversionProgress({ stage: "converting" });
+    if (category === "pdf") await assertPdfInputHeader(file.path, originalName);
     if (category === "image") {
       conversionResult = await convertImage(file.path, outputPath, requestedTarget, { inputName: originalName });
     } else if (category === "subtitle") {
@@ -749,7 +761,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
       if (["epub", "mobi"].includes(inputExt)) {
         conversionResult = await convertEbook(file.path, outputPath, inputExt, requestedTarget, originalName);
       } else if (requestedTarget === "epub") {
-        await withEpubRequestCancellation(req, res, async signal => {
+        await withRequestCancellation(req, res, async signal => {
           const text = await readTextInput(file.path, { encoding: req.body?.textEncoding || "auto", signal });
           return convertTextToEpub(text, inputExt, originalName, outputPath, { signal });
         });
@@ -757,30 +769,34 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
         conversionResult = await convertText(file.path, outputPath, inputExt, requestedTarget, originalName);
       }
     } else if (category === "pdf") {
-      if (pdfImageTargets.includes(requestedTarget)) {
-        // 单页直接出图；多页才打包，且包内页图带源文件名前缀，避免解压重名。
-        const base = safeBaseName(originalName);
-        const emitted = await emitPdfPageImages(file.path, base, requestedTarget);
-        try {
-          if (emitted.single) {
-            await fsp.copyFile(emitted.files[0].filePath, outputPath);
-            downloadName = `${base}.${requestedTarget}`;
-          } else {
-            reportConversionProgress({ stage: "converting" });
-            await zipFiles(emitted.files.map((item) => ({ inputPath: item.filePath, archiveName: item.name })), outputPath);
-            downloadName = `${base}.${requestedTarget}.zip`;
+      conversionResult = await withRequestCancellation(req, res, async signal => {
+        if (pdfImageTargets.includes(requestedTarget)) {
+          // 单页直接出图；多页才打包，且包内页图带源文件名前缀，避免解压重名。
+          const base = safeBaseName(originalName);
+          const emitted = await emitPdfPageImages(file.path, base, requestedTarget, { signal });
+          try {
+            throwIfCanceled(signal);
+            if (emitted.single) {
+              await fsp.copyFile(emitted.files[0].filePath, outputPath);
+              downloadName = `${base}.${requestedTarget}`;
+            } else {
+              reportConversionProgress({ stage: "converting" });
+              await zipFiles(emitted.files.map((item) => ({ inputPath: item.filePath, archiveName: item.name })), outputPath);
+              downloadName = `${base}.${requestedTarget}.zip`;
+            }
+          } finally {
+            await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
           }
-        } finally {
-          await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
+          return;
         }
-      } else {
-        conversionResult = await convertPdf(file.path, outputPath, requestedTarget, {
+        return convertPdf(file.path, outputPath, requestedTarget, {
+          signal,
           pdfAction,
           password: String(req.body?.password || ""),
           splitMode: String(req.body?.splitMode || "page"),
           groupSize: String(req.body?.groupSize || "1")
         });
-      }
+      });
     } else if (category === "zip") {
       await convertZipImagesToPdf(file.path, outputPath);
     } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["txt", "md", "json"].includes(requestedTarget)) {
@@ -788,7 +804,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
     } else if (category === "spreadsheet" && ["csv", "tsv"].includes(inputExt) && ["epub", "xlsx", "html", "pdf"].includes(requestedTarget)) {
       // LO 的 csv/tsv 导入过滤器 headless 下假成功（exit 0 零输出），全部用自有实现
       if (requestedTarget === "epub") {
-        await withEpubRequestCancellation(req, res, async signal => {
+        await withRequestCancellation(req, res, async signal => {
           const tabular = await readTabularText(file.path, inputExt, { encoding: req.body?.textEncoding || "auto", signal });
           return convertTextToEpub(tabular, "csv", originalName, outputPath, { signal });
         });
@@ -801,9 +817,9 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
       if (inputExt === "ofd") {
         // OFD（国标 GB/T 33190）走自有链路（ofd-convert.js → PDF），LibreOffice 打不开。
-        // targetsForExt 已把 ofd 的目标限定为 pdf/zip，zip 在顶部分支处理，此处必为 pdf。
+        // OFD 仅开放 PDF；校验所有页面后才允许注册下载结果。
         // originalName 用于扩展名校验（multer 临时文件无扩展名）。
-        await convertOfdToPdf(file.path, outputPath, originalName);
+        await withRequestCancellation(req, res, signal => convertOfdToPdf(file.path, outputPath, originalName, { signal }));
       } else if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
         await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
       } else if (category === "presentation" && requestedTarget === "html") {
@@ -824,7 +840,9 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
         : "h264";
       // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
       const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
-      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      conversionResult = await withRequestCancellation(req, res, signal => convertMedia(
+        file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground, inputExt, signal }
+      ));
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }
@@ -838,9 +856,13 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
     if (requestedTarget === "md" && category === "document") {
       mdAssetsDir = await findMarkdownAssetsDir(outputPath);
     }
-    const registered = registerDownload(outputPath, downloadName, mimeType, { assetsDir: mdAssetsDir });
-    if (mdAssetsDir) registered.assets = await listDownloadAssets(mdAssetsDir, registered.downloadUrl);
+    const assets = mdAssetsDir ? await listDownloadAssets(mdAssetsDir, "") : null;
     const previewSize = (await fsp.stat(outputPath)).size;
+    // Finish every asynchronous output check before publication. A closed HTTP
+    // response has no owner to receive/release a newly registered download.
+    if (req.aborted || res.destroyed) throw cancellationError();
+    const registered = registerDownload(outputPath, downloadName, mimeType, { assetsDir: mdAssetsDir });
+    if (assets) registered.assets = assets.map(asset => ({ ...asset, url: registered.downloadUrl + asset.url }));
     const payload = {
       ok: true,
       fileName: downloadName,
@@ -862,21 +884,27 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
     error = normalizeResourceError(error);
     const isClientConversionError = [
       "CSV_PARSE_FAILED",
+      "CONVERSION_CANCELED",
       "PDF_TABLE_OCR_REQUIRED",
       "PDF_TABLE_OCR_EMPTY",
       "PDF_STRUCTURE_MEMORY_INSUFFICIENT",
       "MEDIA_NO_AUDIO_TRACK",
+      "MEDIA_MST_NOT_VIDEO",
+      "MEDIA_INVALID_TRANSPORT_STREAM",
       "PDF_OCR_REQUIRED",
+      "PDF_NATIVE_MATH_UNVERIFIED",
+      "PDF_SCAN_COLUMNS_UNVERIFIED",
       "XML_JSON_PARSE_FAILED",
       "YAML_JSON_PARSE_FAILED",
       "PDF_ENCRYPT_UNAVAILABLE",
       "PDF_ENCRYPT_NO_PASSWORD",
       "PDF_ENCRYPTED_INPUT",
+      "PDF_INVALID_INPUT",
       "PRESENTATION_HTML_EMPTY",
       "BMP_UNSUPPORTED_VARIANT",
       "JSON_CSV_PATH_COLLISION",
       "PDF_TABLE_OCR_LOW_QUALITY"
-    ].includes(error?.code) || /^(?:MARKDOWN|EPUB|MOBI)_/.test(error?.code || "");
+    ].includes(error?.code) || /^(?:MARKDOWN|EPUB|MOBI|OFD)_/.test(error?.code || "");
     const isResourceLimitError = error instanceof ResourceLimitError;
     const isOfficeEngineError = error instanceof OfficeEngineError || error instanceof OfficePreparationError;
     if (isClientConversionError || isResourceLimitError) logger.warn(`Convert rejected: "${originalName}" -> ${requestedTarget}`, error);

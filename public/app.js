@@ -130,7 +130,7 @@ const messages = {
     "preview.tooLarge": "文本文件超过 2 MB，为避免界面卡顿，请保存后查看。", "preview.failed": "预览失败：{message}",
     "workflow.aria": "转换流程", "workflow.select": "选择文件", "workflow.analyze": "识别格式",
     "workflow.convert": "开始转换", "workflow.save": "保存结果", "upload.aria": "上传文件",
-    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
+    "upload.title": "把文件丢给鼠鼠", "upload.hint": "图片（含 ICO 图标）、文档、PDF、WPS、音视频都可以试", "upload.chooseFolder": "选择文件夹转 PDF",
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "upload.markdownLimited": "Markdown 转 Word/PDF 暂不可用：文档引擎缺失或无法启动，请修复安装。",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
@@ -181,7 +181,7 @@ const messages = {
     "preview.tooLarge": "This text file is larger than 2 MB. Save it to view without slowing the app.", "preview.failed": "Preview failed: {message}",
     "workflow.aria": "Conversion workflow", "workflow.select": "Select files", "workflow.analyze": "Detect format",
     "workflow.convert": "Convert", "workflow.save": "Save results", "upload.aria": "Upload files",
-    "upload.title": "Drop files to Mouse", "upload.hint": "Try images, documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
+    "upload.title": "Drop files to Mouse", "upload.hint": "Try images (including ICO icons), documents, PDF, WPS, audio, or video", "upload.chooseFolder": "Choose folder → PDF",
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "upload.markdownLimited": "Markdown to Word/PDF is unavailable: the document engine is missing or cannot start. Repair the installation.",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
@@ -695,6 +695,7 @@ async function loadTargets(file) {
 }
 
 function targetFormatLabel(target) {
+  if (target === "ico") return i18n.language === "en-US" ? "ICO (Windows icon)" : "ICO（Windows 图标）";
   if (target === "docx") return i18n.language === "en-US" ? "Word (DOCX)" : "Word（DOCX）";
   if (target === "xlsx" && state.fileInfos.length && state.fileInfos.every(info => info.category === "pdf")) {
     return i18n.language === "en-US" ? "Excel (smart table extraction)" : "Excel（智能表格提取）";
@@ -841,6 +842,13 @@ function syncTextEncodingField() {
 
 function syncVideoCodecField() {
   syncTextEncodingField();
+  const icoHint = document.querySelector("#icoHint");
+  if (icoHint) {
+    icoHint.hidden = targetSelect.value !== "ico";
+    icoHint.textContent = i18n.language === "en-US"
+      ? "Creates a multi-size Windows icon (up to 256 px) with transparency. Keeps the image proportions; small images are padded instead of enlarged."
+      : "生成含多个尺寸的 Windows 图标（最大 256 像素），保留透明背景与原图比例；小图补透明边，不强行放大。";
+  }
   if (!videoCodecField || !videoCodec) return;
   videoCodecField.hidden = !["mp4", "mov", "mkv"].includes(targetSelect.value);
   syncAlphaBackgroundField();
@@ -914,8 +922,8 @@ function syncPdfExcelHint() {
       return;
     }
     pdfExcelHint.textContent = i18n.language === "en-US"
-      ? `Table recognition depends on scan clarity. ${structure?.enabled === false ? 'The scanned-table engine is unavailable; repair the installation. ' : ''}${limits ? `Structured recognition accepts up to ${limits.maxPages} pages, with up to ${limits.maxBatchPages} pages and ${Math.round(limits.maxTotalPixels / 1e6)} million rendered pixels per batch; larger PDFs are processed in batches.` : ''}`
-      : `表格识别效果取决于扫描清晰度。${structure?.enabled === false ? '扫描表格引擎不可用，请修复安装。' : ''}${limits ? `结构识别最多 ${limits.maxPages} 页，每批最多 ${limits.maxBatchPages} 页、${Math.round(limits.maxTotalPixels / 1e6)} 百万渲染像素；较大 PDF 自动分批处理。` : ''}`;
+      ? `Text-based PDFs use table extraction; scanned PDFs use OCR and table recognition. ${structure?.enabled === false ? 'The scanned-table engine is unavailable; repair the installation. ' : ''}${limits ? `Structured recognition accepts up to ${limits.maxPages} pages, with up to ${limits.maxBatchPages} pages and ${Math.round(limits.maxTotalPixels / 1e6)} million rendered pixels per batch; larger PDFs are processed in batches.` : ''}`
+      : `文字型 PDF 会提取表格；扫描件会进行 OCR 和表格识别。${structure?.enabled === false ? '扫描表格引擎不可用，请修复安装。' : ''}${limits ? `结构识别最多 ${limits.maxPages} 页，每批最多 ${limits.maxBatchPages} 页、${Math.round(limits.maxTotalPixels / 1e6)} 百万渲染像素；较大 PDF 自动分批处理。` : ''}`;
   }
 }
 
@@ -1539,8 +1547,18 @@ dropZone.addEventListener("drop", async (event) => {
   if (hasDirectory) {
     const collected = [];
     let firstDirName = "";
-    for (const entry of entries) {
-      await collectEntryFiles(entry, collected, (dirName) => { firstDirName = firstDirName || dirName; });
+    try {
+      for (const entry of entries) {
+        await collectEntryFiles(entry, collected, (dirName) => { firstDirName = firstDirName || dirName; });
+      }
+    } catch (error) {
+      if (state.isConverting || state.selectionVersion !== selectionVersion) return;
+      rendererLog("warn", `Dropped folder read failed: ${error?.message || error}`);
+      setMouseState("error");
+      setStatus(() => i18n.language === "en-US"
+        ? "Could not read the dropped folder. Check file access or select the files again; your current selection has been kept."
+        : "无法读取拖入的文件夹，请检查文件访问权限或重新选择文件；当前已选文件保持不变。", "error");
+      return;
     }
     if (collected.length) {
       if (state.isConverting || state.selectionVersion !== selectionVersion) return;
@@ -1556,18 +1574,18 @@ dropZone.addEventListener("drop", async (event) => {
 async function collectEntryFiles(entry, collected, onDirName) {
   if (!entry) return;
   if (entry.isFile) {
-    const file = await new Promise((resolve) => entry.file(resolve));
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
     if (file) collected.push(file);
     return;
   }
   if (entry.isDirectory) {
     if (onDirName) onDirName(entry.name);
     const reader = entry.createReader();
-    let batch = await new Promise((resolve) => reader.readEntries(resolve));
+    let batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
     // readEntries 可能分批返回，循环读到空
     while (batch && batch.length) {
       for (const child of batch) await collectEntryFiles(child, collected, onDirName);
-      batch = await new Promise((resolve) => reader.readEntries(resolve));
+      batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
     }
   }
 }

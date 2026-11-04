@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const sharp = require('sharp');
-const { loadPdfjs } = require('./pdfjs');
+const { loadPdfjs, getPdfjsDocumentOptions } = require('./pdfjs');
 
 const MAX_IMAGE_PIXELS = 50_000_000;
 const MAX_PAGE_PIXELS = 100_000_000;
@@ -75,8 +75,8 @@ async function imageToPng(image, ImageKind, outputPath) {
 
 async function extractPdfScanRegions(inputPath, nativePages, directory) {
   const lib=await loadPdfjs();
-  const task=lib.getDocument({ data:new Uint8Array(await fs.readFile(inputPath)), disableFontFace:true,
-    useSystemFonts:true, isEvalSupported:false, maxImageSize:MAX_IMAGE_PIXELS });
+  const task=lib.getDocument(getPdfjsDocumentOptions({ data:new Uint8Array(await fs.readFile(inputPath)), disableFontFace:true,
+    useSystemFonts:true, isEvalSupported:false, maxImageSize:MAX_IMAGE_PIXELS }));
   const results=new Map();
   try {
     const pdf=await task.promise;

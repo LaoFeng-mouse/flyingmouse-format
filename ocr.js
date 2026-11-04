@@ -169,10 +169,27 @@ function ocrCandidateScore(result) {
   return (result.confidence ?? 0) - 20 * result.weakFraction - Math.min(45, 15 * result.unreliableLines);
 }
 
+function ocrGeometry(data, metadata) {
+  const box = value => {
+    const result = [value?.x0, value?.y0, value?.x1, value?.y1];
+    return result.every(Number.isFinite) && result[0] >= 0 && result[1] >= 0
+      && result[2] > result[0] && result[3] > result[1]
+      && result[2] <= metadata.width && result[3] <= metadata.height ? result : null;
+  };
+  const lines = (data?.blocks || []).flatMap(block => (block.paragraphs || []).flatMap(paragraph => paragraph.lines || []))
+    .map(line => ({ text: String(line.text || '').trim(), bbox: box(line.bbox),
+      words: (line.words || []).filter(word => String(word.text || '').trim()).map(word => ({ text: String(word.text), bbox: box(word.bbox) })) }));
+  const compact = text => String(text || '').replace(/\s/gu, '');
+  if (!metadata.width || !metadata.height || !lines.length || lines.some(line => !line.bbox || !line.words.length || line.words.some(word => !word.bbox))
+    || compact(lines.flatMap(line => line.words.map(word => word.text)).join('')) !== compact(data.text)) return null;
+  return { width: metadata.width, height: metadata.height, lines };
+}
+
 async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
   throwIfCanceled(options.signal);
   const prepared = await prepareImageForOcr(inputPath);
   try {
+    const geometryMetadata = options.includeGeometry ? await sharp(prepared.outputPath, { limitInputPixels: LIMITS.maxImagePixels }).metadata() : null;
     const recognize = async (imagePath, pageMode, orientation = 0) => {
       throwIfCanceled(options.signal);
       const { data } = await worker.recognize(imagePath, {
@@ -184,7 +201,11 @@ async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
         ...ocrQuality(data),
         orientation,
         deskewAngle: Number.isFinite(data?.rotateRadians) ? data.rotateRadians * 180 / Math.PI : 0,
-        pageMode
+        pageMode,
+        // Coordinates are useful only in their documented, unrotated image
+        // frame. Unsupported transforms retain text OCR but no merge proof.
+        ...(options.includeGeometry ? { geometry: orientation === 0 && data?.rotateRadians === 0
+          ? ocrGeometry(data, geometryMetadata) : null } : {})
       };
     };
     // SINGLE_BLOCK preserves the existing good document/amount recognition.
@@ -219,10 +240,16 @@ async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
     if (best.text && ((best.confidence !== null && best.confidence < 60) || best.weakFraction > 0.5 || best.unreliableLines)) {
       const pageNumber = Number.isSafeInteger(options.pageNumber) && options.pageNumber > 0
         ? options.pageNumber : null;
+      const localLinesOnly = (best.confidence === null || best.confidence >= 60) && best.weakFraction <= 0.5;
+      const reason = localLinesOnly ? "UNRELIABLE_LINES" : "PAGE_CONFIDENCE_LOW";
       throw ocrError("OCR_LOW_CONFIDENCE",
-        `${pageNumber ? `第 ${pageNumber} 页的` : ""}扫描文字识别质量过低，已停止导出以避免生成乱码。请核对该页的清晰度、方向和文字内容后重试。`,
-        `OCR quality${pageNumber ? ` on page ${pageNumber}` : ""} is too low to export reliably. Check the scan's clarity, orientation and text before trying again.`,
-        { confidence: best.confidence, unreliableLines: best.unreliableLines,
+        localLinesOnly
+          ? `${pageNumber ? `第 ${pageNumber} 页的` : ""}部分文字行识别不可靠，已停止导出以避免错字或漏字。请对照原页核对；当前识别结果无法安全导出。`
+          : `${pageNumber ? `第 ${pageNumber} 页的` : ""}扫描文字整体识别置信度不足，已停止导出以避免生成乱码。请检查文字是否可辨认及页面方向，或使用保留文字层的 PDF。`,
+        localLinesOnly
+          ? `Some text lines${pageNumber ? ` on page ${pageNumber}` : ""} could not be recognized reliably. Export was stopped to avoid incorrect or missing text. Check the original page; the current recognition cannot be exported safely.`
+          : `The overall OCR confidence${pageNumber ? ` on page ${pageNumber}` : ""} is too low to export reliably. Check text legibility and page orientation, or use a PDF with a text layer.`,
+        { reason, confidence: best.confidence, unreliableLines: best.unreliableLines,
           ...(pageNumber ? { pageNumber } : {}) });
     }
     const warnings = [];
@@ -244,7 +271,8 @@ async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
         enUS: "Some OCR text or numbers have low confidence. Check the original, especially amounts, identifiers and punctuation."
       } });
     }
-    return { text: best.text, confidence: best.confidence, warnings, orientation: best.orientation, deskewAngle: best.deskewAngle };
+    return { text: best.text, confidence: best.confidence, warnings, orientation: best.orientation, deskewAngle: best.deskewAngle,
+      ...(options.includeGeometry ? { geometry: best.geometry } : {}) };
   } finally {
     await fsp.rm(prepared.tempDir, { recursive: true, force: true }).catch(() => {});
   }

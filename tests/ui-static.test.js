@@ -199,6 +199,25 @@ test("renderer labels experimental inputs bilingually", () => {
   assert.doesNotMatch(app, /NCM|MFLAC|Audio Vivid/);
 });
 
+test("public runtime keeps encrypted music unsupported even with former local environment flags", () => {
+  const { execFileSync } = require("node:child_process");
+  const inputs = ["ncm", "kgg", "kgma", "vpr", "kwm", "mflac", "mgg", "qmcflac", "av3a"];
+  const result = JSON.parse(execFileSync(process.execPath, ["-e", `
+    const config = require('./config');
+    const { targetsForExt } = require('./utils');
+    const inputs = ${JSON.stringify(inputs)};
+    process.stdout.write(JSON.stringify({
+      inputs: inputs.map(ext => config.audioInput.has(ext)),
+      targets: inputs.map(ext => targetsForExt(ext, {ffmpeg: true})),
+      ordinaryTargets: targetsForExt('flac', {ffmpeg: true})
+    }));
+  `], { cwd: path.join(__dirname, ".."), windowsHide: true, encoding: "utf8",
+    env: { ...process.env, FLYINGMOUSE_LOCAL_QQ_MUSIC: "1", FLYINGMOUSE_LOCAL_MUSIC: "1" } }));
+  assert.deepEqual(result.inputs, inputs.map(() => false));
+  assert.deepEqual(result.targets, inputs.map(() => []));
+  assert.ok(result.ordinaryTargets.includes("mp3"));
+});
+
 test("renderer surfaces a feedback hint without personal contact details", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");

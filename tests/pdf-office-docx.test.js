@@ -127,6 +127,7 @@ test("writes editable source-order content, merged tables, supported images and 
   const outputPath = path.join(root, "result.docx");
   const result = await writePdfOfficeDocx({ manifest: input, assetRoot: root, outputPath });
   assert.equal(result.referenceImageCount, 1);
+  assert.equal(result.warnings.filter(warning => warning.code === "PDF_STRUCTURE_REVIEW_REQUIRED").length, 1);
 
   const entries = await readEntries(outputPath);
   const documentXml = entries.get("word/document.xml").toString("utf8");
@@ -173,6 +174,33 @@ test("writes editable source-order content, merged tables, supported images and 
   });
   assert.equal(validation.referenceImageCount, 1);
   assert.equal(validation.hasEditableContent, true);
+});
+
+test("high-confidence reconstructed scan rows still carry a review warning with verified original references", async t => {
+  const root=await workspace(t);
+  const input=manifest();
+  // Minimal de-identified good row from the real scan table. Its neighbouring
+  // row was misplaced despite >0.99 confidence; confidence alone cannot prove
+  // correctness. This fixture deliberately has no yellow low-confidence cells.
+  const extents=[[0,94],[94,233],[233,340],[340,453],[453,755],[755,852],[852,919],[919,1020],[1020,1190]];
+  const table={id:"scan-row",rowCount:1,columnCount:9,bbox:[0,350,1190,480],confidence:.99,
+    cells:extents.map(([left,right],column)=>({row:0,column,rowSpan:1,columnSpan:1,
+      bbox:[left,350,right,480],text:`field-${column}`,confidence:.99}))};
+  input.pages[0].tables=[table];
+  input.pages[0].blocks=[{type:"table",bbox:table.bbox,tableId:table.id,confidence:.99}];
+  const outputPath=path.join(root,"high-confidence.docx");
+  const result=await writePdfOfficeDocx({manifest:input,assetRoot:root,outputPath});
+  const validation=await validatePdfOfficeDocx(outputPath,{expectedReferenceImages:1,expectedTables:[{rows:1,columns:9}]});
+  assert.equal(validation.referenceImageCount,1);
+  assert.equal(result.warnings.length,1);
+  assert.equal(result.warnings[0].code,"PDF_STRUCTURE_REVIEW_REQUIRED");
+  assert.match(result.warnings[0].messages.zhCN,/原件对照页/);
+  assert.match(result.warnings[0].messages.enUS,/original reference pages/);
+  assert.match(result.warnings[0].messages.zhCN,/表格列/);
+  const entries=await readEntries(outputPath);
+  const xml=entries.get("word/document.xml").toString("utf8");
+  assert.doesNotMatch(xml,/<w:shd[^>]*w:fill="FFF2CC"/);
+  assert.match(xml,/Original reference page 1/);
 });
 
 test("writes one original-reference image for every source page", async (t) => {

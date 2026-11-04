@@ -1,0 +1,14 @@
+{
+  "packageName": "exceljs",
+  "version": "4.4.0",
+  "file": "lib/utils/stream-buf.js",
+  "beforeSha256": "40dc7250baefde463a2aa348044033317aab9ce6c530132d5d8a821ed285d2ad",
+  "afterSha256": "596224a306398171b38d44f9a4a8adae30a01150678ec4d71a877f4f893862e4",
+  "replacements": [
+    {
+      "from": "      this.end();\n    }\n  },",
+      "to": "      this.end();\n    }\n    return destination;\n  },",
+      "count": 1
+    }
+  ]
+}

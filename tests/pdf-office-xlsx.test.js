@@ -94,6 +94,23 @@ async function loadWorkbook(filePath) {
   return workbook;
 }
 
+test("validates a real XLSX containing a reference image larger than a stream buffer", { timeout: 10000 }, async t => {
+  const root = await workspace(t);
+  const pixels = Buffer.alloc(300 * 400 * 3);
+  let seed = 0x5832ad;
+  for (let index = 0; index < pixels.length; index++) {
+    seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+    pixels[index] = seed & 255;
+  }
+  const reference = await sharp(pixels, { raw: { width: 300, height: 400, channels: 3 } }).png().toBuffer();
+  assert.ok(reference.length > 65536);
+  await fs.writeFile(path.join(root, "page-001.png"), reference);
+  const outputPath = path.join(root, "large-reference.xlsx");
+  await writePdfOfficeXlsx({ manifest: manifest(), assetRoot: root, outputPath });
+  const workbook = await loadWorkbook(outputPath);
+  assert.ok(workbook.worksheets.some(sheet => sheet.getCell('A3').text === '00123'));
+});
+
 async function rewriteZipEntry(inputPath, outputPath, entryName, mutate, additions = []) {
   const zipfile = await openZipEntries(inputPath);
   const entries = await new Promise((resolve, reject) => {

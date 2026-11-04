@@ -39,7 +39,7 @@ test("release workflow restores engines, runs full conversion tests and builds b
   for (const command of ["restore-ci-engines.ps1", "npm test", "npm audit --omit=dev", "npm run dist", "npm run dist:win7"]) {
     assert.match(workflow, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(workflow, /actions\/cache@v4/);
+  assert.match(workflow, /actions\/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/);
   assert.match(workflow, /ci-engines-v1\.tar\.zst/);
   const packageJson = require("../package.json");
   assert.ok(packageJson.build.files.includes("ci-engines-v1.json"));

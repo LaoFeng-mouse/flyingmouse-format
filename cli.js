@@ -236,7 +236,17 @@ function printResult(payload, json) {
     return;
   }
   if (Array.isArray(payload.outputs)) {
-    for (const output of payload.outputs) process.stdout.write(`${output.path}\n`);
+    for (const output of payload.outputs) {
+      process.stdout.write(`${output.path}\n`);
+      // Keep stdout usable as a path list while exposing quality limitations to
+      // human CLI users. JSON already carries the unchanged warning objects.
+      for (const warning of Array.isArray(output.warnings) ? output.warnings : []) {
+        const message = warning?.messages?.zhCN || warning?.messages?.enUS || warning?.code;
+        if (!message) continue;
+        const code = warning?.code ? ` [${warning.code}]` : "";
+        process.stderr.write(`Warning: ${output.fileName || path.basename(output.path)}${code}: ${message}\n`);
+      }
+    }
   } else {
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
   }

@@ -11,7 +11,20 @@ bin/*
 !bin/avs3/avs3RM0Decoder.exe
 !bin/avs3/model.bin
 !bin/avs3/THIRD_PARTY_NOTICE.txt
-tests/fixtures/
+# Keep user-provided documents out of Git; only synthetic regression fixtures
+# below are part of the source tree.
+tests/fixtures/*
+!tests/fixtures/structure-manifest-v1.json
+!tests/fixtures/ofd/
+tests/fixtures/ofd/*
+!tests/fixtures/ofd/control-image-flat-path.ofd
+!tests/fixtures/ofd/control-text.ofd
+!tests/fixtures/ofd/control-background-separate-layer.ofd
+!tests/fixtures/ofd/blank-image-resource-baseloc.ofd
+!tests/fixtures/ofd/blank-page-different-namespace-prefix.ofd
+!tests/fixtures/ofd/blank-text-hidden-by-reordered-background.ofd
+!tests/fixtures/ofd/blank-image-declared-but-missing.ofd
+!tests/fixtures/ofd/missing-only-page-xml.ofd
 
 # 一次性验证脚本（保留供日志冒烟检查，不入库）
 scripts/tmp-e2e-log-check.js
@@ -30,3 +43,28 @@ cert/
 
 # 本地 zstd 二进制工具（本机/Windows 用，CI 侧各自安装，不入库）
 /tools/zstd/
+
+# Private local-music work stays outside the public source channel.
+# See docs/分发与合规规范.md. Do not force-add these files.
+/av3a-format.js
+/kgg-format.js
+/kgma-format.js
+/kwm-format.js
+/local-music-formats.js
+/ncm-format.js
+/ncm-metadata.js
+/qq-music-crypto.js
+/qq-music-format.js
+/qq-music-session.js
+/qq-music-validation.js
+/tests/local-music-backend.test.js
+/tests/local-music-formats.test.js
+/tests/qq-diagnostics.test.js
+/tests/qq-music-format.test.js
+/tests/qq-music-response.test.js
+/tests/qq-music-session.test.js
+/tests/qq-music-ui.test.js
+/tests/qq-music-validation.test.js
+/docs/REPAIR-0.8.0.md
+/docs/REPAIR-0.8.1.md
+/docs/REPAIR-KWM-SAMPLES-20260925.md

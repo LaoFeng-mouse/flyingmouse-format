@@ -28,10 +28,24 @@ test("win7-package-lock.json 与主版本一致（Win7 构建校验的镜像断�
   assert.equal(win7Lock.packages[""].version, pkg.version, 'win7-package-lock.json packages[""] version 漂移');
 });
 
-test("README 下载指引与发行文件名锚定当前版本（防 0.6.7 残留复发）", () => {
+test("README 的源码候选或下载指引及构建文件名锚定当前版本", () => {
   const version = readJson("package.json").version;
   const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
-  assert.match(readme, new RegExp(`下载 v${version.replace(/\./g, "\\.")} 对应系统的安装包`), "README 中文快速开始仍是旧版本");
+  const escapedVersion = version.replace(/\./g, "\\.");
+  const firstLine = readme.split(/\r?\n/)[0];
+  if (firstLine.includes('源码候选')) {
+    // A source candidate must not claim its unbuilt fixes are downloadable.
+    // Pin the stated version and handoff instead of requiring release copy.
+    assert.match(firstLine, new RegExp(`^> 当前为 ${escapedVersion} 的.*源码候选，未重新打包。`), "README 源码候选版本或未打包状态漂移");
+    assert.ok(firstLine.includes('[现役交接](docs/HANDOFF.md)'), "源码候选须指向实际交付与待验收状态");
+  } else if (firstLine.includes('修复源码。')) {
+    // A maintained source workspace delegates installation/release state to
+    // the live handoff instead of claiming every build is publicly available.
+    assert.match(firstLine, new RegExp(`^> 当前为 ${escapedVersion} 的.*修复源码。`), "README 修复源码版本漂移");
+    assert.ok(firstLine.includes('[现役交接](docs/HANDOFF.md)'), "修复源码须指向实际安装及发布状态");
+  } else {
+    assert.match(readme, new RegExp(`下载 v${escapedVersion} 对应系统的安装包`), "README 中文快速开始仍是旧版本");
+  }
   assert.ok(readme.includes(`-Setup-${version}-x64.exe`), "README 标准版资产名未锚定当前版本");
   assert.ok(readme.includes(`-Setup-${version}-win7-x64.exe`), "README Win7 资产名未锚定当前版本");
 });

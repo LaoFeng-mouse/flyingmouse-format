@@ -17,3 +17,9 @@ The application invokes the unmodified official Pandoc executable as a separate 
 KaTeX, marked, docx, and the other JavaScript dependencies retain their upstream licenses in `node_modules/`. FFmpeg, LibreOffice, Poppler, Tesseract, and the other bundled conversion engines retain the license notices distributed in their resource directories. See `package-lock.json` for resolved JavaScript versions and `ci-engines-v1.json` for fixed engine assets.
 
 PasteMD was reviewed as a behavior reference. Its application source code is not incorporated into this project.
+
+ExcelJS 4.4.0 and the development-only temp 0.9.4 retain their upstream MIT licenses. Reviewed compatibility changes are described in [the dependency patch notice](third-party/dependency-patches/NOTICE.md), with original licenses and exact input/output hashes beside the patch descriptions. ExcelJS retains its ordinary and streaming APIs; its stream destination return value, workbook ZIP error handling and XML end-of-input checks are adapted. The temp patch adapts its cleanup calls to the current rimraf API. Package names and upstream versions remain unchanged; archive and file-matching dependencies use their official upgraded implementations.
+
+## LibRaw 0.22.2 (Windows CR2 decoding)
+
+Unmodified official dcraw_emu.exe and libraw.dll from https://www.libraw.org/data/LibRaw-0.22.2-Win64.zip. Dual licensed LGPL 2.1 / CDDL 1.0. COPYRIGHT, both license texts and the complete upstream source/binary archive are included in resources/libraw. Microsoft VC143 x64 runtime files are distributed app-locally from the Visual Studio Build Tools redistributable directory; its Redist.txt is included. Exact source and payload hashes are in libraw-engine-lock.json.

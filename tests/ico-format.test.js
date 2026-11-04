@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { test } = require("node:test");
 const sharp = require("sharp");
+process.env.FLYINGMOUSE_RUNTIME_DIR = path.join(os.tmpdir(), `flyingmouse-ico-tests-${process.pid}`);
 
 const {
   isIcoBuffer,
@@ -221,4 +222,136 @@ test("extractAllFrames decodes BMP DIB frames too", async () => {
   const bmpFrame = all.find((f) => !f.png);
   assert.ok(bmpFrame, "BMP DIB frame must be included");
   assert.equal(bmpFrame.data.toString("latin1", 0, 2), "BM");
+});
+
+function maskedDibIcon({ bits = 24, core = false, alpha = 0 } = {}) {
+  const size = 2;
+  const headerSize = core ? 12 : 40;
+  const paletteSize = bits === 1 ? (core ? 6 : 8) : 0;
+  const rowBytes = Math.ceil(size * bits / 32) * 4;
+  const dib = Buffer.alloc(headerSize + paletteSize + rowBytes * size + 4 * size);
+  dib.writeUInt32LE(headerSize);
+  if (core) {
+    dib.writeUInt16LE(size, 4); dib.writeUInt16LE(size * 2, 6);
+    dib.writeUInt16LE(1, 8); dib.writeUInt16LE(bits, 10);
+  } else {
+    dib.writeInt32LE(size, 4); dib.writeInt32LE(size * 2, 8);
+    dib.writeUInt16LE(1, 12); dib.writeUInt16LE(bits, 14);
+  }
+  if (bits === 1) dib.fill(255, headerSize + (core ? 3 : 4), headerSize + (core ? 3 : 4) + 3);
+  else for (let row = 0; row < size; row++) for (let col = 0; col < size; col++) {
+    const p = headerSize + paletteSize + row * rowBytes + col * (bits / 8);
+    dib[p + 2] = 255;
+    if (bits === 32) dib[p + 3] = alpha;
+  }
+  // DIB rows are bottom-up: only the top-left pixel is masked out.
+  dib[headerSize + paletteSize + rowBytes * size + 4] = 0x80;
+  const dir = buildIcoDir(1);
+  writeIcoEntry(dir, 0, size, dib.length, 22, bits);
+  return Buffer.concat([dir, dib]);
+}
+
+test("ICO conversion preserves legacy AND-mask transparency including zero-alpha 32-bit icons", async (t) => {
+  const { convertImage } = require("../image");
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ico-mask-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  for (const bits of [1, 24, 32]) {
+    const input = path.join(scratch, `mask-${bits}.ico`);
+    const output = path.join(scratch, `mask-${bits}.png`);
+    await fsp.writeFile(input, maskedDibIcon({ bits }));
+    await convertImage(input, output, "png");
+    const pixels = await sharp(output).ensureAlpha().raw().toBuffer();
+    assert.deepEqual([pixels[3], pixels[7], pixels[11], pixels[15]], [0, 255, 255, 255], `${bits}-bit mask`);
+  }
+});
+
+test("ICO conversion reads three-byte CORE palettes and keeps modern alpha", async (t) => {
+  const { convertImage } = require("../image");
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ico-core-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  for (const [name, options, expected] of [
+    ["core", { core: true, bits: 1 }, [0, 255, 255, 255]],
+    ["alpha", { bits: 32, alpha: 128 }, [128, 128, 128, 128]]
+  ]) {
+    const input = path.join(scratch, `${name}.ico`), output = path.join(scratch, `${name}.png`);
+    await fsp.writeFile(input, maskedDibIcon(options));
+    await convertImage(input, output, "png");
+    const pixels = await sharp(output).ensureAlpha().raw().toBuffer();
+    assert.deepEqual([pixels[3], pixels[7], pixels[11], pixels[15]], expected);
+  }
+});
+
+test("ICO rejects directory overlap, truncated DIB and mismatched PNG dimensions with a stable error", async () => {
+  const valid = encodeIco([{ size: 16, data: await makePng(16, 16) }]);
+  const overlap = Buffer.from(valid); overlap.writeUInt32LE(6, 18);
+  const mismatch = Buffer.from(valid); mismatch[6] = 32;
+  const tiny = buildIcoDir(1); writeIcoEntry(tiny, 0, 16, 1, 22);
+  for (const bad of [overlap, mismatch, Buffer.concat([tiny, Buffer.from([40])])]) {
+    assert.throws(() => extractBestFrame(bad), { code: "ICO_UNSUPPORTED_VARIANT" });
+  }
+});
+
+test("ICO output uses RGBA PNG frames and pads tiny sources without enlarging them", async (t) => {
+  const { convertImage } = require("../image");
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ico-output-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const input = path.join(scratch, "tiny.png"), output = path.join(scratch, "tiny.ico");
+  await sharp({ create: { width: 4, height: 2, channels: 3, background: "red" } }).png().toFile(input);
+  await convertImage(input, output, "ico");
+  for (const frame of parseIco(await fsp.readFile(output)).entries) {
+    assert.equal(frame.data[25], 6, "PNG color type must be RGBA");
+    const raw = await sharp(frame.data).ensureAlpha().raw().toBuffer();
+    let visible = 0;
+    for (let i = 3; i < raw.length; i += 4) if (raw[i]) visible++;
+    assert.equal(visible, 8, "tiny source must not be enlarged");
+  }
+});
+
+test("ICO HTTP roundtrip exposes targets, preserves Unicode names, previews and merges icons into PDF", async (t) => {
+  const { startServer, purgeRuntimeDirs } = require("../server");
+  const { downloads } = require("../config");
+  const { server, url } = await startServer(0);
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+    downloads.clear();
+    await purgeRuntimeDirs();
+  });
+  const original = await makePng(256, 256);
+  for (const extension of ["png", "jpg", "webp", "bmp", "svg", "gif", "ico"]) {
+    const response = await fetch(`${url}/api/targets`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ extension })
+    });
+    const body = await response.json();
+    assert.ok(body.targets.includes(extension === "ico" ? "png" : "ico"));
+  }
+  async function convert(data, name, target) {
+    const form = new FormData();
+    form.append("file", new Blob([data]), name);
+    form.append("targetFormat", target);
+    const response = await fetch(`${url}/api/convert`, { method: "POST", body: form });
+    const body = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(body));
+    const result = await fetch(`${url}${body.downloadUrl}`);
+    return { body, data: Buffer.from(await result.arrayBuffer()) };
+  }
+  const icon = await convert(original, "鼠鼠头像.png", "ico");
+  assert.equal(icon.body.fileName, "鼠鼠头像.ico");
+  assert.equal(icon.body.previewKind, "image");
+  assert.deepEqual(parseIco(icon.data).entries.map(frame => frame.width), [16, 24, 32, 48, 64, 128, 256]);
+  const preview = await fetch(`${url}${icon.body.previewUrl}`);
+  assert.equal(preview.status, 200);
+  assert.deepEqual(Buffer.from(await preview.arrayBuffer()), icon.data);
+  const restored = await convert(icon.data, "鼠鼠头像.ico", "png");
+  assert.equal(restored.body.fileName, "鼠鼠头像.png");
+  assert.equal((await sharp(restored.data).metadata()).width, 256);
+  const { PDFDocument } = require("pdf-lib");
+  const form = new FormData();
+  form.append("files", new Blob([icon.data]), "图标.ico");
+  form.append("files", new Blob([original]), "图片.png");
+  const response = await fetch(`${url}/api/convert-images-to-pdf`, { method: "POST", body: form });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const pdf = await fetch(`${url}${body.downloadUrl}`);
+  assert.equal((await PDFDocument.load(await pdf.arrayBuffer())).getPageCount(), 2);
 });

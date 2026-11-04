@@ -1,7 +1,8 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
+const { createReadStream } = require("node:fs");
 const path = require("node:path");
-const { Transform, Writable } = require("node:stream");
+const { Readable, Transform, Writable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const zlib = require("node:zlib");
 const ExcelJS = require("exceljs");
@@ -557,10 +558,12 @@ async function validateLocalZipMetadata(packagePath, entry) {
   const centralCrc = Number(entry.crc32) >>> 0;
   const centralCompressed = Number(entry.compressedSize);
   const centralUncompressed = Number(entry.uncompressedSize);
+  const dataOffset = offset + 30 + nameLength + extraLength;
+  if (!Number.isSafeInteger(dataOffset) || !Number.isSafeInteger(dataOffset + centralCompressed)) throw new Error("invalid package");
   if (!(flags & 0x0008)) {
     if (header.readUInt32LE(14) !== centralCrc || header.readUInt32LE(18) !== centralCompressed ||
         header.readUInt32LE(22) !== centralUncompressed) throw new Error("invalid package");
-    return;
+    return dataOffset;
   }
   const descriptorOffset = offset + 30 + nameLength + extraLength + centralCompressed;
   const descriptor = await readZipBytes(packagePath, descriptorOffset, 16);
@@ -568,12 +571,15 @@ async function validateLocalZipMetadata(packagePath, entry) {
   const base = hasSignature ? 4 : 0;
   if (descriptor.readUInt32LE(base) !== centralCrc || descriptor.readUInt32LE(base + 4) !== centralCompressed ||
       descriptor.readUInt32LE(base + 8) !== centralUncompressed) throw new Error("invalid package");
+  return dataOffset;
 }
 
-function openRawZipEntryStream(zipfile, entry) {
-  return new Promise((resolve, reject) => {
-    zipfile.openReadStream(entry, { decompress: false }, (error, stream) => error ? reject(error) : resolve(stream));
-  });
+function openRawZipEntryStream(packagePath, entry, dataOffset) {
+  // Keep bounded streaming and every compressed/expanded size check below,
+  // but avoid yauzl's fd_slicer stream, which can stall past its 64 KiB buffer.
+  // The byte range comes from the independently checked local/central headers.
+  return entry.compressedSize === 0 ? Readable.from([])
+    : createReadStream(packagePath, { start: dataOffset, end: dataOffset + entry.compressedSize - 1 });
 }
 
 async function inspectXlsxPackage(packagePath) {
@@ -609,10 +615,10 @@ async function inspectXlsxPackage(packagePath) {
         throw new Error("invalid package");
       }
       if (entry.fileName.endsWith("/")) { zipfile.readEntry(); return; }
-      await validateLocalZipMetadata(packagePath, entry);
+      const dataOffset = await validateLocalZipMetadata(packagePath, entry);
       const wanted = entry.fileName.endsWith(".xml") || entry.fileName.endsWith(".rels");
       if (entry.compressionMethod !== 0 && entry.compressionMethod !== 8) throw new Error("invalid package");
-      const rawStream = await openRawZipEntryStream(zipfile, entry);
+      const rawStream = openRawZipEntryStream(packagePath, entry, dataOffset);
       const chunks = [];
       let compressedActual = 0;
       let length = 0;

@@ -195,5 +195,7 @@ test("structured DOCX restores omitted native title and keeps scanned content ed
   for (const required of ["Title before body", "Normal prose", "Conclusion after body", "SCAN_BODY_42"]) assert.ok(text.includes(required), required);
   assert.ok(xml.indexOf("Title before body") < xml.indexOf("Normal prose"));
   assert.equal(JSON.stringify(manifest), before);
-  assert.equal(result.warnings[0].code, "PDF_NATIVE_TEXT_RESTORED");
+  for (const code of ["PDF_NATIVE_TEXT_RESTORED", "PDF_STRUCTURE_REVIEW_REQUIRED"]) {
+    assert.ok(result.warnings.some(warning => warning.code === code), `Missing warning: ${code}`);
+  }
 });

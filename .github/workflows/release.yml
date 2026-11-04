@@ -19,15 +19,15 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: ^22.13.0
           cache: npm
 
       - name: Cache fixed conversion engines
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: output/ci-engines-v1.tar.zst
           key: ci-engines-v1-${{ hashFiles('ci-engines-v1.json') }}
@@ -43,6 +43,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: .\scripts\restore-ci-engines.ps1
+
+      - name: Restore SHA-pinned CR2 engine and Microsoft runtime
+        run: npm run restore:libraw
 
       - name: Validate locked document structure engine
         shell: powershell
@@ -87,7 +90,10 @@ jobs:
         run: npm test
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=low
 
       - name: Build Windows 10 and 11 installer
         run: npm run dist
@@ -128,11 +134,11 @@ jobs:
           - arch: x64
             runner: macos-26-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: ^22.13.0
           cache: npm
 
       - name: Assert native runner architecture
@@ -173,7 +179,10 @@ jobs:
           "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=low
 
       - name: Build unsigned macOS DMG
         run: npm run dist:mac:${{ matrix.arch }}
@@ -232,7 +241,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout release notes
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v4

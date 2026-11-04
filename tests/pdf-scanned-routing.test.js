@@ -293,7 +293,7 @@ test("actual structured writers accept a deeply frozen validated manifest withou
   const before = JSON.stringify(manifest);
 
   const docxPath = path.join(scratch, "actual.docx");
-  await convertStructuredPdf({
+  const docxResult = await convertStructuredPdf({
     inputPath: "input.pdf", outputPath: docxPath, target: "docx", options: {
       pdfTextPages: [],
       withStructuredPdf: async (_input, _options, consume) => consume(manifest, scratch)
@@ -302,6 +302,8 @@ test("actual structured writers accept a deeply frozen validated manifest withou
   const docx = await validatePdfOfficeDocx(docxPath, { expectedReferenceImages: 1,
     expectedTables: [{ rows: 2, columns: 2 }] });
   assert.equal(docx.hasEditableContent, true);
+  assert.equal(docxResult.warnings.filter(warning => warning.code === "PDF_STRUCTURE_REVIEW_REQUIRED").length, 1);
+  assert.match(docxResult.warnings.find(warning => warning.code === "PDF_STRUCTURE_REVIEW_REQUIRED").messages.zhCN, /原件对照页/);
 
   const xlsxPath = path.join(scratch, "actual.xlsx");
   await convertStructuredPdf({
