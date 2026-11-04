@@ -2,7 +2,7 @@
 
 ## 当前工作入口
 
-本仓库维护飞鼠格式公开源码。当前 0.8.4 是 Office 中间输入、输出长路径修复候选，尚未完成整体重建；公开最新版仍为 0.8.3。开始任务先读 [HANDOFF](docs/HANDOFF.md) 的公开变体验证与发布状态；调整转换逻辑时读 [架构](docs/ARCHITECTURE.md)，准备构建或发布时读 [发布流程](docs/RELEASE.md)。当前摘要见 [0.8.4 更新说明](docs/release-notes-084.md)；既有 ICO、媒体、电子书安全及依赖兼容修复保留在 [0.8.3 更新说明](docs/release-notes-083.md)。
+本仓库维护飞鼠格式公开源码。当前 0.8.4 是 Office 中间输入、输出长路径修复候选；商店 MSIX 已整体构建并通过本地验收，尚未安装、上传、提交认证或公开发布。GitHub 公开最新版仍为 0.8.3。开始任务先读 [HANDOFF](docs/HANDOFF.md) 的公开变体验证与发布状态；调整转换逻辑时读 [架构](docs/ARCHITECTURE.md)，准备构建或发布时读 [发布流程](docs/RELEASE.md)。当前摘要见 [0.8.4 更新说明](docs/release-notes-084.md)；既有 ICO、媒体、电子书安全及依赖兼容修复保留在 [0.8.3 更新说明](docs/release-notes-083.md)。
 
 - 现有安装器与此源码不等同；完整重建入口、Runtime、ASAR 后才能声明新包包含运行代码修改。
 - 公开源码只提供普通音频转换；平台专用音乐模块、登录凭据接入和本地专用安装器不得进入本分支，参见 [分发与合规规范](docs/分发与合规规范.md)。
@@ -144,7 +144,7 @@ npm audit --omit=dev --prefix output\win7-stage
 - `docs/ARCHITECTURE.md`：运行架构、状态和数据边界。
 - `docs/RELEASE.md`：本机测试、打包、桌面同步与 GitHub 发布清单。
 - `docs/HANDOFF.md`：公开源码现役状态与下一步；明确区分来源本地版的历史结果、本公开变体验证和公开发布。
-- `docs/release-notes-084.md`：0.8.4 Office 长路径修复候选与待验收事项；当前构建与交付状态以现役交接为准。
+- `docs/release-notes-084.md`：0.8.4 Office 长路径修复、MSIX 本地验收与未发布边界；当前构建与交付状态以现役交接为准。
 - `docs/release-notes-083.md`：已发布 0.8.3 的通用功能与限制；历史修复记录保留所属日期。
 - `docs/privacy-policy.html`：面向用户和 Microsoft Store 的隐私政策。
 - `docs/微软商店上架清单.md`、`docs/上架材料包.md`：商店渠道资料；外部审核状态必须写绝对日期并注明是否已现场复核。
