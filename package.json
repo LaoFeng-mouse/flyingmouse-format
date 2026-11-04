@@ -2,7 +2,10 @@
   "name": "flyingmouse-format",
   "version": "0.8.3",
   "private": true,
-  "author": "FlyingMouse Format",
+  "author": {
+    "name": "牢蜂（LaoFeng）"
+  },
+  "license": "SEE LICENSE IN LICENSE",
   "productName": "FlyingMouse Format",
   "engines": {
     "node": ">=22.13.0"
@@ -86,6 +89,7 @@
   "build": {
     "appId": "com.flyingmouse.format",
     "productName": "FlyingMouse Format",
+    "copyright": "Copyright © 2026 牢蜂（LaoFeng）. Non-Commercial. 仅供个人免费使用，禁止商业售卖/转卖/套壳。",
     "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
     "publish": [
       {
@@ -156,6 +160,7 @@
       "markdown-math.js",
       "engine-smoke-validator.js",
       "save-converted-result.js",
+      "LICENSE",
       "THIRD_PARTY_NOTICES.md",
       "third_party/**/*",
       "office-readiness.js",
@@ -309,6 +314,7 @@
       ]
     },
     "nsis": {
+      "license": "build/license.txt",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

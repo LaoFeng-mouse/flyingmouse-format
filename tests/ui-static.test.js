@@ -297,12 +297,12 @@ test("blank page insertion is exposed in the image merge queue", () => {
   assert.doesNotMatch(app, /\.innerHTML\s*=/);
 });
 
-test("non-commercial notice is present in UI and styles without author attribution", () => {
+test("non-commercial notice is present in UI and styles with author attribution", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");
   const css = readPublic("styles.css");
   assert.match(html, /class="author-line"/);
-  assert.doesNotMatch(html, /牢蜂|LaoFeng/);
+  assert.match(html, /LaoFeng/);
   assert.match(html, /仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式/);
   assert.match(html, /禁止商业售卖/);
   assert.match(css, /\.author-line/);

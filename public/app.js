@@ -115,7 +115,7 @@ const { LANGUAGE_STORAGE_KEY, createI18n } = window.FlyingMouseI18n;
 const messages = {
   "zh-CN": {
     "workspace.aria": "文件转换工作台", "brand.title": "鼠鼠帮你把文件转成需要的格式",
-    "brand.usage": "仅供个人免费使用，禁止商业售卖/转卖/套壳 · 仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式 · 请支持正版音乐",
+    "brand.usage": "作者：牢蜂（LaoFeng） · 仅供个人免费使用，禁止商业售卖/转卖/套壳 · 仅支持普通音乐格式转换，不支持其他音乐平台的加密特殊格式 · 请支持正版音乐",
     "language.label": "语言", "health.checking": "正在检测转换引擎", "health.failed": "检测失败",
     "theme.label": "外观", "theme.system": "跟随系统", "theme.light": "浅色", "theme.dark": "深色",
     "settings.degraded": "偏好设置暂时无法保存，本次仍可正常转换；重启后可能恢复默认设置。",
@@ -166,7 +166,7 @@ const messages = {
   },
   "en-US": {
     "workspace.aria": "File conversion workspace", "brand.title": "Let Mouse convert files into the format you need",
-    "brand.usage": "Free for personal use; commercial sale, resale and rebranding are prohibited · Supports standard audio formats; encrypted music-service formats are unsupported · Please support licensed music",
+    "brand.usage": "By LaoFeng · Free for personal use; commercial sale, resale and rebranding are prohibited · Supports standard audio formats; encrypted music-service formats are unsupported · Please support licensed music",
     "language.label": "Language", "health.checking": "Checking conversion engines", "health.failed": "Check failed",
     "theme.label": "Appearance", "theme.system": "System", "theme.light": "Light", "theme.dark": "Dark",
     "settings.degraded": "Preferences could not be saved this session. Converting still works; defaults may return after restart.",
