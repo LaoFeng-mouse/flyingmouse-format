@@ -370,10 +370,11 @@ test("merges a large batch of images into one PDF without hitting memory limits"
   // 回归：convertImagesToPdf 流式化之前，约 53 张手机截图合并即报
   // RangeError: Failed to allocate memory（转换全部驻留内存 + O(n^2) 拼接）。
   // 此用例用 60 张图走完整路径，锁定「不因图片数量失败」且页数正确。
+  // 页数回归使用总计 0.9MP 的合成图，避免依赖 runner 的瞬时空闲内存。
   const batch = [];
   for (let i = 0; i < 60; i += 1) {
     const p = path.join(scratchRoot, `批量-${String(i).padStart(3, "0")}.png`);
-    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, 400, 600);
+    await createImage(p, { r: (i * 7) % 256, g: (i * 13) % 256, b: (i * 29) % 256, alpha: 1 }, 100, 150);
     batch.push({ path: p, name: `批量-${String(i).padStart(3, "0")}.png` });
   }
 

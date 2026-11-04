@@ -1,19 +1,34 @@
 # FlyingMouse Format 公开源码交接
 
-状态日期：2026-11-04。**0.8.3 Windows 10/11 x64 公开完整版已发布**，延续 PDF/Word、OFD、Excel、诊断与 CR2 修复，包含 ICO、普通媒体、电子书安全、依赖兼容及 PDF/OCR 长路径更新。作者：牢蜂（LaoFeng）；仅供个人免费使用，禁止商业售卖、转卖和套壳。
+状态日期：2026-11-04。**0.8.4 Office 长路径修复的商店 MSIX 候选已完成整体构建及本地验收，尚未安装、上传、提交认证或公开发布；GitHub 公开最新版仍为 0.8.3 Windows 10/11 x64 完整版。**0.8.3 后续 Store 候选因 Office 中间路径问题暂停交付，其证据保留。作者：牢蜂（LaoFeng）；仅供个人免费使用，禁止商业售卖、转卖和套壳。
 
 ## 公开源码与发布状态
 
 | 对象 | 当前含义 |
 | --- | --- |
-| 工作入口 | 使用本仓库相对路径；先读 [AGENTS.md](../AGENTS.md)、当前差异与 [0.8.3 更新说明](release-notes-083.md)。源码版本、依赖锁与当次版本说明应同步。 |
+| 工作入口 | 使用本仓库相对路径；先读 [AGENTS.md](../AGENTS.md)、当前差异与 [0.8.4 候选说明](release-notes-084.md)。源码版本、依赖锁与当次版本说明应同步；[0.8.3 更新说明](release-notes-083.md) 保留已发布版本的证据。 |
 | 功能边界 | 公开源码只支持普通音频。平台专用音乐模块、登录与凭据接入、私有样本和本地专用安装器不进入此分支；关闭运行时开关不能替代源码与包内容检查。见 [分发规范](分发与合规规范.md)。 |
-| 本公开变体验证 | Windows / Node 22.23.4 从锁文件独立安装后，完整测试 **1,368 通过、0 失败、11 条件跳过**，跳过不计通过。生产与全量 npm 审计均 **0 告警**；依赖树、四补丁、公开功能边界及构建白名单核对通过。[PR #88 CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41810778109) 与 [合并后 main CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41811574267) 的 Windows、macOS x64/arm64 检查均通过。 |
-| 二进制与安装 | 已整体重建入口、Runtime 与 ASAR；最终解包应用 **17 组 GUI 场景通过**，含 1 组损坏 ICO 预期拒绝，生成 16 份转换产物。NSIS 归档完整性和 **20,633 个载荷文件**逐项比对通过。本轮验证未执行安装器覆盖安装，不把解包应用验收表述为安装流程验收。 |
-| 合并、标签与发布 | [PR #88](https://github.com/LaoFeng-mouse/flyingmouse-format/pull/88) 已合并；[v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3) 已公开。标签指向 `e8d0827016192f980893b08c09920305ef089dab`，其 Git 树与实际构建提交 `49908ae9d930fff6bab14f89eb3131f58016d86d` 相同。发布仅包含 Windows 10/11 x64 完整版；Lite、macOS、Win7 和 Microsoft Store 包本轮未构建或发布。 |
+| 当前候选验证 | 0.8.4 构建源码完整测试 **1,375 通过、0 失败、11 条件跳过**；生产与全量 npm 审计 **0 告警**。入口、Runtime、ASAR 已整体重建；**5 组 GUI、6 组缓存/HTTP 场景通过，生成 11 份产物**。MSIX 全载荷核验通过，测试副本与包中 **20,632 个应用文件**逐项一致；这些为本轮独立结果。 |
+| 已发布 0.8.3 验证 | Windows / Node 22.23.4 从锁文件独立安装后，完整测试 **1,368 通过、0 失败、11 条件跳过**，跳过不计通过。生产与全量 npm 审计均 **0 告警**；依赖树、四补丁、公开功能边界及构建白名单核对通过。[PR #88 CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41810778109) 与 [合并后 main CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41811574267) 的 Windows、macOS x64/arm64 检查均通过。 |
+| 已发布 0.8.3 二进制 | 已整体重建入口、Runtime 与 ASAR；最终解包应用 **17 组 GUI 场景通过**，含 1 组损坏 ICO 预期拒绝，生成 16 份转换产物。NSIS 归档完整性和 **20,633 个载荷文件**逐项比对通过。该轮验证未执行安装器覆盖安装，不把解包应用验收表述为安装流程验收。 |
+| 合并、标签与发布 | [PR #88](https://github.com/LaoFeng-mouse/flyingmouse-format/pull/88) 已合并；[v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3) 已公开。标签指向 `e8d0827016192f980893b08c09920305ef089dab`，其 Git 树与实际构建提交 `49908ae9d930fff6bab14f89eb3131f58016d86d` 相同。发布仅包含 Windows 10/11 x64 完整版；Lite、macOS、Win7 未构建或发布，后续 0.8.3 Store 候选未交付。0.8.4 尚未发布。 |
 | Windows 7 | 保持独立 Legacy profile 和锁文件。本轮主线依赖修复不代表 Win7 依赖风险已清零，也不代表新 Win7 包或真实设备验收已完成。 |
 
-## 本轮通用修复
+## 0.8.4 Office 长路径候选
+
+后续 Store 候选的实际转换在深层 TEMP 下出现 Markdown→PDF 失败，原生输出包含无法打开中间文件及缺少导出过滤器的信息。引擎冷缓存准备与 CSV→PDF 自检通过，并不覆盖这条转换路径。问题定位为 Office 中间输入、输出路径过长；此前仅缩短配置目录仍不足以保证文档转换可用。
+
+候选在 `office-convert.js` 中使用有长度上限的独占工作目录和短输入名，保留扩展名、原文件及调用方完整目标名称；收尾清理限定于身份匹配的本次目录。新增 [Office 路径回归](../tests/office-convert-paths.test.js) 纳入本地与 CI 测试入口。既有 Office 修复、公开普通音频边界、依赖版本及 Win7 独立依赖边界不变。
+
+0.8.3 Store 候选及其失败、未完成的全载荷验证证据保留，不作为通过验收或可交付结果。0.8.4 从提交 `e6d2ae3824fc7f16d21b8a542340b4e5361e9d5f` 整体重建入口、Runtime 与 ASAR；冻结的 376 份源码、生产依赖、许可证、图标及引擎资源均已绑定核验。实际包的独立副本通过深层 TEMP 和长中文路径的 Office、Markdown、PDF 转换；冷缓存准备、暖缓存复用和转换后的验证收据保持一致，原始输入未变，正常关闭后无所属残留进程。
+
+[CI #201](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41834919665) 对提交 `f0924adba556b815b18a1fe1611bbce73d4b1881` 的 Windows、macOS x64/arm64 检查全部通过：Windows **1,375 通过、11 条件跳过**，两个 macOS 架构各 **1,359 通过、27 条件跳过**，均为 0 失败、npm 审计 0 告警。该提交与实际构建提交仅有两份测试文件差异，运行代码相同；CI 不替代 macOS 安装包或真实设备验收。
+
+候选文件 `FlyingMouse-Format-0.8.4-x64-unsigned.msix` 大小 **2,013,954,344 字节**，SHA-256：`a5301c0423b7c190695e898cd28bbabfeb056fd7ce0a4fc6263c68de5d6ebf5a`。Manifest 为 `0.8.4.0` / x64；**20,639 个 ZIP 文件**的 CRC、内容摘要及 BlockMap（含压缩块大小、偏移和 FileHash）检查通过，三核心与已测程序一致。四个 OPC 保留名仅改名且字节不变，四份商店 Logo 与源码一致。
+
+本轮只生成完整程序目录与未签名 MSIX，没有新 NSIS 或公开下载；未在实际 Store 包身份下安装运行，未上传、提交认证或公开发布 0.8.4。上述本地验收不代表商店已接受或认证通过。
+
+## 已发布 0.8.3 通用修复
 
 本轮公开构建补齐作者及非商用元信息，将原始 LICENSE 纳入应用，并在 NSIS 安装器展示完整许可文本。首轮包的 ICO 提示及深层临时目录问题修复后重新整体构建，首轮包未作为发布物。界面 ICO 说明随语言更新，清空文件或切换为其他目标格式后隐藏。PDF 栅格化与 OCR 准备改用任务专属短目录，覆盖深层 TEMP 和长中文输入、输出路径；保持原文件不变，失败或取消后清理所属临时文件且不发布未完成结果。最终 GUI 验证同时覆盖原图文 PDF 的明确提示式 OCR 回退和纯文字 PDF 的无告警原生转换；不声称复杂图文可无损还原。
 
