@@ -1,6 +1,6 @@
 # FlyingMouse Format 公开源码交接
 
-状态日期：2026-11-04。当前目标为 **0.8.3 公开安装包构建修复候选**，延续公开分支的 PDF/Word、OFD、Excel、诊断与 CR2 修复，同步 ICO、普通媒体、电子书安全及依赖兼容更新。作者：牢蜂（LaoFeng）；仅供个人免费使用，禁止商业售卖、转卖和套壳。
+状态日期：2026-11-04。**0.8.3 Windows 10/11 x64 公开完整版已发布**，延续 PDF/Word、OFD、Excel、诊断与 CR2 修复，包含 ICO、普通媒体、电子书安全、依赖兼容及 PDF/OCR 长路径更新。作者：牢蜂（LaoFeng）；仅供个人免费使用，禁止商业售卖、转卖和套壳。
 
 ## 公开源码与发布状态
 
@@ -8,14 +8,14 @@
 | --- | --- |
 | 工作入口 | 使用本仓库相对路径；先读 [AGENTS.md](../AGENTS.md)、当前差异与 [0.8.3 更新说明](release-notes-083.md)。源码版本、依赖锁与当次版本说明应同步。 |
 | 功能边界 | 公开源码只支持普通音频。平台专用音乐模块、登录与凭据接入、私有样本和本地专用安装器不进入此分支；关闭运行时开关不能替代源码与包内容检查。见 [分发规范](分发与合规规范.md)。 |
-| 本公开变体验证 | 此前公开源码基线在 Windows / Node 22.23.4 独立安装锁定依赖后，`npm test` 预检 139、主套 1222 项通过，合计 **1361 通过、0 失败、11 条件跳过**；另有 APPX 验证器 20 项通过。生产与全量 npm 审计均 **0 告警**，依赖树、四补丁、公开功能边界和构建白名单核对通过。本轮构建修复仍在验证，最终候选须重新记录结果；GitHub Windows/macOS CI 按提交另行回读。 |
-| 二进制与安装 | 公开 Windows 完整包正在重建和验证。首轮包发现的 ICO 提示及深层临时目录问题已纳入修复，首轮包不作交付；最终入口、Runtime、ASAR、GUI 与 NSIS 载荷仍须分别验收。尚未交付、安装或公开发布本轮候选。 |
-| 合并、标签与发布 | 源码分支推送、主线合并、版本标签、二进制 Release、Microsoft Store 提交及公开状态分别记录；不得从源码版本推断其中任一项已完成。 |
+| 本公开变体验证 | Windows / Node 22.23.4 从锁文件独立安装后，完整测试 **1,368 通过、0 失败、11 条件跳过**，跳过不计通过。生产与全量 npm 审计均 **0 告警**；依赖树、四补丁、公开功能边界及构建白名单核对通过。[PR #88 CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41810778109) 与 [合并后 main CI](https://github.com/LaoFeng-mouse/flyingmouse-format/actions/runs/41811574267) 的 Windows、macOS x64/arm64 检查均通过。 |
+| 二进制与安装 | 已整体重建入口、Runtime 与 ASAR；最终解包应用 **17 组 GUI 场景通过**，含 1 组损坏 ICO 预期拒绝，生成 16 份转换产物。NSIS 归档完整性和 **20,633 个载荷文件**逐项比对通过。本轮验证未执行安装器覆盖安装，不把解包应用验收表述为安装流程验收。 |
+| 合并、标签与发布 | [PR #88](https://github.com/LaoFeng-mouse/flyingmouse-format/pull/88) 已合并；[v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3) 已公开。标签指向 `e8d0827016192f980893b08c09920305ef089dab`，其 Git 树与实际构建提交 `49908ae9d930fff6bab14f89eb3131f58016d86d` 相同。发布仅包含 Windows 10/11 x64 完整版；Lite、macOS、Win7 和 Microsoft Store 包本轮未构建或发布。 |
 | Windows 7 | 保持独立 Legacy profile 和锁文件。本轮主线依赖修复不代表 Win7 依赖风险已清零，也不代表新 Win7 包或真实设备验收已完成。 |
 
 ## 本轮通用修复
 
-本轮公开构建补齐作者及非商用元信息，将原始 LICENSE 纳入应用，并在 NSIS 安装器展示完整许可文本。界面补齐 ICO 说明，切换语言同步更新，清空文件或切换为其他目标格式后隐藏。PDF 栅格化与 OCR 准备改用任务专属短目录，覆盖深层 TEMP 和长中文输入、输出路径；保持原文件不变，失败或取消后清理所属临时文件且不发布未完成结果。这些修复的完整构建与验证进行中，不代表安装或 Release 发布完成。
+本轮公开构建补齐作者及非商用元信息，将原始 LICENSE 纳入应用，并在 NSIS 安装器展示完整许可文本。首轮包的 ICO 提示及深层临时目录问题修复后重新整体构建，首轮包未作为发布物。界面 ICO 说明随语言更新，清空文件或切换为其他目标格式后隐藏。PDF 栅格化与 OCR 准备改用任务专属短目录，覆盖深层 TEMP 和长中文输入、输出路径；保持原文件不变，失败或取消后清理所属临时文件且不发布未完成结果。最终 GUI 验证同时覆盖原图文 PDF 的明确提示式 OCR 回退和纯文字 PDF 的无告警原生转换；不声称复杂图文可无损还原。
 
 GitHub 首轮检查发现 Windows 系统 TTC 字体合集写出失败和 macOS 深 TEMP 下的原生 PDF 暂存路径问题。已修复字体合集的系统备用字体选择、按需嵌入及跨转换缓存，并在所有平台对原生 PDF 暂存启用长度约束；新增七项回归，原测试断言保留。自动检查改用官方 Node24 Actions 并固定完整提交摘要；最新远端结果见 [PR #87](https://github.com/LaoFeng-mouse/flyingmouse-format/pull/87) 的检查记录。
 
@@ -24,7 +24,20 @@ GitHub 首轮检查发现 Windows 系统 TTC 字体合集写出失败和 macOS �
 - **电子书安全**：导出 HTML 时按结构清理活动内容并限制 URL 协议，覆盖特殊标签拼接与未加引号链接；正常正文、表格、图片及允许的链接继续保留。
 - **依赖升级与 Excel 兼容**：更新存在已知告警的文件匹配、归档及构建依赖。ExcelJS 保留 4.4.0 与普通/流式接口；补齐标准管道返回值、ZIP 元数据顺序、压缩错误传递和 XML 结束检查。四份受维护补丁的来源、许可和摘要验证见 [补丁说明](../third-party/dependency-patches/NOTICE.md)。
 
-测试入口包括 [ICO](../tests/ico-format.test.js)、[媒体](../tests/media-codec.test.js)、[电子书完整性](../tests/ebook-integrity.test.js)、[依赖补丁](../tests/dependency-patch.test.js) 和 [真实依赖兼容性](../tests/dependency-compatibility.test.js)。本公开分支已执行完整测试及 [公开包边界检查测试](../tests/public-package.test.js)；实际新安装包仍须在构建后单独核验。首轮唯一失败为 README 旧版本构建文件名，修正文档后完整复跑通过，未改测试断言。
+测试入口包括 [ICO](../tests/ico-format.test.js)、[媒体](../tests/media-codec.test.js)、[电子书完整性](../tests/ebook-integrity.test.js)、[依赖补丁](../tests/dependency-patch.test.js) 和 [真实依赖兼容性](../tests/dependency-compatibility.test.js)。本公开分支已执行完整测试及 [公开包边界检查测试](../tests/public-package.test.js)，最终包另行完成实际界面与载荷验证。早期公开源码验证曾因 README 旧版本构建文件名检查失败；修正文档后完整复跑通过，未改测试断言。
+
+## 公开下载与校验
+
+从 [v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3) 下载以下四项资产。安装器原构建名为 `FlyingMouse Format-Setup-0.8.3-x64.exe`，公开下载名将空格改为连字符；两者安装器字节相同。`latest.yml` 与 blockmap 已按公开下载名校验。
+
+| 资产 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `FlyingMouse-Format-Setup-0.8.3-x64.exe` | 1,618,541,947 | `3a3825bd3eb751c451978c6248a52c17e122fdf708556fd7a4cc55739592ec2d` |
+| `FlyingMouse-Format-Setup-0.8.3-x64.exe.blockmap` | 1,679,410 | `b6e5b323af55563c42c2da8cabcf840ba46ee59ae556b847edbe6ea52ce529c1` |
+| `latest.yml` | 374 | `53179c3465b156e7cc75214ecf7cc77c5cf56ad7b33d5b1748a2bb5437897003` |
+| `SHA256SUMS.txt` | 299 | `c13d5975da6aa241a59d9820a73993ab2488ee1c35d4513ab34e7ab85e411c97` |
+
+Windows 安装器未签名，可能出现 SmartScreen 提示。审计零告警只覆盖本次锁定的 npm 依赖，不代表原生引擎或整套软件零风险。其他平台的代码 CI 通过也不等于其安装包已构建或通过实机验收。
 
 ## 来源 R14 验证记录
 
