@@ -6,6 +6,7 @@ const { verifyInstalled } = require("./restore-pandoc");
 
 module.exports = async function beforePack(context) {
   const root = context.packager.projectDir;
+  require("./patch-dependency-compat").verifyDependencyCompatibility({ root, requireBuild: true });
   const platform = context.electronPlatformName;
   // electron-builder's Arch enum: x64=1, arm64=3. Avoid the host architecture
   // when validating a requested cross-architecture package.

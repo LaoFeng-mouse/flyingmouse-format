@@ -13,15 +13,27 @@ const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const LOW_QUALITY_ZH_CN = "PDF 表格识别质量不足，无法安全生成可编辑表格。";
 const LOW_QUALITY_EN_US = "The PDF table recognition quality is too low to create an editable table safely.";
 
-function lowQualityError() {
-  const error = new Error(LOW_QUALITY_EN_US);
+function lowQualityError(reason) {
+  const messages = reason === "TABLE_CANDIDATES_AMBIGUOUS" ? {
+    zhCN: "同一识别引擎给出了多个候选表格结构，无法安全确定表格边界，已停止导出。可改转 TXT 提取文字并对照原件核对；TXT 不保留表格结构。",
+    enUS: "The recognition engine returned multiple competing table structures, so table boundaries could not be determined safely. Export was stopped. Convert to TXT to extract and review text against the original; TXT does not preserve table structure."
+  } : reason === "TABLE_STRUCTURE_CONFLICT" ? {
+    zhCN: "表格识别结果的行列结构或单元格内容存在冲突，已停止导出以避免错表。可改转 TXT 提取文字并对照原件核对；TXT 不保留表格结构。",
+    enUS: "The recognized table structures or cell contents conflict. Export was stopped to avoid an incorrect table. Convert to TXT to extract and review text against the original; TXT does not preserve table structure."
+  } : reason === "TABLE_COLUMN_ORDER_CONFLICT" ? {
+    zhCN: "识别出的表格列顺序与原页中的单元格位置存在矛盾，已停止导出以避免错列。请对照原件核对；当前结果无法安全生成可编辑表格。",
+    enUS: "The recognized table column order contradicts the cells' visual positions on the source page. Export was stopped to avoid misplaced values. Check the original; the current result cannot safely form an editable table."
+  } : { zhCN: LOW_QUALITY_ZH_CN, enUS: LOW_QUALITY_EN_US };
+  const error = new Error(messages.enUS);
   error.code = "PDF_TABLE_OCR_LOW_QUALITY";
-  error.messages = { zhCN: LOW_QUALITY_ZH_CN, enUS: LOW_QUALITY_EN_US };
+  error.messages = messages;
+  // Only bounded diagnostic categories are exposed, never OCR text or engine IDs.
+  if (["TABLE_CANDIDATES_AMBIGUOUS", "TABLE_STRUCTURE_CONFLICT", "TABLE_COLUMN_ORDER_CONFLICT"].includes(reason)) error.details = { reason };
   return error;
 }
 
-function failLowQuality() {
-  throw lowQualityError();
+function failLowQuality(reason) {
+  throw lowQualityError(reason);
 }
 
 function deepFreeze(value) {
@@ -140,6 +152,21 @@ function intervalsOverlap(intervals) {
   return false;
 }
 
+function columnPositionConflict(active, cells) {
+  const ordered = [...active].map(index => cells[index])
+    .sort((left, right) => left.column - right.column);
+  let furthestLeft = -Infinity;
+  for (const cell of ordered) {
+    const [left, top, right, bottom] = cell.bbox;
+    // A collapsed/unknown box supplies no order proof. Require fully reversed,
+    // nonoverlapping visible boxes; tolerate one coordinate unit of OCR jitter.
+    if (right <= left || bottom <= top) continue;
+    if (furthestLeft > right + 1) return true;
+    furthestLeft = Math.max(furthestLeft, left);
+  }
+  return false;
+}
+
 function inspectGeometry(table) {
   if (table.cells.length === 0) {
     return { valid: true, occupiedSlots: 0, populatedAnchors: 0 };
@@ -168,6 +195,9 @@ function inspectGeometry(table) {
   for (const row of rows) {
     if (row > previousRow && intervalsOverlap(sortedIntervals(active, table.cells))) {
       return { valid: false, occupiedSlots: 0, populatedAnchors: 0 };
+    }
+    if (row > previousRow && columnPositionConflict(active, table.cells)) {
+      return { valid: false, reason: "TABLE_COLUMN_ORDER_CONFLICT", occupiedSlots: 0, populatedAnchors: 0 };
     }
     for (const event of events.get(row)) {
       if (event.add) active.add(event.index);
@@ -308,7 +338,7 @@ function scoreNormalized(normalized) {
   if (!geometry.valid) {
     return deepFreeze({ source: normalized.source, table, meanCellConfidence: 0,
       populatedCellRatio: 0, gridConsistency: 0, spanValidity: 0, score: 0,
-      accepted: false, reasons: ["TABLE_SPAN_INVALID"] });
+      accepted: false, reasons: [geometry.reason || "TABLE_SPAN_INVALID"] });
   }
 
   const gridSlots = table.rowCount * table.columnCount;
@@ -365,14 +395,15 @@ function compareScored(left, right) {
 function chooseTableCandidate(values) {
   if (!Array.isArray(values) || values.length === 0 || values.length > MAX_CANDIDATES) failLowQuality();
   const normalized = values.map(normalizeTableCandidate);
-  if (new Set(normalized.map((item) => item.source)).size !== normalized.length) failLowQuality();
+  if (new Set(normalized.map((item) => item.source)).size !== normalized.length) failLowQuality("TABLE_CANDIDATES_AMBIGUOUS");
   const scored = normalized.map(scoreNormalized);
+  if (scored.some(item => item.reasons.includes("TABLE_COLUMN_ORDER_CONFLICT"))) failLowQuality("TABLE_COLUMN_ORDER_CONFLICT");
 
   if (scored.length === 2) {
     const disagreement = structuralDisagreement(values[0], values[1]);
     if (disagreement.maximum > DISAGREEMENT_THRESHOLD
       && scored[0].score < CONFLICT_OVERRIDE_SCORE
-      && scored[1].score < CONFLICT_OVERRIDE_SCORE) failLowQuality();
+      && scored[1].score < CONFLICT_OVERRIDE_SCORE) failLowQuality("TABLE_STRUCTURE_CONFLICT");
   }
 
   const accepted = scored.filter((item) => item.accepted).sort(compareScored);

@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ^22.13.0
           cache: npm
 
       - name: Cache fixed conversion engines
@@ -90,7 +90,10 @@ jobs:
         run: npm test
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=low
 
       - name: Build Windows 10 and 11 installer
         run: npm run dist
@@ -135,7 +138,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ^22.13.0
           cache: npm
 
       - name: Assert native runner architecture
@@ -176,7 +179,10 @@ jobs:
           "$FLYINGMOUSE_LIBREOFFICE_PATH" -env:UserInstallation="file://$RUNNER_TEMP/flyingmouse-office-profile" --headless --version
 
       - name: Production dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Full dependency audit
+        run: npm audit --audit-level=low
 
       - name: Build unsigned macOS DMG
         run: npm run dist:mac:${{ matrix.arch }}

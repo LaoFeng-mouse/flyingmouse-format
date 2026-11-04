@@ -1,0 +1,14 @@
+{
+  "packageName": "exceljs",
+  "version": "4.4.0",
+  "file": "lib/utils/parse-sax.js",
+  "beforeSha256": "14c05f86bc7eb0a698ad263b479ccaa53335821b9c082bb977fca980a93b1b27",
+  "afterSha256": "26ded0516ac7c2d38aaf8c6ecf821b6c89763e4af34a0710c3ca7fd72e0b40b9",
+  "replacements": [
+    {
+      "from": "    events = [];\n  }\n};",
+      "to": "    events = [];\n  }\n  saxesParser.close();\n  if (error) throw error;\n  if (events.length) yield events;\n};",
+      "count": 1
+    }
+  ]
+}

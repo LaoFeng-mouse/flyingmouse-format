@@ -1,9 +1,9 @@
-> 当前为 0.8.1 的 OFD、PDF、Excel、诊断与 CR2 通用修复源码。公开变体的验证、构建与发布状态统一见 [现役交接](docs/HANDOFF.md)。
-> Current: 0.8.1 general repair source for OFD, PDF, Excel, diagnostics and CR2. See the [current handoff](docs/HANDOFF.md) for this public variant's validation, build and release status.
+> 当前为 0.8.3 的 ICO、媒体、电子书安全与依赖兼容修复源码。公开变体的验证、构建与发布状态统一见 [现役交接](docs/HANDOFF.md)。
+> Current: 0.8.3 repair source for ICO conversion, media, e-book security and dependency compatibility. See the [current handoff](docs/HANDOFF.md) for this public variant's validation, build and release status.
 
 # FlyingMouse Format / 飞鼠格式
 
-> 本分支在公开 main 0.7.10 基础上同步通用修复，尚未合并主线、创建发布标签或发布新安装包。各平台与 Microsoft Store 仍需分别构建和验收。保留 CR2 白平衡、转换进度、资源预算、内容完整性及退出清理修复。
+> 本次公开源码更新同步通用修复，保留普通音频功能边界，以及 PDF/Word、OFD、Excel、CR2、资源预算和退出清理修复。源码更新不表示新安装包或 Microsoft Store 版本已经发布，各平台仍需分别构建和验收。
 
 > A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
 
@@ -44,7 +44,7 @@
 - 电子书：txt/md/html → EPUB；EPUB → TXT/Markdown/HTML，以及有 LibreOffice 时转 PDF/DOCX。读取按章节目录排序，缺章、缺图、加密及不支持的 MOBI 压缩会明确失败；复杂 CSS 版式会简化。
 - 图片合并 PDF 支持调整顺序：多张图片转 PDF 前可在队列中上移/下移，PDF 页序跟随队列顺序。
 - HEIC/HEIF 图片可转换为 JPG/PNG/WebP 等（内置 ffmpeg 解码）。
-- ICO 图标可转换为 PNG/JPG 等，PNG/JPG 也可生成多尺寸 ICO 图标（实验性）。
+- ICO 图标可转换为 PNG/JPG/WebP 等；PNG/JPG/WebP/SVG/BMP 等图片可生成多尺寸 ICO（16–256 像素，按原图大小选择档位）。保留透明背景、按比例补边，小图不强行放大。读取现代 PNG 图标和常见未压缩位图图标，取最大尺寸；不支持的编码或损坏文件会明确报错。
 - TGA 图片可转换为 PNG/JPG/WebP 等（内置 ffmpeg 解码，实验性）。
 - 相机 RAW 原片（CR2/CR3/NEF/ARW/DNG 等）可转换为 JPG/PNG/WebP/TIFF 等（Windows 版，实验性；CR2 使用 LibRaw，其余 RAW 使用 dcraw）。
 - 资源保护：普通转换受引擎能力和机器内存约束；高级 PDF 结构识别限制为 500 页、单页 5000 万像素、每批最多 8 页且累计 1 亿像素（144 DPI）；整份超过单批预算时自动串行分批，仍保留总页数和全局输出预算，超限会明确提示。解码合法性与产物完整性校验保留。
@@ -62,12 +62,14 @@
 
 从源码运行：
 
+主线要求 **Node.js 22.13.0 或更新版本**。在独立物理目录中执行 `npm ci`，安装结束会自动核验并应用四份已记录的兼容补丁，构建前再次检查；补丁内容与上游许可证见 [依赖补丁说明](third-party/dependency-patches/NOTICE.md)。Windows 7 使用独立环境与锁文件。
+
 > 源码仓库不包含体积较大的 FFmpeg、LibreOffice、Poppler 和 Tesseract 资源；普通用户请直接下载 Release 安装包。开发者从源码运行完整转换功能前，需要自行准备 `bin/` 下的引擎资源。
 
 Windows 10/11 x64 的 CR2 引擎另用 `npm run restore:libraw` 恢复。脚本从锁定的 LibRaw 与微软官方归档下载、校验 SHA-256 并解包到 `bin/libraw`，不会运行系统安装器。完整构建和验证步骤见 [发布流程](docs/RELEASE.md)。
 
 ```powershell
-npm install
+npm ci
 npm run desktop
 ```
 
@@ -93,16 +95,16 @@ npm run dist
 
 ### Windows 版本选择
 
-- **Windows 10 / 11 x64（完整版）**：构建文件为 `FlyingMouse Format-Setup-0.8.1-x64.exe`，使用 Electron 43、Sharp 0.35 和 PDF.js 6，包含高级扫描表格引擎。
-- **Windows 10 / 11 x64（轻量版）**：构建文件为 `FlyingMouse Format-Lite-Setup-0.8.1-x64.exe`，保留常用转换与 OCR；高级扫描表格需要完整版。两者是否可公开下载以 Release 资产为准。
-- **Windows 7 SP1 x64（兼容版）**：构建文件为 `FlyingMouse Format-Setup-0.8.1-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105；本轮尚未构建。
+- **Windows 10 / 11 x64（完整版）**：构建文件为 `FlyingMouse Format-Setup-0.8.3-x64.exe`，使用 Electron 43、Sharp 0.35 和 PDF.js 6，包含高级扫描表格引擎。
+- **Windows 10 / 11 x64（轻量版）**：构建文件为 `FlyingMouse Format-Lite-Setup-0.8.3-x64.exe`，保留常用转换与 OCR；高级扫描表格需要完整版。两者是否可公开下载以 Release 资产为准。
+- **Windows 7 SP1 x64（兼容版）**：构建文件为 `FlyingMouse Format-Setup-0.8.3-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105；本轮尚未构建。
 
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.8.1 的验收进度以修复记录为准；Win7 构建及真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.8.3 的验收进度以修复记录为准；Win7 构建及真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：构建目标 `FlyingMouse Format-Setup-0.8.1-mac-arm64.dmg`。
-- **Intel Mac**：构建目标 `FlyingMouse Format-Setup-0.8.1-mac-x64.dmg`。
+- **Apple Silicon（M1 及更新）**：构建目标 `FlyingMouse Format-Setup-0.8.3-mac-arm64.dmg`。
+- **Intel Mac**：构建目标 `FlyingMouse Format-Setup-0.8.3-mac-x64.dmg`。
 
 macOS 构建目标为 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。历史版本的原生 GitHub runner 验证不能替代本轮验收；本次候选的两个架构尚未构建安装包，源码及原生引擎 CI 状态以对应提交为准，真实 Mac 设备仍待验收。
 
@@ -138,7 +140,7 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 - E-books: txt/md/html → EPUB (generated locally); EPUB → TXT/Markdown; MOBI → EPUB/TXT/Markdown (MOBI parsing is experimental; complex layouts may be incomplete).
 - Image-to-PDF ordering: when merging multiple images into a PDF, reorder items with up/down controls before converting; PDF page order follows the queue.
 - HEIC/HEIF images convert to JPG/PNG/WebP and more (built-in ffmpeg decoding).
-- ICO icons convert to PNG/JPG and more; PNG/JPG can also produce multi-size ICO icons (experimental).
+- ICO icons convert to PNG/JPG/WebP and more. PNG/JPG/WebP/SVG/BMP images produce multi-size ICOs (16–256 px, selected for the source size), preserving transparency and proportions without enlarging small images. Modern PNG and common uncompressed bitmap icons use the largest frame; unsupported or damaged data is rejected.
 - TGA images convert to PNG/JPG/WebP and more (built-in ffmpeg decoding, experimental).
 - Camera RAW files (CR2/CR3/NEF/ARW/DNG, etc.) convert to JPG/PNG/WebP/TIFF and more (Windows build, experimental; LibRaw for CR2 and dcraw for other RAW files).
 - Resource safeguards: ordinary conversions depend on engine capacity and available memory. Advanced PDF structure recognition is limited to 500 pages, 50 megapixels per page, and 8 pages and 100 megapixels per batch at 144 DPI; larger documents are processed in serial batches while document-wide page and output budgets remain enforced. Decode-validity and output-integrity checks remain.
@@ -156,6 +158,8 @@ See the [current handoff](docs/HANDOFF.md) for this branch's source and verifica
 
 > The source repository excludes the large FFmpeg, LibreOffice, Poppler, and Tesseract bundles. Regular users should install the Release build. Developers need to provide the corresponding resources under `bin/` for the complete conversion feature set.
 
+The main development environment requires **Node.js 22.13.0 or newer**. Run `npm ci` in a physical project directory: installation verifies and applies four documented compatibility patches, and packaging verifies them again. See the [patch notice](third-party/dependency-patches/NOTICE.md) for changes and upstream licenses. Win7 keeps its separate environment and lockfile.
+
 CLI examples:
 
 ```powershell
@@ -171,16 +175,16 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-- **Windows 10 / 11 x64 (full):** the build output is `FlyingMouse Format-Setup-0.8.1-x64.exe`, with Electron 43, Sharp 0.35, PDF.js 6, and the advanced scanned-table engine.
-- **Windows 10 / 11 x64 (lite):** the build output is `FlyingMouse Format-Lite-Setup-0.8.1-x64.exe`, retaining common conversions and OCR; advanced scanned tables require the full build. Public availability depends on the actual Release assets.
-- **Windows 7 SP1 x64 (compatibility build):** the output would be `FlyingMouse Format-Setup-0.8.1-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation. This candidate has not been built for Win7.
+- **Windows 10 / 11 x64 (full):** the build output is `FlyingMouse Format-Setup-0.8.3-x64.exe`, with Electron 43, Sharp 0.35, PDF.js 6, and the advanced scanned-table engine.
+- **Windows 10 / 11 x64 (lite):** the build output is `FlyingMouse Format-Lite-Setup-0.8.3-x64.exe`, retaining common conversions and OCR; advanced scanned tables require the full build. Public availability depends on the actual Release assets.
+- **Windows 7 SP1 x64 (compatibility build):** the output would be `FlyingMouse Format-Setup-0.8.3-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation. This candidate has not been built for Win7.
 
 The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. See the [current handoff](docs/HANDOFF.md) for this source branch's validation; Win7 builds and physical Windows 7 SP1 x64 acceptance remain pending. Both Windows installers are unsigned and may trigger SmartScreen.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** build target `FlyingMouse Format-Setup-0.8.1-mac-arm64.dmg`.
-- **Intel Mac:** build target `FlyingMouse Format-Setup-0.8.1-mac-x64.dmg`.
+- **Apple Silicon (M1 or newer):** build target `FlyingMouse Format-Setup-0.8.3-mac-arm64.dmg`.
+- **Intel Mac:** build target `FlyingMouse Format-Setup-0.8.3-mac-x64.dmg`.
 
 macOS builds target macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. Historical native GitHub runner results do not validate this candidate: neither macOS installer has been built for this candidate; code and native-engine CI must be checked against the corresponding commit, and physical Mac acceptance remains pending.
 
@@ -198,7 +202,7 @@ Use `node scripts/build-win7.js --prepare-only` only to inspect staging without 
 
 | Category / 类别 | Input / 输入 | Output / 输出 |
 |---|---|---|
-| Images / 图片 | jpg, png, webp, avif, tiff, gif, bmp, heic, heif, cr2, cr3, crw, nef, arw, dng, raf, rw2, orf, pef, srw, 3fr, erf, fff, iiq, kdc, mef, mrw, x3f | png, jpg, webp, avif, tiff, gif (动图), pdf, txt (OCR), mp4, webm |
+| Images / 图片 | jpg, png, webp, avif, tiff, gif, bmp, svg, ico, tga, heic, heif, cr2, cr3, crw, nef, arw, dng, raf, rw2, orf, pef, srw, 3fr, erf, fff, iiq, kdc, mef, mrw, x3f | png, jpg, webp, avif, tiff, gif (动图), ico (16–256 px), pdf, txt (OCR), mp4, webm |
 | Text / 文本 | txt, md, html, json, csv, log, xml, yaml | txt, md, html, json, csv, pdf, docx, epub |
 | E-book / 电子书 | epub, mobi | txt, md, epub (mobi→epub 实验性) |
 | Word/WPS | doc, docx, odt, rtf, wps, wpt, wpd | pdf, docx, odt, rtf, txt, html, md |

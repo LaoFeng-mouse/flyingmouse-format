@@ -29,6 +29,7 @@ Electron 主进程
 | [pdf-office-docx.js](../pdf-office-docx.js)、[pdf-office-xlsx.js](../pdf-office-xlsx.js) | 结构化 Word/Excel、参考图与待核对内容 |
 | [markdown-document.js](../markdown-document.js)、[markdown-math.js](../markdown-math.js)、[text-conversion.js](../text-conversion.js) | Markdown 文档树、数学公式及文本格式 |
 | [subtitles.js](../subtitles.js)、[ofd-convert.js](../ofd-convert.js) | 字幕转换与 OFD 专用路径 |
+| [ico-format.js](../ico-format.js)、[image.js](../image.js) | ICO 目录与像素校验、多尺寸图标及通用图片转换 |
 | [settings-store.js](../settings-store.js)、[save-download.js](../save-download.js)、[save-converted-result.js](../save-converted-result.js) | 设置降级、结果完整性与关联资源保存 |
 | [public/app.js](../public/app.js)、[public/conversion-preferences.js](../public/conversion-preferences.js)、[public/i18n.js](../public/i18n.js) | 队列交互、能力刷新、偏好与双语提示 |
 
@@ -107,3 +108,25 @@ FFmpeg 负责普通音视频及部分图片编码，Sharp 负责图片处理，L
 标准 Windows 构建使用根项目 Electron 运行时。Win7 是独立 Legacy profile，使用自己的 Electron 22.3.27、Sharp 0.32.6、PDF.js 2.16.105 与锁文件；其构建脚本要求 Node 18–22，在隔离 staging 安装依赖，不修改根运行时。两个运行时的 PDF.js 均随包自包含并禁用动态求值。macOS 使用各架构原生引擎包，平台是否完成本轮验证以修复记录为准。
 
 飞鼠格式与鼠鼠打印是独立应用；图标和鼠鼠界面资产按项目约定维护，不因转换引擎修改而重绘。
+
+## ICO、媒体与电子书边界
+
+`ico-format.js` 在分配输入缓冲区前将图标文件限制为 64 MiB；目录偏移须位于目录之后，PNG 的 IHDR 尺寸须与图标目录匹配。优先选择最大面积帧，同尺寸优先 PNG、再比较位深。常见未压缩 1/4/8/24/32 位 DIB 转为受校验的 BMP；CORE 调色板按三字节读取，保留独立 AND 透明蒙版。32 位存在非零 alpha 时使用 alpha，否则按蒙版恢复透明度。不支持的压缩编码、缺失蒙版和尺寸冲突明确失败。
+
+`image.js` 将 ICO 中转为 PNG 并复用图片、OCR 与图片合并 PDF 链路，失败也回收本次临时目录。ICO 输出从首帧生成 RGBA PNG 帧，保持比例并补透明边，最大 256 像素；小图不放大，16/24/32 档位保留。动画尺寸依据单帧高度，输出提示动画已转为首帧静态图；帧间及写出前检查取消。
+
+普通媒体与 TS 共用流描述解析；探测、透明背景合成和输出映射指向同一条选定的视频/音频轨道，多轨时提示。5.1(side) 转 WebM/Opus/OGG 显式映射六路声道。图片/PDF 合并沿用请求取消上下文，异步文件检查完成后再次确认连接状态，才登记结果。目录拖入失败会显示错误，避免界面停在等待状态。
+
+EPUB→HTML 按 parse5 解析出的 DOM 过滤活动标签、事件属性和危险链接，保留正文、表格、合法链接、嵌入的栅格图片及常见 MathML。未知容器保留安全子内容，脚本和嵌入对象删除内容；超深嵌套拒绝。过滤不保证复杂 CSS 版式等价，也不依赖应用内预览的 CSP 保护已保存的 HTML。
+
+## 主线依赖与兼容补丁
+
+主线开发环境要求 Node.js 22.13.0 或更新版本，在独立物理目录安装锁定依赖。文件匹配使用官方 minimatch 11 与 glob 14，归档/解压及构建父依赖同步升级，避免旧消费者依赖新版库已经改变的内部接口。ExcelJS 保持 4.4.0 的完整工作簿和流式 API，精度及兼容行为由 PDF/Excel 回归与真实文件测试约束。
+
+`third-party/dependency-patches/` 固定包含四份补丁规则，记录上游版本、原始文件 SHA-256、精确替换和输出 SHA-256：三份 ExcelJS 修复流式管道返回值、ZIP 元数据顺序与解压错误传播、XML 结束检查；一份开发工具 temp 修复新版 rimraf 清理接口。延迟工作表通过可等待的 pipeline 写入临时文件，在错误和取消路径关闭流并清理临时资源。
+
+`scripts/patch-dependency-compat.js` 通过 postinstall 应用补丁；规则缺失、规则多出、未知文件内容或依赖路径重定向都会拒绝。已匹配修补后摘要时重复执行不重写文件，构建前再次检查。生产安装只可省略锁文件明确标记为开发依赖的 temp，三份生产 ExcelJS 修复仍然必需；完整构建必须验证所有补丁。
+
+补丁保留上游许可证、包名、版本和锁文件的发布包摘要；修补后文件摘要另由规则记录，包验证还须核对运行包内的三份生产补丁。审计针对实际安装的依赖图，不使用忽略规则或改写漏洞信息。来源版本的审计结果不能代替最终公开 Git 树的独立验证，也不能替代原生引擎和其他渠道验收。
+
+Windows 7 派生保留独立锁与 Node 18–22 构建约定，移除主线现代覆盖、安装补丁 hook 及对应构建测试。公开源码、HTTP、CLI、UI 与打包白名单始终只支持普通音频；上述通用依赖改动不引入平台专用音乐模块、登录或凭据接入。

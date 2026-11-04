@@ -81,6 +81,77 @@ test("computes the exact weighted score from confidence, populated anchors, grid
   assert.deepEqual(result.reasons, []);
 });
 
+test("overlapping same-engine table candidates report ambiguous structure rather than scan clarity", () => {
+  const { validateStructureManifest } = require("../pdf-structure-contract");
+  // Minimal replay of the real vector-only invoice: PP-Structure detects the
+  // inner item grid and the enclosing form as two candidates from one engine.
+  // Keep source, row counts and measured overlapping bounds; omit private text.
+  const tables = [
+    { ...candidate({ id: "pp-001-001", rows: 12, columns: 5 }), bbox: [3.2401692271232605, 680.4694538116455, 1183.1093654036522, 1616.9536743164062] },
+    { ...candidate({ id: "pp-001-002", rows: 15, columns: 5 }), bbox: [3.1575106978416443, 53.72705841064453, 1187.6547996997833, 1620.7270584106445] }
+  ].map(table => ({ ...table, cells: [{ row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+    bbox: [table.bbox[0]+1, table.bbox[1]+1, table.bbox[0]+10, table.bbox[1]+10], text: "sample", confidence: 0.99 }] }));
+  const manifest = { schemaVersion: 1, engine: { name: "fixture", version: "1" }, pages: [
+    { pageNumber: 1, width: 1190, height: 1684, rotation: 0, referenceImage: "page-001.png",
+      blocks: [], tables: [], tableLike: true, tableCandidates: tables, warnings: [] }
+  ] };
+  assert.throws(() => validateStructureManifest(manifest, scratch), error => {
+    assert.equal(error.code, "PDF_TABLE_OCR_LOW_QUALITY");
+    assert.deepEqual(error.details, { reason: "TABLE_CANDIDATES_AMBIGUOUS" });
+    assert.match(error.messages.zhCN, /多个候选表格结构/);
+    assert.match(error.messages.enUS, /multiple competing table structures/);
+    assert.ok(!JSON.stringify(error).includes("sample"));
+    assert.doesNotMatch(error.messages.zhCN, /清晰度/);
+    return true;
+  });
+});
+
+test("rejects a real scan row whose column indexes contradict nonoverlapping visual positions", () => {
+  const { chooseTableCandidate, scoreTableCandidate } = require("../pdf-structure-score");
+  // Measured x extents from the third product row of the audit scan. The engine
+  // put the rightmost amount in column 5, ahead of three cells located to its left.
+  const x = [[0.28,93.73],[93.40,232.81],[232.31,340.32],[339.57,452.52],
+    [451.97,754.55],[1018.09,1190.19],[753.96,851.21],[850.08,918.64],[917.26,1019.79]];
+  const input = candidate({ rows: 1, columns: 9, cells: x.map(([left,right], column) => ({
+    row: 0, column, rowSpan: 1, columnSpan: 1, bbox: [left,577,right,713],
+    text: `anonymous-${column}`, confidence: 0.99
+  })) });
+  input.bbox=[0,577,1191,713];
+  const scored=scoreTableCandidate(input);
+  assert.equal(scored.accepted,false);
+  assert.deepEqual(scored.reasons,["TABLE_COLUMN_ORDER_CONFLICT"]);
+  assert.throws(()=>chooseTableCandidate([input]),error=>{
+    assert.equal(error.code,"PDF_TABLE_OCR_LOW_QUALITY");
+    assert.deepEqual(error.details,{reason:"TABLE_COLUMN_ORDER_CONFLICT"});
+    assert.match(error.messages.zhCN,/列顺序.*位置.*矛盾/);
+    assert.match(error.messages.enUS,/column order.*visual positions/);
+    assert.ok(!JSON.stringify(error).includes("anonymous-"));
+    return true;
+  });
+  // Correct visual ordering is accepted without inferring or editing any text.
+  input.cells.sort((a,b)=>a.bbox[0]-b.bbox[0]).forEach((item,index)=>{item.column=index;});
+  assert.equal(scoreTableCandidate(input).accepted,true);
+});
+
+test("column position checking preserves row spans, column spans, separate rows and small coordinate noise", () => {
+  const { scoreTableCandidate } = require("../pdf-structure-score");
+  const input=candidate({rows:2,columns:3,cells:[
+    cell(0,0,"left",.99,2,1),cell(0,1,"wide",.99,1,2),
+    cell(1,1,"middle",.99),cell(1,2,"right",.99)
+  ]});
+  assert.equal(scoreTableCandidate(input).accepted,true);
+  const noise=candidate({rows:1,columns:2,cells:[
+    {...cell(0,0,"A",.99),bbox:[10.4,0,10.6,10]},
+    {...cell(0,1,"B",.99),bbox:[9.7,0,9.9,10]}
+  ]});
+  assert.equal(scoreTableCandidate(noise).accepted,true);
+  const separate=candidate({rows:2,columns:2,cells:[
+    {...cell(0,0,"top",.99),bbox:[100,0,110,10]},
+    {...cell(1,1,"bottom",.99),bbox:[0,20,10,30]}
+  ]});
+  assert.equal(scoreTableCandidate(separate).accepted,true);
+});
+
 test("blank cells do not dilute OCR confidence or hide uncertain populated cells", () => {
   const { scoreTableCandidate } = require("../pdf-structure-score");
   const cells = Array.from({ length: 16 }, (_, index) => cell(Math.floor(index / 4), index % 4,
@@ -188,6 +259,12 @@ test("fails closed for row, column, or occupancy disagreement over 25 percent wh
   assert.equal(structuralDisagreement(base, occupancyConflict).occupancyRatio, 0.666666666667);
   for (const other of [rowConflict, columnConflict, occupancyConflict]) {
     lowQuality(() => chooseTableCandidate([base, other]), ["secret"]);
+    assert.throws(() => chooseTableCandidate([base, other]), error => {
+      assert.deepEqual(error.details, { reason: "TABLE_STRUCTURE_CONFLICT" });
+      assert.match(error.messages.zhCN, /行列结构或单元格内容存在冲突/);
+      assert.match(error.messages.enUS, /structures or cell contents conflict/);
+      return true;
+    });
   }
 });
 

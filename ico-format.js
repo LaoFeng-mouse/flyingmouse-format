@@ -8,8 +8,10 @@
 // 写：encodeIco 把多尺寸 PNG 帧（16/24/32/48/64/128/256）组装成 ICO 容器（PNG 帧内嵌，Vista+ 支持）。
 
 const fs = require("fs");
+const { decodeBmpToRaw } = require("./bmp-input");
 
-const PNG_MAGIC = 0x89504e47; // \x89PNG
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const MAX_ICO_BYTES = 64 * 1024 * 1024;
 
 // ICO 魔数：reserved=0 + type=1（0x00 0x00 0x01 0x00）
 function isIcoBuffer(buffer) {
@@ -37,12 +39,41 @@ function unsupported(message) {
   return error;
 }
 
+async function readIcoFile(filePath) {
+  const handle = await fs.promises.open(filePath, "r");
+  try {
+    const { size } = await handle.stat();
+    if (size > MAX_ICO_BYTES) throw unsupported("ICO 文件超过 64 MiB 安全读取上限。");
+    const data = Buffer.alloc(size);
+    let offset = 0;
+    while (offset < size) {
+      const { bytesRead } = await handle.read(data, offset, size - offset, offset);
+      if (!bytesRead) throw unsupported("ICO 文件数据不完整。");
+      offset += bytesRead;
+    }
+    return data;
+  } finally {
+    await handle.close();
+  }
+}
+
+function validatePng(data, width, height) {
+  if (data.length < 33 || !data.subarray(0, 8).equals(PNG_SIGNATURE)
+      || data.readUInt32BE(8) !== 13 || data.toString("ascii", 12, 16) !== "IHDR"
+      || data.readUInt32BE(16) !== width || data.readUInt32BE(20) !== height) {
+    throw unsupported("ICO 内嵌 PNG 的尺寸或文件头不正确。");
+  }
+}
+
 // 解析 ICO 目录，返回 { count, entries }。
 // entry: { width, height, bytes, offset, png, data }
 function parseIco(buffer) {
-  if (!isIcoBuffer(buffer)) throw new Error("不是有效的 ICO 文件。");
+  if (!isIcoBuffer(buffer)) throw unsupported("不是有效的 ICO 文件。");
+  if (buffer.length > MAX_ICO_BYTES) throw unsupported("ICO 文件超过 64 MiB 安全读取上限。");
   const count = buffer.readUInt16LE(4);
   if (count < 1 || count > 512) throw unsupported("ICO 图像帧数量异常。");
+  const directoryEnd = 6 + count * 16;
+  if (directoryEnd > buffer.length) throw unsupported("ICO 目录项不完整。");
   const entries = [];
   for (let i = 0; i < count; i += 1) {
     const base = 6 + i * 16;
@@ -51,10 +82,11 @@ function parseIco(buffer) {
     const height = buffer[base + 1] === 0 ? 256 : buffer[base + 1];
     const bytes = buffer.readUInt32LE(base + 8);
     const offset = buffer.readUInt32LE(base + 12);
-    if (offset + bytes > buffer.length) throw unsupported("ICO 图像数据越界。");
+    if (!bytes || offset < directoryEnd || offset + bytes > buffer.length) throw unsupported("ICO 图像数据越界。");
     const data = buffer.subarray(offset, offset + bytes);
-    const png = data.length >= 8 && data.readUInt32BE(0) === PNG_MAGIC;
-    entries.push({ width, height, bytes, offset, png, data });
+    const png = data.length >= 8 && data.subarray(0, 8).equals(PNG_SIGNATURE);
+    if (png) validatePng(data, width, height);
+    entries.push({ width, height, bytes, offset, png, bitCount: buffer.readUInt16LE(base + 6), data });
   }
   return { count, entries };
 }
@@ -68,36 +100,77 @@ function selectBestEntry(entries) {
     const areaDiff = (b.width * b.height) - (a.width * a.height);
     if (areaDiff !== 0) return areaDiff;
     if (a.png !== b.png) return a.png ? -1 : 1;
-    return 0;
+    return (b.bitCount || 0) - (a.bitCount || 0);
   });
   return ranked[0];
 }
 
 // ICO 内嵌的 BMP 帧是 DIB（无 BITMAPFILEHEADER，且 biHeight = 2×实际高度，含 AND mask）。
 // 补 14 字节文件头 + 高度减半，还原成 bmp-input 可解码的完整 BMP。
-function dibToBmp(dib) {
+function dibToBmp(dib, width, height) {
+  if (dib.length < 12) throw unsupported("ICO 位图文件头不完整。");
   const dibSize = dib.readUInt32LE(0);
-  const body = Buffer.from(dib);
-  if (dibSize >= 40) {
-    const biHeight = body.readInt32LE(8);
-    if (Math.abs(biHeight) >= 2) body.writeInt32LE(Math.trunc(biHeight / 2), 8);
-  } else if (dibSize === 12) {
-    const biHeight = body.readUInt16LE(6);
-    if (biHeight >= 2) body.writeUInt16LE(Math.trunc(biHeight / 2), 6);
+  if (![12, 40, 52, 56, 108, 124].includes(dibSize) || dibSize > dib.length) throw unsupported("ICO 位图文件头不支持或不完整。");
+  const core = dibSize === 12;
+  const dibWidth = core ? dib.readUInt16LE(4) : dib.readInt32LE(4);
+  const dibHeight = core ? dib.readUInt16LE(6) : dib.readInt32LE(8);
+  const bitCount = dib.readUInt16LE(core ? 10 : 14);
+  if (dibWidth !== width || Math.abs(dibHeight) !== height * 2
+      || dib.readUInt16LE(core ? 8 : 12) !== 1) throw unsupported("ICO 位图尺寸与目录不一致。");
+  if (![1, 4, 8, 24, 32].includes(bitCount) || (!core && dib.readUInt32LE(16) !== 0)) {
+    throw unsupported("暂不支持此 ICO 位图编码；支持 PNG 和未压缩的 1/4/8/24/32 位图标。");
   }
-  const bitCount = dibSize === 12 ? body.readUInt16LE(10) : body.readUInt16LE(14);
-  let paletteBytes = 0;
-  if (bitCount <= 8) {
-    const paletteCount = bitCount === 1 ? 2 : bitCount === 4 ? 16 : 256;
-    paletteBytes = paletteCount * 4;
-  }
-  const pixelOffset = 14 + dibSize + paletteBytes;
+  const declaredColors = core ? 0 : dib.readUInt32LE(32);
+  const paletteCount = bitCount <= 8 ? (declaredColors || 2 ** bitCount) : declaredColors;
+  if (paletteCount > (bitCount <= 8 ? 2 ** bitCount : 256)) throw unsupported("ICO 调色板大小不正确。");
+  const sourcePixels = dibSize + paletteCount * (core ? 3 : 4);
+  const rowBytes = Math.ceil(width * bitCount / 32) * 4;
+  const maskRowBytes = Math.ceil(width / 32) * 4;
+  const maskOffset = sourcePixels + rowBytes * height;
+  if (maskOffset + maskRowBytes * height > dib.length) throw unsupported("ICO 像素或透明蒙版不完整。");
+  // Normalize CORE (three-byte palette) and INFO headers to one safe BMP layout.
+  const bodyHeader = Buffer.alloc(40);
+  bodyHeader.writeUInt32LE(40, 0);
+  bodyHeader.writeInt32LE(width, 4);
+  bodyHeader.writeInt32LE(dibHeight < 0 ? -height : height, 8);
+  bodyHeader.writeUInt16LE(1, 12);
+  bodyHeader.writeUInt16LE(bitCount, 14);
+  bodyHeader.writeUInt32LE(paletteCount, 32);
+  const palette = Buffer.alloc(paletteCount * 4);
+  for (let i = 0; i < paletteCount; i++) dib.copy(palette, i * 4, dibSize + i * (core ? 3 : 4), dibSize + i * (core ? 3 : 4) + 3);
+  const pixels = dib.subarray(sourcePixels, maskOffset);
+  const pixelOffset = 14 + 40 + palette.length;
   const header = Buffer.alloc(14);
   header.write("BM", 0, "latin1");
-  header.writeUInt32LE(14 + body.length, 2);
+  header.writeUInt32LE(pixelOffset + pixels.length, 2);
   header.writeUInt32LE(0, 6); // reserved
   header.writeUInt32LE(pixelOffset, 10);
-  return Buffer.concat([header, body]);
+  return {
+    data: Buffer.concat([header, bodyHeader, palette, pixels]),
+    andMask: Buffer.from(dib.subarray(maskOffset, maskOffset + maskRowBytes * height)),
+    maskRowBytes, topDown: dibHeight < 0
+  };
+}
+
+function decodedEntry(entry) {
+  const { png, width, height, data } = entry;
+  return png ? { png, width, height, data: Buffer.from(data) }
+    : { png, width, height, ...dibToBmp(data, width, height) };
+}
+
+function decodeIcoBitmap(frame) {
+  const raw = decodeBmpToRaw(frame.data);
+  // Windows uses meaningful 32-bit alpha in preference to the legacy mask.
+  if (raw.channels === 4) return raw;
+  const data = Buffer.alloc(raw.width * raw.height * 4);
+  for (let y = 0; y < raw.height; y++) for (let x = 0; x < raw.width; x++) {
+    const i = y * raw.width + x;
+    raw.data.copy(data, i * 4, i * 3, i * 3 + 3);
+    const row = frame.topDown ? y : raw.height - 1 - y;
+    const masked = frame.andMask[row * frame.maskRowBytes + (x >> 3)] & (0x80 >> (x & 7));
+    data[i * 4 + 3] = masked ? 0 : 255;
+  }
+  return { width: raw.width, height: raw.height, channels: 4, data };
 }
 
 // 提取最佳帧。
@@ -107,10 +180,7 @@ function dibToBmp(dib) {
 function extractBestFrame(buffer) {
   const { entries } = parseIco(buffer);
   const best = selectBestEntry(entries);
-  if (best.png) {
-    return { png: true, width: best.width, height: best.height, data: Buffer.from(best.data) };
-  }
-  return { png: false, width: best.width, height: best.height, data: dibToBmp(best.data) };
+  return decodedEntry(best);
 }
 
 // 提取全部帧（多尺寸 ICO 素材全集），按面积降序。
@@ -119,18 +189,18 @@ function extractAllFrames(buffer) {
   const { entries } = parseIco(buffer);
   return [...entries]
     .sort((a, b) => (b.width * b.height) - (a.width * a.height))
-    .map((entry) => ({
-      png: entry.png,
-      width: entry.width,
-      height: entry.height,
-      data: entry.png ? Buffer.from(entry.data) : dibToBmp(entry.data)
-    }));
+    .map(decodedEntry);
 }
 
 // 把多尺寸 PNG 帧组装成 ICO 容器。pngFrames: [{ size, data }]，size ∈ [1,256]。
 function encodeIco(pngFrames) {
-  const frames = pngFrames.filter((f) => f && Buffer.isBuffer(f.data) && f.data.length > 0);
-  if (!frames.length) throw new Error("没有可写入 ICO 的 PNG 帧。");
+  if (!Array.isArray(pngFrames) || !pngFrames.length || pngFrames.length > 512) throw unsupported("ICO 输出帧数量不正确。");
+  const frames = pngFrames;
+  for (const frame of frames) {
+    if (!frame || !Number.isInteger(frame.size) || frame.size < 1 || frame.size > 256 || !Buffer.isBuffer(frame.data)) throw unsupported("ICO 输出尺寸或图像数据不正确。");
+    validatePng(frame.data, frame.size, frame.size);
+  }
+  if (frames.reduce((sum, frame) => sum + frame.data.length + 16, 6) > MAX_ICO_BYTES) throw unsupported("ICO 输出超过安全上限。");
   const count = frames.length;
   const dir = Buffer.alloc(6 + count * 16);
   dir.writeUInt16LE(0, 0); // reserved
@@ -158,6 +228,8 @@ function encodeIco(pngFrames) {
 module.exports = {
   isIcoBuffer,
   isIcoFileSync,
+  readIcoFile,
+  decodeIcoBitmap,
   parseIco,
   selectBestEntry,
   extractBestFrame,

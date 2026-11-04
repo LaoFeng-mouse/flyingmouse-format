@@ -240,10 +240,16 @@ async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
     if (best.text && ((best.confidence !== null && best.confidence < 60) || best.weakFraction > 0.5 || best.unreliableLines)) {
       const pageNumber = Number.isSafeInteger(options.pageNumber) && options.pageNumber > 0
         ? options.pageNumber : null;
+      const localLinesOnly = (best.confidence === null || best.confidence >= 60) && best.weakFraction <= 0.5;
+      const reason = localLinesOnly ? "UNRELIABLE_LINES" : "PAGE_CONFIDENCE_LOW";
       throw ocrError("OCR_LOW_CONFIDENCE",
-        `${pageNumber ? `第 ${pageNumber} 页的` : ""}扫描文字识别质量过低，已停止导出以避免生成乱码。请核对该页的清晰度、方向和文字内容后重试。`,
-        `OCR quality${pageNumber ? ` on page ${pageNumber}` : ""} is too low to export reliably. Check the scan's clarity, orientation and text before trying again.`,
-        { confidence: best.confidence, unreliableLines: best.unreliableLines,
+        localLinesOnly
+          ? `${pageNumber ? `第 ${pageNumber} 页的` : ""}部分文字行识别不可靠，已停止导出以避免错字或漏字。请对照原页核对；当前识别结果无法安全导出。`
+          : `${pageNumber ? `第 ${pageNumber} 页的` : ""}扫描文字整体识别置信度不足，已停止导出以避免生成乱码。请检查文字是否可辨认及页面方向，或使用保留文字层的 PDF。`,
+        localLinesOnly
+          ? `Some text lines${pageNumber ? ` on page ${pageNumber}` : ""} could not be recognized reliably. Export was stopped to avoid incorrect or missing text. Check the original page; the current recognition cannot be exported safely.`
+          : `The overall OCR confidence${pageNumber ? ` on page ${pageNumber}` : ""} is too low to export reliably. Check text legibility and page orientation, or use a PDF with a text layer.`,
+        { reason, confidence: best.confidence, unreliableLines: best.unreliableLines,
           ...(pageNumber ? { pageNumber } : {}) });
     }
     const warnings = [];

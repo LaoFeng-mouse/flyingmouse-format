@@ -1,0 +1,29 @@
+{
+  "packageName": "temp",
+  "version": "0.9.4",
+  "file": "lib/temp.js",
+  "beforeSha256": "ab00e9972ccbd639a4558519f40ad6839cb2c616b3da6cb9c12dea2828c6c9c9",
+  "afterSha256": "d2f48406a51a1d4d903d55a3c9eb635b966579f8028dce82433cd09686ce7512",
+  "replacements": [
+    {
+      "from": "let rimraf     = require('rimraf');",
+      "to": "const { rimraf, rimrafSync } = require('rimraf');",
+      "count": 1
+    },
+    {
+      "from": "const rimrafSync = rimraf.sync;",
+      "to": "// Modern rimraf exposes explicit sync and Promise APIs.",
+      "count": 1
+    },
+    {
+      "from": "rimrafSync(toDelete, { maxBusyTries: 6 });",
+      "to": "rimrafSync(toDelete, { maxRetries: 6 });",
+      "count": 2
+    },
+    {
+      "from": "rimraf(toDelete, { maxBusyTries: 6 }, rimrafCallback);",
+      "to": "rimraf(toDelete, { maxRetries: 6 }).then(() => rimrafCallback(null), rimrafCallback);",
+      "count": 2
+    }
+  ]
+}

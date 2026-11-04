@@ -579,13 +579,16 @@ app.post("/api/convert-images-to-pdf", assertLocalWebRequest, conversionProgress
 
   try {
     reportConversionProgress({ stage: "merging" });
-    await convertImagesToPdf(imageFiles, outputPath);
+    await withRequestCancellation(req, res, signal => convertImagesToPdf(imageFiles, outputPath, { signal }));
     reportConversionProgress({ stage: "validating" });
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
     const mimeType = "application/pdf";
-    logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
-    const registered = registerDownload(outputPath, downloadName, mimeType);
     const previewSize = (await fsp.stat(outputPath)).size;
+    // A disconnected caller cannot receive or release this result. Complete all
+    // asynchronous output checks before registering the owned download.
+    if (req.aborted || res.destroyed) throw cancellationError();
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    logger.info(`Images-to-PDF succeeded: "${downloadName}"`);
     conversionProgress.outputReady(req);
     res.json({
       ok: true,
@@ -639,13 +642,14 @@ app.post("/api/merge-pdfs", assertLocalWebRequest, conversionProgress.begin, upl
   try {
     reportConversionProgress({ stage: "merging" });
     for (const file of pdfFiles) await assertPdfInputHeader(file.inputPath, file.originalName);
-    await mergePdfFiles(pdfFiles, outputPath);
+    await withRequestCancellation(req, res, signal => mergePdfFiles(pdfFiles, outputPath, { signal }));
     reportConversionProgress({ stage: "validating" });
     await Promise.all(files.map((file) => fsp.rm(file.path, { force: true }).catch(() => {})));
-    logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
     const mimeType = "application/pdf";
-    const registered = registerDownload(outputPath, downloadName, mimeType);
     const previewSize = (await fsp.stat(outputPath)).size;
+    if (req.aborted || res.destroyed) throw cancellationError();
+    const registered = registerDownload(outputPath, downloadName, mimeType);
+    logger.info(`Merge-PDFs succeeded: "${downloadName}"`);
     conversionProgress.outputReady(req);
     res.json({
       ok: true,
@@ -836,7 +840,9 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
         : "h264";
       // 透明背景色：white / black / 十六进制色值（白名单在 alphaCompositeArgs 内校验）。
       const alphaBackground = String(req.body?.alphaBackground || "").trim() || "white";
-      await convertMedia(file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground });
+      conversionResult = await withRequestCancellation(req, res, signal => convertMedia(
+        file.path, outputPath, requestedTarget, category, { videoCodec, alphaBackground, inputExt, signal }
+      ));
     } else {
       throw new Error("暂时无法识别这个文件类型。");
     }
@@ -883,6 +889,8 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
       "PDF_TABLE_OCR_EMPTY",
       "PDF_STRUCTURE_MEMORY_INSUFFICIENT",
       "MEDIA_NO_AUDIO_TRACK",
+      "MEDIA_MST_NOT_VIDEO",
+      "MEDIA_INVALID_TRANSPORT_STREAM",
       "PDF_OCR_REQUIRED",
       "PDF_NATIVE_MATH_UNVERIFIED",
       "PDF_SCAN_COLUMNS_UNVERIFIED",

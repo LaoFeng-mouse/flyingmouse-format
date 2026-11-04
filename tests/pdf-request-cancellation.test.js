@@ -8,6 +8,7 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { test, before, after, mock } = require("node:test");
 const { PDFDocument, StandardFonts } = require("pdf-lib");
+const sharp = require("sharp");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "fm-pdf-request-cancel-"));
 process.env.FLYINGMOUSE_RUNTIME_DIR = root;
@@ -34,14 +35,26 @@ mock.method(require("../utils"), "run", async (command, _args, options) => {
   require("../conversion-cancellation").throwIfCanceled(options.signal);
   throw new Error("Synthetic native engine failure after the held boundary");
 });
+let mergeGate;
+for (const [module, name] of [[require("../image"), "convertImagesToPdf"], [require("../pdf"), "mergePdfFiles"]]) {
+  const original = module[name];
+  mock.method(module, name, async (...args) => {
+    if (mergeGate) {
+      mergeGate.enter(args[2]?.signal);
+      await mergeGate.wait;
+    }
+    return original(...args);
+  });
+}
 const { app } = require("../server");
-let server, origin, pdfBytes;
+let server, origin, pdfBytes, pngBytes;
 before(async () => {
   require("../utils").ensureDirs();
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   pdf.addPage().drawText("Native PDF text must not be published after its HTTP client disconnects.", { x: 30, y: 700, size: 12, font });
   pdfBytes = await pdf.save();
+  pngBytes = await sharp({ create: { width: 8, height: 8, channels: 4, background: "red" } }).png().toBuffer();
   server = app.listen(0, "127.0.0.1");
   await new Promise(resolve => server.once("listening", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
@@ -119,4 +132,66 @@ test("disconnecting while a completed PDF output is being checked cannot registe
   await waitFor(async () => (await fsp.readdir(config.OUTPUT_DIR)).length === 0
     || [...config.downloads.keys()].length > originalIds.length);
   await assertUnpublished(running.id, originalIds);
+});
+
+function mergeRequest(route, bytes, name) {
+  const id = randomUUID(), controller = new AbortController(), form = new FormData();
+  form.append("files", new Blob([bytes]), name);
+  form.append("files", new Blob([bytes]), `other-${name}`);
+  const response = fetch(origin + route, {
+    method: "POST", body: form, signal: controller.signal,
+    headers: { "X-FlyingMouse-Progress-Id": id }
+  });
+  response.catch(() => {});
+  return { id, controller, response };
+}
+
+for (const route of ["/api/convert-images-to-pdf", "/api/merge-pdfs"]) {
+  const input = () => route.includes("images") ? [pngBytes, "cancel.png"] : [pdfBytes, "cancel.pdf"];
+  test(`${route} forwards HTTP cancellation to the merge and cleans unpublished output`, async t => {
+    mergeGate = gate();
+    t.after(() => { mergeGate?.release(); mergeGate = null; });
+    const originalIds = [...config.downloads.keys()], running = mergeRequest(route, ...input());
+    const signal = await mergeGate.entered;
+    running.controller.abort();
+    await assert.rejects(running.response, { name: "AbortError" });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    mergeGate.release();
+    assert.ok(signal?.aborted, "the real merge must receive the request's aborted signal");
+    await assertUnpublished(running.id, originalIds);
+  });
+
+  test(`${route} does not publish a completed merge when the client disconnects during validation`, async t => {
+    const checked = gate(), stat = fsp.stat;
+    t.after(checked.release);
+    t.mock.method(fsp, "stat", async (file, ...args) => {
+      const result = await stat(file, ...args);
+      if (path.dirname(String(file)) === config.OUTPUT_DIR && String(file).endsWith(".pdf")) {
+        checked.enter(); await checked.wait;
+      }
+      return result;
+    });
+    const originalIds = [...config.downloads.keys()], running = mergeRequest(route, ...input());
+    await checked.entered;
+    running.controller.abort();
+    await assert.rejects(running.response, { name: "AbortError" });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    checked.release();
+    await waitFor(async () => (await fsp.readdir(config.OUTPUT_DIR)).length === 0
+      || [...config.downloads.keys()].length > originalIds.length);
+    await assertUnpublished(running.id, originalIds);
+  });
+}
+
+test("both merge routes still publish complete downloadable PDFs for connected callers", async () => {
+  for (const [route, bytes, name] of [["/api/convert-images-to-pdf", pngBytes, "sample.png"], ["/api/merge-pdfs", pdfBytes, "sample.pdf"]]) {
+    const response = await mergeRequest(route, bytes, name).response;
+    const result = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(result));
+    const downloaded = await fetch(origin + result.downloadUrl);
+    assert.equal(downloaded.status, 200);
+    const output = Buffer.from(await downloaded.arrayBuffer());
+    assert.equal(output.length, result.previewSize);
+    assert.equal((await PDFDocument.load(output)).getPageCount(), 2);
+  }
 });

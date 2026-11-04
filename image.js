@@ -23,12 +23,12 @@ const {
   assertImagePdfBudget
 } = require("./resource-policy");
 const { isBmpFileSync, decodeBmpToRaw } = require("./bmp-input");
-const { isIcoFileSync, extractBestFrame, encodeIco } = require("./ico-format");
+const { isIcoFileSync, readIcoFile, extractBestFrame, decodeIcoBitmap, encodeIco } = require("./ico-format");
 const { convertRasterImage, WARNING_MESSAGES } = require("./image-conversion");
 
 // ICO 输出：把输入图缩放到多尺寸（16/24/32/48/64/128/256）生成 PNG 帧，组装成 ICO 容器。
 // ICO 是静态格式；动图只取第一帧并附动画压平警告（与其它静态图片目标一致）。
-async function convertToIco(inputPath, outputPath) {
+async function convertToIco(inputPath, outputPath, options = {}) {
   const metadata = await inspectImageMetadata(inputPath, true);
   const animated = Number(metadata.pages || 1) > 1;
   const warnings = [];
@@ -37,18 +37,22 @@ async function convertToIco(inputPath, outputPath) {
   // 尺寸自适应：只生成不超过源图尺寸的帧（避免上采样放大产生模糊），
   // 但小图标档（16/24/32）必须保留——即使源图是 48px 小图，Windows 图标
   // 也需要 16/32 档（2026-08-15 增强：原固定 7 档对小源图会生成模糊的 128/256 帧）。
-  const src = Math.max(metadata.width || 0, metadata.height || 0);
+  const src = Math.max(metadata.width || 0, metadata.pageHeight || metadata.height || 0);
   const sizes = [16, 24, 32, 48, 64, 128, 256]
     .filter((size) => size <= src || size <= 32);
   const frames = [];
   for (const size of sizes) {
+    throwIfCanceled(options.signal);
     const png = await sharp(inputPath, { page: 0, pages: 1, limitInputPixels: LIMITS.maxImagePixels })
       .rotate()
-      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .resize(size, size, { fit: "contain", withoutEnlargement: true, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toColorspace("srgb")
+      .ensureAlpha()
       .png()
       .toBuffer();
     frames.push({ size, data: png });
   }
+  throwIfCanceled(options.signal);
   await fsp.writeFile(outputPath, encodeIco(frames));
   return { warnings };
 }
@@ -90,7 +94,7 @@ async function convertImage(inputPath, outputPath, target, options = {}) {
     }
 
     if (target === "ico") {
-      return await convertToIco(prepared.inputPath, outputPath);
+      return await convertToIco(prepared.inputPath, outputPath, options);
     }
 
     // 专业/新式位图输出：sharp 的预编译编码器不全，统一走打包内置 ffmpeg。
@@ -136,18 +140,23 @@ async function prepareImageInput(inputPath, inputName) {
   // 先读文件头判断（不整读大图）；只有需要中转的格式才解码进内存。
   if (isIcoFileSync(inputPath)) {
     // ICO 容器：提取最清晰帧（PNG 帧直接落盘；BMP DIB 帧解码成 raw 再转 PNG）。
+    const frame = extractBestFrame(await readIcoFile(inputPath));
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ico-input-"));
     const pngPath = path.join(tempDir, "decoded.png");
-    const frame = extractBestFrame(await fsp.readFile(inputPath));
-    if (frame.png) {
-      await fsp.writeFile(pngPath, frame.data);
-    } else {
-      const { width, height, channels, data } = decodeBmpToRaw(frame.data);
-      await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
-        .png()
-        .toFile(pngPath);
+    try {
+      if (frame.png) {
+        await fsp.writeFile(pngPath, frame.data);
+      } else {
+        const { width, height, channels, data } = decodeIcoBitmap(frame);
+        await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
+          .png()
+          .toFile(pngPath);
+      }
+      return { inputPath: pngPath, tempDir };
+    } catch (error) {
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
     }
-    return { inputPath: pngPath, tempDir };
   }
 
   if (isBmpFileSync(inputPath)) {
@@ -266,6 +275,14 @@ function isTgaFileSync(filePath) {
 }
 
 async function inspectImageMetadata(inputPath, animated = false) {
+  if (isIcoFileSync(inputPath)) {
+    const frame = extractBestFrame(await readIcoFile(inputPath));
+    const metadata = frame.png
+      ? await sharp(frame.data, { limitInputPixels: LIMITS.maxImagePixels }).metadata()
+      : { width: frame.width, height: frame.height, pages: 1, hasAlpha: true };
+    assertImageMetadata(metadata);
+    return metadata;
+  }
   let metadata;
   try {
     metadata = await sharp(inputPath, {
@@ -319,6 +336,15 @@ function pdfNumber(value) {
 
 async function readImageForPdf(inputPath, options = {}) {
   throwIfCanceled(options.signal);
+  if (isIcoFileSync(inputPath)) {
+    const prepared = await prepareImageInput(inputPath);
+    try {
+      throwIfCanceled(options.signal);
+      return await readPngAsPdfImage(prepared.inputPath);
+    } finally {
+      await fsp.rm(prepared.tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
   // sharp 的预编译构建不支持 BMP 输入：批量/ZIP 图片合并 PDF 时直接解码 BMP。
   // 先读文件头判断，避免把非 BMP 大图整读进内存。
   if (isBmpFileSync(inputPath)) {

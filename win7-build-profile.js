@@ -10,7 +10,9 @@ const STAGING_EXCLUDED_TESTS = new Set([
   "tests/pandoc-engine.test.js",
   "tests/libraw-restore.test.js",
   "tests/public-package.test.js",
-  "tests/distribution-footprint.test.js"
+  "tests/distribution-footprint.test.js",
+  "tests/dependency-patch.test.js",
+  "tests/dependency-compatibility.test.js"
 ]);
 
 const REQUIRED_RUNTIME_FILES = [
@@ -118,6 +120,14 @@ function createWin7Package(basePackage, projectRoot) {
   profile.dependencies["pdfjs-dist"] = "2.16.105";
   profile.dependencies.turndown = "7.2.0";
   profile.devDependencies.electron = "22.3.27";
+  // Keep the legacy lock separate from the modern Node/Electron dependency repair.
+  profile.devDependencies["electron-builder"] = "^26.15.3";
+  profile.engines = { ...profile.engines, node: ">=18" };
+  for (const name of ["minimatch", "@electron/asar", "@electron/universal", "archiver", "unzipper", "readdir-glob", "glob", "fast-csv", "temp", "fast-uri"]) {
+    delete profile.overrides?.[name];
+  }
+  delete profile.scripts.postinstall;
+  delete profile.scripts["verify:dependency-compat"];
 
   for (const scriptName of ["test", "test:ci"]) {
     profile.scripts[scriptName] = removeStagingExcludedTests(
