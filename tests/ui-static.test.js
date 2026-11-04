@@ -126,6 +126,35 @@ test("PDF to XLSX uses a contextual bilingual smart-table label and warning", ()
   assert.match(app, /targetSelect\.value === "xlsx"[\s\S]*info\.category === "pdf"/);
 });
 
+test("ICO target shows its bilingual size and transparency hint only while selected", async () => {
+  const { pageHarness } = require("./helpers/ui-page-harness");
+  const page = await pageHarness(() => assert.fail("Changing a target must not start conversion"), {}, {
+    targets: () => ({ category: "image", targets: ["png", "ico"] })
+  });
+  const hint = page.find("#icoHint");
+  assert.ok(hint, "The real page must contain the ICO explanation");
+  assert.equal(hint.hidden, true);
+  await page.select(["icon.png"]);
+  const target = page.find("#targetSelect");
+  target.value = "ico";
+  await target.dispatch("change");
+  assert.equal(hint.hidden, false);
+  assert.match(hint.textContent, /256 px.*transparency/);
+  assert.match(hint.textContent, /proportions.*padded instead of enlarged/);
+  const language = page.find("#languageSelect");
+  language.value = "zh-CN";
+  await language.dispatch("change");
+  assert.equal(hint.hidden, false);
+  assert.match(hint.textContent, /256 像素.*透明背景与原图比例/);
+  target.value = "png";
+  await target.dispatch("change");
+  assert.equal(hint.hidden, true);
+  target.value = "ico";
+  await target.dispatch("change");
+  await page.find("#clearButton").dispatch("click");
+  assert.equal(hint.hidden, true);
+});
+
 test("video targets expose a codec selector (h264/h265/av1) for mp4/mov/mkv", () => {
   const html = readPublic("index.html");
   const app = readPublic("app.js");

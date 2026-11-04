@@ -38,6 +38,7 @@ const logger = require("./logger");
 const { extractPdfScanRegions } = require("./pdf-ocr-regions");
 const { reportConversionProgress, captureConversionProgressReporter } = require("./conversion-progress");
 const { createOfficeWorkspace } = require("./office-runtime");
+const { createPdfRenderWorkspace } = require("./pdf-render-workspace");
 
 async function convertPdfDecrypt(inputPath, outputPath, password) {
   const pwd = String(password || "");
@@ -239,7 +240,8 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
   }
   assertPdfPages(pages.length, { ocr: true });
   reportConversionProgress({ stage: "recognizing", completed: 0, total: missing.length, unit: "pages" });
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-page-ocr-"));
+  const workspace = await createPdfRenderWorkspace(inputPath, options);
+  const { tempDir } = workspace;
   let worker;
   try {
     worker = await (options.createOcrWorker || createOcrWorker)();
@@ -248,7 +250,7 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
     // hide its low OCR quality. Recover non-overlapping, fully visible raw scans
     // at their original aspect ratio and judge each region separately.
     const scanRegions = !options.renderPdfTablePage && missing.every(page => Number.isInteger(page.pageNumber) && Array.isArray(page.lines))
-      ? await extractPdfScanRegions(inputPath, missing, tempDir) : new Map();
+      ? await extractPdfScanRegions(workspace.inputPath, missing, tempDir) : new Map();
     for (const page of missing) {
       throwIfCanceled(options.signal);
       const pageNumber = page.pageNumber || pages.indexOf(page) + 1;
@@ -276,7 +278,7 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
         reportConversionProgress({ stage: "recognizing", completed: completed.size, total: missing.length, unit: "pages" });
         continue;
       }
-      const rendered = await (options.renderPdfTablePage || renderPdfTablePage)(inputPath, pageNumber, tempDir, 200);
+      const rendered = await (options.renderPdfTablePage || renderPdfTablePage)(workspace.inputPath, pageNumber, tempDir, 200, options);
       const result = options.recognizeImageTextWithWorker
         ? { text: await options.recognizeImageTextWithWorker(worker, rendered.outputPath, pageOptions), warnings: [] }
         : await (options.recognizeImageResultWithWorker || recognizeImageResultWithWorker)(worker, rendered.outputPath,
@@ -338,7 +340,7 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
     return result;
   } finally {
     if (worker) await worker.terminate().catch(() => {});
-    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    await workspace.cleanup().catch(() => {});
   }
 }
 
@@ -1639,7 +1641,8 @@ async function mergePdfFiles(pdfFiles, outputPath, options = {}) {
   await fsp.writeFile(outputPath, bytes);
 }
 
-async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = false, signal } = {}) {
+async function renderPdfPages(inputPath, target = "png", dpi = 150, options = {}) {
+  const { ocr = false, signal } = options;
   throwIfCanceled(signal);
   const sourcePdf = await PDFDocument.load(await fsp.readFile(inputPath), { ignoreEncryption: true });
   const pageCount = sourcePdf.getPageCount();
@@ -1649,14 +1652,15 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
     throw new Error("PDF 转图片引擎未启用。请确认安装包内置的 Poppler 文件完整。");
   }
 
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-pages-"));
+  const workspace = await createPdfRenderWorkspace(inputPath, options);
+  const { tempDir } = workspace;
   try {
     const prefix = path.join(tempDir, "page");
     const formatArg = target === "jpg" ? "-jpeg" : "-png";
     const report = captureConversionProgressReporter();
     let pending = "", completed = 0, active = true;
     try {
-      await run(PDFTOPPM_PATH, [formatArg, "-cropbox", "-r", String(dpi), "-progress", inputPath, prefix], {
+      await run(PDFTOPPM_PATH, [formatArg, "-cropbox", "-r", String(dpi), "-progress", workspace.inputPath, prefix], {
         timeout: 1000 * 60 * 20, signal, onStderr(chunk) {
           if (!active || signal?.aborted) return;
           pending += chunk.toString("utf8");
@@ -1681,10 +1685,12 @@ async function renderPdfPages(inputPath, target = "png", dpi = 150, { ocr = fals
       .map((file) => path.join(tempDir, file));
 
     if (!files.length) throw new Error("PDF 转图片失败，未生成任何页面图片。");
+    if (workspace.ownsInput) await fsp.unlink(workspace.inputPath);
+    throwIfCanceled(signal);
     reportConversionProgress({ stage: "validating" });
-    return { tempDir, files };
+    return { tempDir, files, cleanup: workspace.cleanup };
   } catch (error) {
-    await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    await workspace.cleanup().catch(() => {});
     throw error;
   }
 }
@@ -1715,9 +1721,9 @@ async function emitPdfPageImages(inputPath, baseName, target, options = {}) {
         name: single ? `${baseName}.${target}` : `${baseName}-第${index + 1}页.${target}`
       });
     }
-    return { tempDir: rendered.tempDir, files, single };
+    return { tempDir: rendered.tempDir, files, single, cleanup: rendered.cleanup };
   } catch (error) {
-    await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+    await rendered.cleanup().catch(() => {});
     throw error;
   }
 }
@@ -1734,7 +1740,7 @@ async function convertPdfPagesToImagesZip(inputPath, outputPath, target, options
       outputPath
     );
   } finally {
-    await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+    await rendered.cleanup().catch(() => {});
   }
 }
 
@@ -1808,7 +1814,7 @@ async function ocrScannedPdfPages(inputPath) {
     return pages;
   } finally {
     if (worker) await worker.terminate().catch(() => {});
-    await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+    await rendered.cleanup().catch(() => {});
   }
 }
 
@@ -1829,7 +1835,7 @@ async function convertPresentationToImages(inputPath, outputPath, originalName, 
         outputPath
       );
     } finally {
-      await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
+      await emitted.cleanup().catch(() => {});
     }
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});

@@ -143,6 +143,7 @@
       "pdfjs.js",
       "pdf-classifier.js",
       "pdf-table.js",
+      "pdf-render-workspace.js",
       "xlsx-normal-font.js",
       "pdf-text-render-style.js",
       "pdf.js",

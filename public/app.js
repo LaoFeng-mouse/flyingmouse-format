@@ -266,6 +266,7 @@ function refreshLanguage() {
   downloadButton.textContent = state.converted ? `${t("action.save")} ${state.converted.fileName}` : t("action.download");
   previewTitle.textContent = state.previewResult?.fileName || t("preview.title");
   renderBatchList();
+  syncVideoCodecField();
   syncPdfExcelHint();
 }
 
@@ -586,7 +587,7 @@ function clearFile() {
   batchList.replaceChildren();
   setSelectPlaceholder(targetSelect, "", t("target.placeholder"));
   if (textEncoding) textEncoding.value = "auto";
-  syncTextEncodingField();
+  syncVideoCodecField();
   syncPdfExcelHint();
   targetSelect.disabled = true;
   convertButton.disabled = true;

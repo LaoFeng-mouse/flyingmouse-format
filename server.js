@@ -785,7 +785,7 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
               downloadName = `${base}.${requestedTarget}.zip`;
             }
           } finally {
-            await fsp.rm(emitted.tempDir, { recursive: true, force: true }).catch(() => {});
+            await emitted.cleanup().catch(() => {});
           }
           return;
         }

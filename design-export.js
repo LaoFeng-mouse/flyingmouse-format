@@ -40,7 +40,7 @@ async function designToPng(inputPath, ext) {
           if (!rendered.files.length) throw new Error("AI 文件栅格化失败：未渲染出任何页面。");
           await fsp.copyFile(rendered.files[0], pngPath);
         } finally {
-          await fsp.rm(rendered.tempDir, { recursive: true, force: true }).catch(() => {});
+          await rendered.cleanup().catch(() => {});
         }
       } finally {
         await fsp.rm(normalized.tempDir, { recursive: true, force: true }).catch(() => {});
