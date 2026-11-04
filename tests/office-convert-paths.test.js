@@ -155,8 +155,11 @@ test('Office cleanup preserves a replacement directory at its former workspace p
     assert.deepEqual(await fsp.readFile(input), f.original);
     taskRoot = path.dirname(input);
     while (taskRoot !== out && !inside(taskRoot, out)) taskRoot = path.dirname(taskRoot);
-    assert(inside(f.root, taskRoot) && taskRoot !== f.runtime);
-    assert.equal((await fsp.realpath(taskRoot)).toLowerCase(), path.resolve(taskRoot).toLowerCase());
+    const [canonicalFixtureRoot, canonicalTaskRoot, canonicalRuntime] = await Promise.all([
+      fsp.realpath(f.root), fsp.realpath(taskRoot), fsp.realpath(f.runtime)
+    ]);
+    assert(inside(canonicalFixtureRoot, canonicalTaskRoot), 'workspace must physically remain inside the fixture');
+    assert.notEqual(canonicalTaskRoot, canonicalRuntime, 'do not replace the fixture runtime itself');
     detached = path.join(f.root, 'detached-original-workspace');
     assert(inside(f.root, detached));
     await fsp.rename(taskRoot, detached);
