@@ -195,6 +195,104 @@ test('native staging failure cleans its workspace and preserves a pre-existing d
   assert.equal(await fs.stat(staged).then(()=>true,()=>false),false);
 });
 
+test('real Poppler single-page rendering preserves pixels with long input and output paths', { timeout: 30000 }, async t => {
+  const root = await scratch(t), short = path.join(root, 'short');
+  const deep = path.join(root, 'd'.repeat(120), 'e'.repeat(120));
+  await fs.mkdir(short, { recursive: true }); await fs.mkdir(deep, { recursive: true });
+  const input = path.join(short, 'source.pdf'), longInput = path.join(deep, '中文原文件.pdf');
+  await inputPdf(input); await fs.copyFile(input, longInput);
+  const original = await fs.readFile(input);
+  const { renderPdfTablePage } = require('../pdf-table');
+  const control = await renderPdfTablePage(input, 1, short, 72);
+  const pixels = await sharp(control.outputPath).raw().toBuffer();
+  for (const [label, source, parent] of [['input', longInput, short], ['output', input, deep], ['both', longInput, deep]]) {
+    const output = path.join(parent, label); await fs.mkdir(output);
+    const result = await renderPdfTablePage(source, 1, output, 72, { nativeTempRoot: deep, nativeFallbackRoot: short });
+    assert.equal(result.outputPath, path.join(output, 'page-001.png'));
+    // Validate the actual published bytes independently of libvips' own Windows
+    // filename-length limitation; the output remains at the requested path.
+    assert.deepEqual(await sharp(await fs.readFile(result.outputPath)).raw().toBuffer(), pixels, label);
+    assert.deepEqual(await fs.readFile(source), original);
+  }
+  assert.equal((await fs.readdir(short)).some(name => name.startsWith('office-')), false);
+});
+
+test('real Poppler multi-page rendering bounds both native paths under deep TEMP', { timeout: 30000 }, async t => {
+  const root = await scratch(t), deep = path.join(root, 'd'.repeat(120), 'e'.repeat(120));
+  const fallback = path.join(root, 'short'); await fs.mkdir(deep, { recursive: true });
+  const input = path.join(deep, '中文原文件.pdf'); await inputPdf(input);
+  const original = await fs.readFile(input);
+  const { renderPdfPages } = require('../pdf');
+  const rendered = await renderPdfPages(input, 'png', 72, { nativeTempRoot: deep, nativeFallbackRoot: fallback });
+  try {
+    assert.equal(rendered.files.length, 1);
+    assert.ok(rendered.files[0].length < 200);
+    const metadata = await sharp(rendered.files[0]).metadata();
+    assert.equal(metadata.width, 595); assert.equal(metadata.height, 842);
+    assert.deepEqual(await fs.readFile(input), original);
+  } finally { await rendered.cleanup(); }
+  assert.deepEqual(await fs.readdir(fallback), []);
+});
+
+for (const outcome of ['failure', 'canceled']) test(`real Poppler ${outcome} discards staged output and preserves existing files`, { timeout: 30000 }, async t => {
+  const root = await scratch(t), input = path.join(root, 'source.pdf');
+  const staging = path.join(root, 'staging'), destination = path.join(root, 'destination');
+  await fs.mkdir(destination); await inputPdf(input);
+  const original = await fs.readFile(input), output = path.join(destination, 'page-001.png');
+  await fs.writeFile(output, 'KEEP EXISTING OUTPUT');
+  const controller = new AbortController(), { run } = require('../utils');
+  const { renderPdfTablePage } = require('../pdf-table');
+  let stagedOutput;
+  await assert.rejects(renderPdfTablePage(input, 1, destination, 72, {
+    nativeTempRoot: staging, signal: controller.signal,
+    run: async (engine, args, options) => {
+      assert.equal(args.at(-2), input, 'A short input must be reused read-only, not copied for every page');
+      stagedOutput = `${args.at(-1)}.png`;
+      assert.equal(options.signal, controller.signal);
+      await run(engine, args, options);
+      assert.equal((await sharp(`${args.at(-1)}.png`).metadata()).width, 595);
+      if (outcome === 'canceled') controller.abort();
+      else throw Object.assign(new Error('Failure after real native raster output'), { code: 'TEST_RENDER_FAILURE' });
+    }
+  }), { code: outcome === 'canceled' ? 'CONVERSION_CANCELED' : 'TEST_RENDER_FAILURE' });
+  assert.equal(await fs.readFile(output, 'utf8'), 'KEEP EXISTING OUTPUT');
+  assert.deepEqual(await fs.readFile(input), original);
+  assert.equal(await fs.stat(stagedOutput).then(() => true, () => false), false);
+  assert.deepEqual(await fs.readdir(staging), []);
+});
+
+test('short PDF render inputs remain unchanged after successful workspace cleanup', { timeout: 30000 }, async t => {
+  const root = await scratch(t), input = path.join(root, 'source.pdf');
+  await inputPdf(input); const original = await fs.readFile(input);
+  const { createPdfRenderWorkspace } = require('../pdf-render-workspace');
+  const workspace = await createPdfRenderWorkspace(input, { nativeTempRoot: root });
+  assert.equal(workspace.ownsInput, false); assert.equal(workspace.inputPath, input);
+  assert.equal(await fs.stat(path.join(workspace.tempDir, 'source.pdf')).then(() => true, () => false), false);
+  await workspace.cleanup(); assert.deepEqual(await fs.readFile(input), original);
+  const rendered = await require('../pdf').renderPdfPages(input, 'png', 72, { nativeTempRoot: root });
+  assert.equal(rendered.files.length, 1);
+  await rendered.cleanup();
+  assert.deepEqual(await fs.readFile(input), original);
+});
+
+test('real OCR image preparation uses a short writable directory when TEMP is deep', { timeout: 30000 }, async t => {
+  const root = await scratch(t), deep = path.join(root, 'd'.repeat(120), 'e'.repeat(120));
+  const fallback = path.join(root, 'short'), input = path.join(root, 'input.png');
+  await fs.mkdir(deep, { recursive: true });
+  await sharp({ create: { width: 60, height: 30, channels: 3, background: '#c04020' } }).png().toFile(input);
+  const original = await fs.readFile(input);
+  // The actual consumer and its native Sharp write run under the deep TEMP.
+  // Only the environment path is substituted, not filesystem or image APIs.
+  t.mock.method(os, 'tmpdir', () => deep);
+  const prepared = await require('../ocr').prepareImageForOcr(input, { nativeFallbackRoot: fallback });
+  try {
+    assert.ok(prepared.outputPath.length < 200);
+    assert.equal((await sharp(prepared.outputPath).metadata()).width, 2480);
+    assert.deepEqual(await fs.readFile(input), original);
+  } finally { await fs.rm(prepared.tempDir, { recursive: true, force: true }); }
+  assert.deepEqual(await fs.readdir(fallback), []);
+});
+
 test('a tiny uniform decorative image does not send otherwise searchable text through page OCR', async t => {
   const root=await scratch(t),input=path.join(root,'decoration.pdf');
   const bytes=await sharp({create:{width:9,height:7,channels:3,background:'#000000'}}).png().toBuffer();

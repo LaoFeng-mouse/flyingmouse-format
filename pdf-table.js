@@ -18,6 +18,8 @@ const { imageCoverageFromOperators, ocrImageCoverageFromOperators } = require(".
 const { LIMITS, assertPdfPages } = require("./resource-policy");
 const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-runtime");
 const { reportConversionProgress } = require("./conversion-progress");
+const { createPdfRenderWorkspace } = require("./pdf-render-workspace");
+const { throwIfCanceled } = require("./conversion-cancellation");
 
 function groupPdfItemsIntoLines(items, viewport) {
   // Use the displayed page coordinate system, including /Rotate and CropBox.
@@ -174,16 +176,30 @@ function applyColumnWidths(sheet, rows, item = {}) {
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = Math.round(width * 100) / 100; });
 }
 
-async function renderPdfTablePage(inputPath, pageNumber, tempDir, dpi = 200) {
-  const prefix = path.join(tempDir, `page-${String(pageNumber).padStart(3, "0")}`);
-  await run(PDFTOPPM_PATH, [
-    "-png", "-cropbox", "-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber),
-    "-singlefile", inputPath, prefix
-  ], { timeout: 1000 * 60 * 5 });
-  const outputPath = `${prefix}.png`;
-  if (!fs.existsSync(outputPath)) throw new Error(`PDF page ${pageNumber} could not be rendered for table extraction.`);
-  const metadata = await inspectImageMetadata(outputPath);
-  return { outputPath, metadata };
+async function renderPdfTablePage(inputPath, pageNumber, tempDir, dpi = 200, options = {}) {
+  throwIfCanceled(options.signal);
+  const outputPath = path.join(tempDir, `page-${String(pageNumber).padStart(3, "0")}.png`);
+  const workspace = await createPdfRenderWorkspace(inputPath, options);
+  let copied = false;
+  try {
+    const prefix = path.join(workspace.tempDir, "page");
+    await (options.run || run)(options.pdftoppmPath || PDFTOPPM_PATH, [
+      "-png", "-cropbox", "-r", String(dpi), "-f", String(pageNumber), "-l", String(pageNumber),
+      "-singlefile", workspace.inputPath, prefix
+    ], { timeout: 1000 * 60 * 5, signal: options.signal });
+    throwIfCanceled(options.signal);
+    const renderedPath = `${prefix}.png`;
+    if (!fs.existsSync(renderedPath)) throw new Error(`PDF page ${pageNumber} could not be rendered for table extraction.`);
+    const metadata = await inspectImageMetadata(renderedPath);
+    throwIfCanceled(options.signal);
+    await fsp.copyFile(renderedPath, outputPath, fs.constants.COPYFILE_EXCL);
+    copied = true;
+    throwIfCanceled(options.signal);
+    return { outputPath, metadata };
+  } catch (error) {
+    if (copied) await fsp.unlink(outputPath).catch(() => {});
+    throw error;
+  } finally { await workspace.cleanup().catch(() => {}); }
 }
 
 async function preparePdfTableOcrImage(imagePath, tempDir, pageNumber) {
@@ -304,7 +320,7 @@ async function extractComplexPdfTableModel(inputPath, options = {}) {
     useSystemFonts: true,
     isEvalSupported: false
   }));
-  let tempDir;
+  let tempDir, renderWorkspace;
   const rendered = new Map();
   let worker = null;
   let ocrBudgetChecked = false;
@@ -333,10 +349,11 @@ async function extractComplexPdfTableModel(inputPath, options = {}) {
     if (byPage.size === pdf.numPages) return nativeModel;
 
     const canRender = Boolean(options.renderPage) || await commandExists(PDFTOPPM_PATH, ["-v"]);
-    tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-table-"));
+    renderWorkspace = await createPdfRenderWorkspace(inputPath, options);
+    tempDir = renderWorkspace.tempDir;
     const ensureRendered = async (pageNumber) => {
       if (!canRender) return null;
-      if (!rendered.has(pageNumber)) rendered.set(pageNumber, renderPdfTablePage(inputPath, pageNumber, tempDir));
+      if (!rendered.has(pageNumber)) rendered.set(pageNumber, renderPdfTablePage(renderWorkspace.inputPath, pageNumber, tempDir, 200, options));
       return rendered.get(pageNumber);
     };
     async function* pages() {
@@ -407,7 +424,7 @@ async function extractComplexPdfTableModel(inputPath, options = {}) {
   } finally {
     if (worker) await worker.terminate().catch(() => {});
     await loadingTask.destroy().catch(() => {});
-    if (tempDir) await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    if (renderWorkspace) await renderWorkspace.cleanup().catch(() => {});
   }
 }
 

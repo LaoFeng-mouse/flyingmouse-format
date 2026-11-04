@@ -13,6 +13,7 @@ const { TESSDATA_PATH } = require("./config");
 const { LIMITS } = require("./resource-policy");
 const { inspectImageMetadata } = require("./image");
 const { reportConversionProgress } = require("./conversion-progress");
+const { createOfficeWorkspace } = require("./office-runtime");
 
 let cachedTesseract = null;
 
@@ -60,9 +61,13 @@ function ocrAvailable() {
   );
 }
 
-async function prepareImageForOcr(inputPath) {
+async function prepareImageForOcr(inputPath, options = {}) {
+  throwIfCanceled(options.signal);
   const metadata = await inspectImageMetadata(inputPath);
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ocr-image-"));
+  // Sharp and native filesystem APIs also need bounded output paths after
+  // Poppler has rendered a PDF page successfully.
+  const { root: tempDir } = createOfficeWorkspace({ runtimeDir: options.nativeTempRoot || os.tmpdir(),
+    profileFallbackRoot: options.nativeFallbackRoot, requireShortPaths: true });
   const outputPath = path.join(tempDir, "ocr-input.png");
   const pipeline = sharp(inputPath, { limitInputPixels: LIMITS.maxImagePixels })
     .rotate()
@@ -79,6 +84,7 @@ async function prepareImageForOcr(inputPath) {
 
   try {
     await pipeline.png().toFile(outputPath);
+    throwIfCanceled(options.signal);
   } catch (error) {
     await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     throw error;
@@ -187,7 +193,7 @@ function ocrGeometry(data, metadata) {
 
 async function recognizeImageResultWithWorker(worker, inputPath, options = {}) {
   throwIfCanceled(options.signal);
-  const prepared = await prepareImageForOcr(inputPath);
+  const prepared = await prepareImageForOcr(inputPath, options);
   try {
     const geometryMetadata = options.includeGeometry ? await sharp(prepared.outputPath, { limitInputPixels: LIMITS.maxImagePixels }).metadata() : null;
     const recognize = async (imagePath, pageMode, orientation = 0) => {

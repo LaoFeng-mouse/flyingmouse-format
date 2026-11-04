@@ -61,7 +61,7 @@ test('PDF merge and native Poppler rendering report actual completed work', asyn
     assert.equal(rendered.files.length,4);
     assert.deepEqual(renderEvents.filter(event=>event.stage==='converting').map(event=>event.completed),[0,1,2,3,4]);
     for(const file of rendered.files)assert.ok((await fs.stat(file)).size>0);
-  }finally{await fs.rm(rendered.tempDir,{recursive:true,force:true});}
+  }finally{await rendered.cleanup();}
 });
 
 for (const engine of ['qpdf', 'pdf-lib']) test(`${engine} split keeps ZIP writing in an unknown conversion stage`, { timeout: 15000 }, async t => {

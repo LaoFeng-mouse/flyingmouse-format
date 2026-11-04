@@ -4,15 +4,13 @@
 // Whole visual lines containing labels remain pictures. No OCR confidence or native-text coverage
 // check is relaxed; unsupported paint/geometry returns to the normal route.
 const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
 const { createHash } = require('node:crypto');
 const sharp = require('sharp');
 const { PDFDocument, PDFName, PDFDict, PDFRawStream } = require('pdf-lib');
 const { Document, Packer, Paragraph, TextRun, ImageRun, SectionType } = require('docx');
 const { loadPdfjs, getPdfjsDocumentOptions } = require('./pdfjs');
-const { PDFTOPPM_PATH } = require('./config');
-const { run } = require('./utils');
+const { renderPdfTablePage } = require('./pdf-table');
+const { createPdfRenderWorkspace } = require('./pdf-render-workspace');
 const { LIMITS, assertPdfPages, assertImageMetadata, ResourceLimitError } = require('./resource-policy');
 const { throwIfCanceled, cancellationError } = require('./conversion-cancellation');
 const { mapInlineUnderlines } = require('./pdf-inline-text-style');
@@ -321,11 +319,8 @@ async function opaqueImage(page, image, signal) {
 }
 
 async function renderVisiblePage(inputPath, pageNumber, tempDir, options) {
-  const prefix=path.join(tempDir,`page-${pageNumber}`);
-  await (options.run || run)(options.pdftoppmPath || PDFTOPPM_PATH,
-    ['-png','-cropbox','-r',String(SCALE*72),'-f',String(pageNumber),'-l',String(pageNumber),'-singlefile',inputPath,prefix],
-    {timeout:300000,signal:options.signal});
-  throwIfCanceled(options.signal);return `${prefix}.png`;
+  const rendered = await renderPdfTablePage(inputPath, pageNumber, tempDir, SCALE * 72, options);
+  return rendered.outputPath;
 }
 
 async function convertInlineImagePdfToDocx({ inputPath, outputPath, pages, options = {} }) {
@@ -344,7 +339,7 @@ async function convertInlineImagePdfToDocx({ inputPath, outputPath, pages, optio
     disableFontFace:false, useSystemFonts:true, maxImageSize:LIMITS.maxImagePixels,stopAtErrors:true,isEvalSupported:false }));
   const abort=()=>{void task.destroy().catch(()=>{});};
   options.signal?.addEventListener('abort',abort,{once:true});
-  let tempDir;
+  let tempDir, renderWorkspace;
   try {
     throwIfCanceled(options.signal);
     const pdf = await task.promise;
@@ -382,8 +377,11 @@ async function convertInlineImagePdfToDocx({ inputPath, outputPath, pages, optio
         if(regions.length) {
           assertImageMetadata({width:Math.ceil(viewport.width*SCALE),height:Math.ceil(viewport.height*SCALE)});
           for(const im of plan.images) if(!await opaqueImage(page,im,options.signal)) return null;
-          if(!tempDir)tempDir=await fs.mkdtemp(path.join(os.tmpdir(),'fmf-inline-pdf-'));
-          const rendered=await renderVisiblePage(inputPath,p,tempDir,options);
+          if(!renderWorkspace) {
+            renderWorkspace = await createPdfRenderWorkspace(inputPath, options);
+            tempDir = renderWorkspace.tempDir;
+          }
+          const rendered=await renderVisiblePage(renderWorkspace.inputPath,p,tempDir,options);
           const metadata=await sharp(rendered,{limitInputPixels:LIMITS.maxImagePixels}).metadata();assertImageMetadata(metadata);
           if(Math.abs(metadata.width-viewport.width*SCALE)>1.1 || Math.abs(metadata.height-viewport.height*SCALE)>1.1)return null;
           for(const im of regions) {
@@ -482,7 +480,7 @@ async function convertInlineImagePdfToDocx({ inputPath, outputPath, pages, optio
   } finally {
     options.signal?.removeEventListener('abort',abort);
     await task.destroy();
-    if(tempDir)await fs.rm(tempDir,{recursive:true,force:true}).catch(()=>{});
+    if(renderWorkspace)await renderWorkspace.cleanup().catch(()=>{});
     throwIfCanceled(options.signal);
   }
 }
