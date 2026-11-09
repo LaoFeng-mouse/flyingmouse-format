@@ -1,9 +1,9 @@
-> 当前为 0.8.4 的 Office 长路径修复源码。商店 MSIX 候选已完成整体构建和本地验收，尚未安装、上传、提交认证或公开发布；公开最新版仍为 [v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3)，进度见 [现役交接](docs/HANDOFF.md)。
-> Candidate **0.8.4** fixes Office intermediate paths. Its Store MSIX has been fully rebuilt and locally validated; installation, upload, certification and public release have not occurred. The latest public Windows 10/11 x64 full release remains [v0.8.3](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3). See the [current handoff](docs/HANDOFF.md).
+> 当前为 0.8.5 的 PDF→Word 内容完整性与 Office 长路径修复源码。安装包构建、验证与公开下载状态见 [现役交接](docs/HANDOFF.md)；版本历史见 [0.8.5 更新说明](docs/release-notes-085.md)。
+> Source version **0.8.5** contains PDF-to-Word integrity and Office path fixes. See the [current handoff](docs/HANDOFF.md) for verified build and release status.
 
 # FlyingMouse Format / 飞鼠格式
 
-> 已发布的 0.8.3 包含 ICO、普通媒体、电子书安全、依赖兼容和 PDF/OCR 长路径修复，提供 Windows 10/11 x64 完整版。后续 Store 候选验证发现的 Office 中间路径问题已在 0.8.4 修复；新 MSIX 的深层 TEMP 实际转换与全载荷核验通过，尚无新公开下载或 NSIS。0.8.3 Store 候选已暂停交付，Lite、Win7 和 macOS 包未发布；既有 PDF/Word、OFD、Excel、CR2、资源预算与退出清理边界保留。
+> PDF→Word 会核对可见正文、金额符号、重复片段和重建结果；不能确认内容完整时明确报错。保留 Office 长路径修复和既有转换能力。公开版仅支持普通音频。
 
 > A mouse-themed, offline Windows file converter. / 一款鼠鼠主题、可离线使用的 Windows 文件格式转换工具。
 
@@ -53,9 +53,9 @@
 
 ### 快速开始
 
-2026-11-04 发布的 **0.8.3** Windows 完整版已完成入口、Runtime 和 ASAR 整体重建，完整测试 **1,368 通过、0 失败、11 条件跳过**，生产与全量 npm 审计均为 0 告警；17 组实际界面场景及安装包载荷校验通过。这些结果属于 0.8.3；0.8.4 商店候选另行完成了整体构建、本地转换与包核验，尚未公开，独立结果见[现役交接](docs/HANDOFF.md)。
+普通用户从 [GitHub Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest) 获取已发布的 Windows 10/11 x64 完整版。开发中的源码版本与已发布安装包可能不同，以 Release 页面及 SHA256SUMS.txt 为准。
 
-1. 在 [v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3) 下载 v0.8.3 对应系统的安装包：本次提供 [Windows 10/11 x64 完整版](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/download/v0.8.3/FlyingMouse-Format-Setup-0.8.3-x64.exe)。可用同页的 `SHA256SUMS.txt` 校验下载。
+1. 在 Release 页面下载对应系统的安装包，并用同页的 `SHA256SUMS.txt` 核验。0.8.5 标准安装包名称为 `FlyingMouse-Format-Setup-0.8.5-x64.exe`；其公开状态见[现役交接](docs/HANDOFF.md)。
 2. 安装并启动 FlyingMouse Format。
 3. 拖入文件，选择目标格式并开始转换。
 4. 选择保存位置；软件会记住目标格式与保存目录。
@@ -95,20 +95,17 @@ npm run dist
 
 ### Windows 版本选择
 
-0.8.4 已构建并本地验收商店 MSIX 候选，尚未上传或发布。本轮未生成标准 NSIS `FlyingMouse Format-Setup-0.8.4-x64.exe` 或 Win7 派生包 `FlyingMouse Format-Setup-0.8.4-win7-x64.exe`；这些名称仅为构建目标。以下 0.8.3 记录保留其原发布与构建状态。
+- **Windows 10/11 x64 完整版**：本轮交付目标为 `FlyingMouse-Format-Setup-0.8.5-x64.exe`，包含高级扫描表格引擎。下载、测试和发布状态统一见[现役交接](docs/HANDOFF.md)。
+- **轻量版**：有独立构建配置，本轮不发布；高级扫描表格需要完整版。
+- **Windows 7 SP1 x64**：独立 Legacy 构建目标为 `FlyingMouse Format-Setup-0.8.5-win7-x64.exe`，本轮未构建或验收。Electron 22 已停止上游维护，仍有旧依赖风险；只建议离线处理可信文件。
 
-- **Windows 10 / 11 x64（完整版，已发布）**：构建文件为 `FlyingMouse Format-Setup-0.8.3-x64.exe`，公开下载名为 `FlyingMouse-Format-Setup-0.8.3-x64.exe`；仅将名称中的空格换为连字符，安装器字节相同。使用 Electron 43、Sharp 0.35 和 PDF.js 6，包含高级扫描表格引擎。
-- **Windows 10 / 11 x64（轻量版）**：构建目标为 `FlyingMouse Format-Lite-Setup-0.8.3-x64.exe`，保留常用转换与 OCR；高级扫描表格需要完整版。本次未构建或发布轻量版。
-- **Windows 7 SP1 x64（兼容版）**：构建文件为 `FlyingMouse Format-Setup-0.8.3-win7-x64.exe`。它使用同一源码和鼠鼠 UI，但在独立环境固定 Electron 22.3.27、Sharp 0.32.6 与 PDF.js 2.16.105；本轮尚未构建。
-
-Windows 7 兼容版是 Legacy 构建，不会降低标准版依赖。其 Electron 22 已停止上游安全维护，并包含无法在 Windows 7 上直接升级的已知依赖风险；PDF.js 动态代码执行已通过 `isEvalSupported: false` 缓解，但仍只建议离线处理可信文件。v0.8.3 的验收进度以修复记录为准；Win7 构建及真实 Windows 7 SP1 x64 设备仍待验收。Windows 安装包均未签名，SmartScreen 可能提示。
+Windows 安装包未签名，SmartScreen 可能提示。标准版依赖不因 Win7 而降级。
 
 ### macOS 版本选择
 
-- **Apple Silicon（M1 及更新）**：构建目标 `FlyingMouse Format-Setup-0.8.3-mac-arm64.dmg`。
-- **Intel Mac**：构建目标 `FlyingMouse Format-Setup-0.8.3-mac-x64.dmg`。
+源码提供 arm64/x64 两种构建配置，目标系统为 macOS 11 及以上。本轮只交付 Windows 完整版，不提供新的 macOS 安装包。代码 CI 不能代替 DMG、签名、公证和真实设备验收。
 
-macOS 构建目标为 macOS 11 及更新版本，未签名且未公证，可能触发 Gatekeeper。0.8.3 发布源码及 0.8.4 候选的 macOS x64/arm64 引擎与代码 CI 均已通过，但两个版本均未构建或发布 macOS 安装包，真实 Mac 设备仍待验收；CI 不能替代安装包与设备验收。
+
 
 Win7 Legacy 构建命令：
 
@@ -151,9 +148,9 @@ Win7 staging 使用专用 `win7-package-lock.json` 和 `npm ci` 重建；推荐�
 
 ### Quick start
 
-The **0.8.3** Windows full build released on November 4, 2026 has a rebuilt launcher, Runtime and ASAR. Validation recorded **1,368 passing tests, zero failures and 11 conditional skips**, zero production/full npm audit findings, 17 GUI scenarios, and verified installer payloads. These results apply to 0.8.3. The 0.8.4 Store candidate has separate rebuild, local conversion and package verification results in the [current handoff](docs/HANDOFF.md); it has not been publicly released.
+Download released Windows 10/11 x64 full installers from [GitHub Releases](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/latest). Source, build and release status are tracked separately in the [current handoff](docs/HANDOFF.md).
 
-1. Download the [Windows 10/11 x64 full installer](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/download/v0.8.3/FlyingMouse-Format-Setup-0.8.3-x64.exe) from [v0.8.3 Release](https://github.com/LaoFeng-mouse/flyingmouse-format/releases/tag/v0.8.3). Verify it with the accompanying `SHA256SUMS.txt` if desired. This release does not include new Lite, Win7, macOS or Microsoft Store packages.
+1. Download the installer from the latest Release and verify it with the accompanying `SHA256SUMS.txt`. The 0.8.5 standard asset is named `FlyingMouse-Format-Setup-0.8.5-x64.exe`; consult the current handoff for its publication status.
 2. Install and launch FlyingMouse Format.
 3. Drop in files, choose a target, and convert.
 4. Choose a save location. The app remembers both the target preference and save folder.
@@ -177,20 +174,15 @@ Packaged builds accept the same commands after `--cli`: use `FlyingMouse Format.
 
 ### Choose a Windows build
 
-The 0.8.4 Store MSIX candidate has been built and locally validated, but not uploaded or released. This round did not produce the standard NSIS target `FlyingMouse Format-Setup-0.8.4-x64.exe` or the Legacy target `FlyingMouse Format-Setup-0.8.4-win7-x64.exe`. The 0.8.3 entries below retain their original release and build status.
+- **Windows 10/11 x64 full:** the current delivery target is `FlyingMouse-Format-Setup-0.8.5-x64.exe`, including the advanced scanned-table engine. See the current handoff for completed validation and publication.
+- **Lite:** a separate build profile exists, but no new Lite package is included in this release work.
+- **Windows 7 SP1 x64:** the isolated Legacy target is `FlyingMouse Format-Setup-0.8.5-win7-x64.exe`; it has not been built or tested this round. Electron 22 is unsupported and known legacy dependency risks remain. Process trusted files offline only.
 
-- **Windows 10 / 11 x64 (full, released):** the build output is `FlyingMouse Format-Setup-0.8.3-x64.exe`; the public download is named `FlyingMouse-Format-Setup-0.8.3-x64.exe`. Only the space in the name is replaced with a hyphen; installer bytes are identical. Includes Electron 43, Sharp 0.35, PDF.js 6, and the advanced scanned-table engine.
-- **Windows 10 / 11 x64 (lite):** the build target is `FlyingMouse Format-Lite-Setup-0.8.3-x64.exe`, retaining common conversions and OCR; advanced scanned tables require the full build. No v0.8.3 Lite package has been built or released.
-- **Windows 7 SP1 x64 (compatibility build):** the output would be `FlyingMouse Format-Setup-0.8.3-win7-x64.exe`, derived from the same source and mouse UI with Electron 22.3.27, Sharp 0.32.6, and PDF.js 2.16.105 pinned in isolation. This candidate has not been built for Win7.
-
-The Windows 7 package is a Legacy build and does not downgrade the standard build. Electron 22 no longer receives upstream security maintenance, and other known legacy dependency risks cannot be upgraded without dropping Windows 7. PDF.js dynamic evaluation is disabled as a mitigation, but this build should remain offline and process trusted files only. See the [current handoff](docs/HANDOFF.md) for this source branch's validation; Win7 builds and physical Windows 7 SP1 x64 acceptance remain pending. The published Windows installer is unsigned and may trigger SmartScreen.
+Windows installers are unsigned and may trigger SmartScreen. Standard dependencies are not downgraded for Win7.
 
 ### Choose a macOS build
 
-- **Apple Silicon (M1 or newer):** build target `FlyingMouse Format-Setup-0.8.3-mac-arm64.dmg`.
-- **Intel Mac:** build target `FlyingMouse Format-Setup-0.8.3-mac-x64.dmg`.
-
-macOS builds target macOS 11 or newer and are unsigned and unnotarized, so Gatekeeper may warn. The 0.8.3 release source and 0.8.4 candidate passed macOS x64/arm64 engine and code CI, but neither version has a built or released macOS installer. Physical Mac acceptance remains pending; CI does not replace package or device validation.
+Source build profiles target macOS 11 or newer on arm64 and x64. This round delivers only the Windows full installer. Code CI does not establish DMG, signing, notarization or physical-device acceptance.
 
 Win7 Legacy build command:
 
