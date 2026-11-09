@@ -85,15 +85,39 @@ function normalizedPdfText(value) {
   return String(value || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 }
 
+function coverageText(value) {
+  // Keep punctuation: removing a decimal point, sign, or unit changes content.
+  // Whitespace/run boundaries and compatibility glyphs may change during reflow.
+  return String(value || '').normalize('NFKC').toLowerCase()
+    .replace(/[\s\p{Default_Ignorable_Code_Point}]/gu, '');
+}
+
 function missingPdfText(pages, editableText) {
-  const actual = normalizedPdfText(editableText);
-  const missing = pages.flatMap((page) => pdfCoverageSegments(page)
-    .filter((text) => {
-      const expected = normalizedPdfText(text);
-      // A geometrically separated segment may be one Chinese title glyph or
-      // a table number. Do not silently discard it after cell segmentation.
-      return expected.length > 0 && !actual.includes(expected);
-    }).map((text) => ({ pageNumber: page.pageNumber, text })));
+  const actual = coverageText(editableText), missing = [];
+  const expectedCounts = new Map(), actualCounts = new Map(), remaining = new Map();
+  for (const character of actual) remaining.set(character, (remaining.get(character) || 0) + 1);
+  for (const page of pages) for (const text of pdfCoverageSegments(page)) {
+    const expected = coverageText(text);
+    if (!expected) continue;
+    const occurrence = (expectedCounts.get(expected) || 0) + 1;
+    expectedCounts.set(expected, occurrence);
+    if (!actualCounts.has(expected)) {
+      let count = 0, from = 0, at;
+      while ((at = actual.indexOf(expected, from)) !== -1) { count++; from = at + expected.length; }
+      actualCounts.set(expected, count);
+    }
+    // Count occurrences, then account for their characters across differently
+    // sized segments too. This avoids greedy substring allocation rejecting a
+    // valid table reflow such as [aba, ab] -> ababa, while a single 'ab' cannot
+    // satisfy two source segments [a, ab]. The check does not mandate page layout.
+    let deficit = occurrence > actualCounts.get(expected);
+    for (const character of expected) {
+      const left = (remaining.get(character) || 0) - 1;
+      remaining.set(character, left);
+      if (left < 0) deficit = true;
+    }
+    if (deficit) missing.push({ pageNumber: page.pageNumber, text });
+  }
   // A table's row number is not evidence that the same page number survived.
   // Geometrically identified numeric footers retain their surrounding marks
   // and multiplicity instead of being matched as digits anywhere in the body.
@@ -710,7 +734,7 @@ function writeDocxZip(outputPath, entries) {
 const MAX_NATIVE_DOCX_PACKAGE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_NATIVE_DOCX_XML_BYTES = 2 * 1024 * 1024 * 1024;
 const NATIVE_DOCX_PARTS = new Set([
-  "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels"
+  "[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels", "word/styles.xml"
 ]);
 
 function safePackageEntry(name) {
@@ -959,6 +983,84 @@ function nativeDocxInvalid() {
 
 const OFFICE_MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 
+function nativeTextVisibility(elements, children, stylesXml) {
+  const word = (element, name) => element?.namespaceURI === WORDPROCESSING_NAMESPACE && element.localName === name;
+  const value = element => elementAttribute(element, WORDPROCESSING_NAMESPACE, 'val');
+  const on = element => element && !['0', 'false', 'off'].includes(String(value(element)).toLowerCase());
+  const styles = stylesXml ? parseNamespaceDocument(stylesXml) : { elements: [] };
+  if (stylesXml && !rootNamed(styles, WORDPROCESSING_NAMESPACE, 'styles')) throw nativeDocxInvalid();
+  const styleNodes = styles.elements, byId = new Map(), chainCache = new Map(), styleChildren = new Map();
+  styleNodes.forEach((element, index) => {
+    if (!styleChildren.has(element.parentIndex)) styleChildren.set(element.parentIndex, []);
+    styleChildren.get(element.parentIndex).push(index);
+  });
+  const styleChild = (index, name) => (styleChildren.get(index) || []).find(i => word(styleNodes[i], name));
+  let defaultParagraph = '', defaultCharacter = '', defaultHidden = false;
+  styleNodes.forEach((element, index) => {
+    if (word(element, 'style')) {
+      const id = elementAttribute(element, WORDPROCESSING_NAMESPACE, 'styleId');
+      if (!id || byId.has(id)) throw nativeDocxInvalid();
+      byId.set(id, index);
+      const isDefault = element.attributes.some(attribute => attribute.namespaceURI === WORDPROCESSING_NAMESPACE
+        && attribute.localName === 'default' && ['1', 'true', 'on'].includes(String(attribute.value).toLowerCase()));
+      if (isDefault && elementAttribute(element, WORDPROCESSING_NAMESPACE, 'type') === 'paragraph') defaultParagraph = id;
+      if (isDefault && elementAttribute(element, WORDPROCESSING_NAMESPACE, 'type') === 'character') defaultCharacter = id;
+    }
+    if (word(element, 'vanish') && word(styleNodes[element.parentIndex], 'rPr')) {
+      const rPr = styleNodes[element.parentIndex], parent = styleNodes[rPr.parentIndex];
+      if (word(parent, 'rPrDefault') && word(styleNodes[parent.parentIndex], 'docDefaults')) defaultHidden = Boolean(on(element));
+    }
+  });
+  function chain(id, visiting = new Set()) {
+    if (!id) return [];
+    if (chainCache.has(id)) return chainCache.get(id);
+    if (!byId.has(id) || visiting.has(id) || visiting.size >= 64) return null;
+    visiting.add(id);
+    const index = byId.get(id), base = styleChild(index, 'basedOn');
+    const inherited = chain(base === undefined ? '' : value(styleNodes[base]), visiting);
+    visiting.delete(id);
+    const result = inherited && [...inherited, index];
+    chainCache.set(id, result);
+    return result;
+  }
+  function applyStyle(hidden, id) {
+    const ancestry = chain(id);
+    if (hidden === null || !ancestry) return null;
+    for (const index of ancestry) {
+      const properties = styleChild(index, 'rPr'), toggle = styleChild(properties, 'vanish');
+      // OOXML vanish is a toggle in a style; direct formatting is absolute.
+      if (toggle !== undefined && on(styleNodes[toggle])) hidden = !hidden;
+    }
+    return hidden;
+  }
+  const runVisibility = new Map();
+  return element => {
+    const runIndex = element.parentIndex, run = elements[runIndex];
+    if (!word(element, 't') || !word(run, 'r')) return false;
+    if (runVisibility.has(runIndex)) return runVisibility.get(runIndex);
+    let paragraph = -1, body = false, excluded = false;
+    for (let index = runIndex; index >= 0; index = elements[index].parentIndex) {
+      const node = elements[index];
+      if (word(node, 'p') && paragraph < 0) paragraph = index;
+      if (word(node, 'body')) { body = true; break; }
+      if (node.namespaceURI === WORDPROCESSING_NAMESPACE
+        && (['del', 'moveFrom'].includes(node.localName) || node.localName.endsWith('Pr'))) excluded = true;
+      // Do not count both alternatives of a compatibility branch as content.
+      if (node.namespaceURI === 'http://schemas.openxmlformats.org/markup-compatibility/2006') excluded = true;
+    }
+    if (!body || paragraph < 0 || excluded) { runVisibility.set(runIndex, false); return false; }
+    const child = (index, name) => (children.get(index) || []).find(childIndex => word(elements[childIndex], name));
+    const pPr = child(paragraph, 'pPr'), pStyle = pPr === undefined ? undefined : child(pPr, 'pStyle');
+    const rPr = child(runIndex, 'rPr'), rStyle = rPr === undefined ? undefined : child(rPr, 'rStyle');
+    let hidden = applyStyle(defaultHidden, pStyle === undefined ? defaultParagraph : value(elements[pStyle]));
+    hidden = applyStyle(hidden, rStyle === undefined ? defaultCharacter : value(elements[rStyle]));
+    const direct = rPr === undefined ? undefined : child(rPr, 'vanish');
+    if (direct !== undefined) hidden = Boolean(on(elements[direct]));
+    runVisibility.set(runIndex, hidden === false);
+    return hidden === false;
+  };
+}
+
 function visibleFractionText(element, elements, children) {
   if (element.namespaceURI !== OFFICE_MATH_NAMESPACE || element.localName !== "t") return false;
   const run = elements[element.parentIndex];
@@ -1000,7 +1102,7 @@ async function validateNativePdfDocx(outputPath, options = {}) {
     }
     const contentTypeElements = contentTypeDocument.elements;
     const rootRelationshipElements = rootRelationshipDocument.elements;
-    const documentElements = wordDocument.elements;
+    const documentElements = orderedNamespaceElements(documentXml);
     const mainOverride = elementsNamed(contentTypeElements, OPC_CONTENT_TYPES_NAMESPACE, "Override")
       .some((element) => elementAttribute(element, "", "PartName") === "/word/document.xml"
         && elementAttribute(element, "", "ContentType")
@@ -1016,9 +1118,10 @@ async function validateNativePdfDocx(outputPath, options = {}) {
       .map((element) => elementAttribute(element, OFFICE_RELATIONSHIPS_NAMESPACE, "embed"));
     const imageTargets = new Map();
     if (blipIds.some((id) => !id)) throw nativeDocxInvalid();
-    if (blipIds.length) {
-      const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
-      if (!documentRelationships) throw nativeDocxInvalid();
+    let stylesXml = inspected.buffers.get('word/styles.xml')?.toString('utf8');
+    const documentRelationships = inspected.buffers.get("word/_rels/document.xml.rels")?.toString("utf8");
+    if (blipIds.length && !documentRelationships) throw nativeDocxInvalid();
+    if (documentRelationships) {
       const documentRelationshipDocument = parseNamespaceDocument(documentRelationships);
       if (!rootNamed(documentRelationshipDocument, OPC_RELATIONSHIPS_NAMESPACE, "Relationships")) {
         throw nativeDocxInvalid();
@@ -1040,6 +1143,18 @@ async function validateNativePdfDocx(outputPath, options = {}) {
           || !inspected.names.has(`word/${relationship.target}`)) throw nativeDocxInvalid();
         imageTargets.set(id, `word/${relationship.target}`);
       }
+      const styleRelationships = [...relationships.values()].filter(relationship => relationship.type.endsWith('/styles'));
+      if (styleRelationships.length > 1) throw nativeDocxInvalid();
+      if (styleRelationships.length) {
+        const relationship = styleRelationships[0];
+        if (relationship.mode || !relationship.target || /[?#\\]/.test(relationship.target)) throw nativeDocxInvalid();
+        const decoded = decodeURIComponent(relationship.target);
+        const target = path.posix.normalize(decoded.startsWith('/') ? decoded.slice(1) : `word/${decoded}`);
+        if (!safePackageEntry(target) || !inspected.names.has(target)) throw nativeDocxInvalid();
+        const selected = inspected.buffers.has(target) ? inspected : await inspectNativeDocxPackage(outputPath, new Set([target]));
+        stylesXml = selected.buffers.get(target)?.toString('utf8');
+        if (!stylesXml) throw nativeDocxInvalid();
+      }
     }
 
     const documentChildren = new Map();
@@ -1047,11 +1162,13 @@ async function validateNativePdfDocx(outputPath, options = {}) {
       if (!documentChildren.has(element.parentIndex)) documentChildren.set(element.parentIndex, []);
       documentChildren.get(element.parentIndex).push(index);
     });
+    const visibleText = nativeTextVisibility(documentElements, documentChildren,
+      stylesXml);
     const editableText = documentElements.filter(element =>
-      element.namespaceURI === WORDPROCESSING_NAMESPACE && element.localName === "t"
+      visibleText(element)
       || visibleFractionText(element, documentElements, documentChildren))
       .map((element) => String(element.text)).join(" ");
-    const hasEditableContent = Boolean(editableText.trim());
+    const hasEditableContent = Boolean(editableText.replace(/[\s\p{Cc}\p{Default_Ignorable_Code_Point}]/gu, ''));
     // This exception is used only after the inline route proves its complete
     // expected image sequence. Native/OCR callers still require editable text.
     const allowImageOnlyInline = options.includeInlineParagraphs === true
@@ -1336,6 +1453,7 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
   // 优先用文档引擎（docengine convert）做版式还原（段落/表格/图片/字体）；引擎缺失或转换失败时回退到 PDF.js 文字提取。
   const docenginePath = options.docenginePath === undefined ? DOCENGINE_PATH : options.docenginePath;
   const source = pages || await sourcePdfPages(inputPath, options);
+  await require('./pdf-vector-content').assertPdfVectorContent(inputPath, source, options);
   let fallbackReason = "engine";
   if (docenginePath) {
     let nativeStage = 'prepare';
@@ -1516,7 +1634,15 @@ ${body.join("\n")}
       { path: "word/document.xml", content: documentXml }
     ]);
     const repaired = await repairNativePdfDocx(attemptPath, source, { ...options, inputPath, repairLayout: false });
-    await validateNativePdfDocx(attemptPath);
+    const validation = await validateNativePdfDocx(attemptPath);
+    // Keep both contracts: native source lines and the actual rows completed by
+    // OCR. OCR pages retain their original lines, which do not include new text.
+    if (missingPdfText(source, validation.editableText).length
+      || missingPdfText(completePages.map(page => ({ ...page, lines: undefined })), validation.editableText).length) {
+      throw structureError('PDF_DOCX_TEXT_COVERAGE_FAILED',
+        '重建后的 Word 缺少原文内容，已停止导出。',
+        'The rebuilt Word document omitted source content; export was stopped.');
+    }
     return repaired;
   }, options.signal);
   return { warnings: [pdfLayoutFallbackWarning(fallbackReason), ...pdfOcrWarnings(completePages), ...nativeMathWarnings(math)] };

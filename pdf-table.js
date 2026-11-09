@@ -20,6 +20,7 @@ const { buildPdfTableWorkbook, detectTableLinesFromRaw } = require("./pdf-table-
 const { reportConversionProgress } = require("./conversion-progress");
 const { createPdfRenderWorkspace } = require("./pdf-render-workspace");
 const { throwIfCanceled } = require("./conversion-cancellation");
+const { vectorPaintCandidates } = require('./pdf-vector-content');
 
 function groupPdfItemsIntoLines(items, viewport) {
   // Use the displayed page coordinate system, including /Rotate and CropBox.
@@ -128,6 +129,7 @@ async function extractPdfRowsByPage(inputPath) {
         const lines = groupPdfItemsIntoLines(content.items, viewport);
         pages.push({ name: `Page ${pageNumber}`, pageNumber, width: viewport.width,
           height: viewport.height, lines, rows: lines.map((line) => line.cells),
+          unverifiedVectorContent: vectorPaintCandidates(operators, pdfjsLib.OPS, viewport, lines).size > 0,
           imageCoverage: imageCoverageFromOperators(operators, pdfjsLib.OPS, viewport),
           ocrImageCoverage: await ocrImageCoverageFromOperators(operators, pdfjsLib.OPS, viewport, page.objs),
           blank: !lines.length && operators.fnArray.length === 0 });

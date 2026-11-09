@@ -404,17 +404,11 @@ test("converts a PDF to DOCX with extracted text and tables", async () => {
   assert.strictEqual(packageBytes.readUInt32LE(0), 0x04034b50, "docx must be a ZIP package");
   const documentXml = readZipEntry(packageBytes, "word/document.xml");
   assert.match(documentXml, /<w:document/);
-  // pdf2docx 对「纯文本定位拼出的无边框表格」不识别为 <w:tbl>（parse_stream_table 开关
-  // 无影响，原始库/当前库对照验证一致），退化成 <w:tab/> 分隔段落，且 ≥3 列时最后一列被丢弃
-  // （本用例 Price/3.50 列丢失）——pdf2docx 固有行为，非本次 parse_stream_table=False 引入。
-  // 有边框 lattice 表格不受影响（见下方 cropped PDF table 用例）。
-  // Windows 走 docengine（pdf2docx）→ <w:tab/>；mac/Linux 无 docengine，走 PDF.js 文字提取
-  // （tab 不会变成 <w:tab/>）——仅 Windows 断言 tab。
-  if (process.platform === "win32") {
-    assert.match(documentXml, /<w:tab\/>/);
-  }
-  assert.match(documentXml, /Item/);
-  assert.match(documentXml, /Qty/);
+  // Native layout or a rebuilt table are both valid, but the last column and
+  // its decimal point must survive on every host. Do not bless known data loss
+  // merely because the external engine emitted its characteristic tab markup.
+  const words = documentXml.replace(/<[^>]+>/g, ' ').split(/\s+/);
+  for (const text of ['Item', 'Qty', 'Price', 'Apple', '2', '3.50']) assert.ok(words.includes(text), text);
   assert.strictEqual(hashFile(sourcePath), beforeHash);
 });
 
