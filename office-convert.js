@@ -12,6 +12,7 @@ const { RUNTIME_DIR, LIBREOFFICE_PATH } = require("./config");
 const { normalizeExt, extFromName, outputNameFor } = require("./utils");
 const { createTurndownService } = require("./text-conversion");
 const { OfficeEngineError, runLibreOffice } = require("./office-engine");
+const { throwIfCanceled } = require("./conversion-cancellation");
 const { createOfficeWorkspace } = require("./office-runtime");
 const { waitForOfficeReady } = require("./office-readiness");
 // 注意：htmlToText 从 text-docx.js 延迟 require（convertDocumentToText 内），
@@ -37,6 +38,10 @@ function findEocd(buffer) {
   return -1;
 }
 
+// 解压上限：真实 word/document.xml 远低于此值。没有上限时，一个声明 1 KB、
+// 实际解出数 GB 的条目会直接撑爆主进程内存（上传文件完全由用户控制）。
+const MAX_INFLATED_ENTRY_BYTES = 64 * 1024 * 1024;
+
 function inflateZipEntry(buf, entry) {
   const localOffset = entry.localOffset;
   if (buf.readUInt32LE(localOffset) !== 0x04034b50) return null;
@@ -45,7 +50,14 @@ function inflateZipEntry(buf, entry) {
   const dataStart = localOffset + 30 + nameLen + extraLen;
   const compData = buf.subarray(dataStart, dataStart + entry.compSize);
   if (entry.method === 0) return compData;
-  if (entry.method === 8) return zlib.inflateRawSync(compData);
+  if (entry.method === 8) {
+    try {
+      return zlib.inflateRawSync(compData, { maxOutputLength: MAX_INFLATED_ENTRY_BYTES });
+    } catch {
+      // 超出上限或数据损坏都按「无法预检」处理，由调用方走安全回退。
+      return null;
+    }
+  }
   return null;
 }
 
@@ -107,7 +119,7 @@ async function docxNeedsPdfRepair(docxPath) {
   }
 }
 
-async function repairDocxViaRoundtrip(inputPath, originalName, tempDir) {
+async function repairDocxViaRoundtrip(inputPath, originalName, tempDir, options = {}) {
   await waitForOfficeReady();
   const repairDir = path.join(tempDir, "repair");
   await fsp.mkdir(repairDir, { recursive: true });
@@ -118,7 +130,8 @@ async function repairDocxViaRoundtrip(inputPath, originalName, tempDir) {
     repairDir,
     inputPath
   ];
-  await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10 });
+  await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10, signal: options.signal });
+  throwIfCanceled(options.signal);
   return findConvertedFile(repairDir, "docx");
 }
 
@@ -218,8 +231,10 @@ async function findConvertedFile(outDir, target) {
   return matches[0]?.filePath || null;
 }
 
-async function convertWithLibreOffice(inputPath, outputPath, originalName, target) {
+async function convertWithLibreOffice(inputPath, outputPath, originalName, target, options = {}) {
+  throwIfCanceled(options.signal);
   await waitForOfficeReady();
+  throwIfCanceled(options.signal);
   let workspace;
   try {
     workspace = createOfficeWorkspace({ runtimeDir: RUNTIME_DIR, requireShortPaths: true });
@@ -249,7 +264,7 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
     // WPS 生成的 docx（OMML 公式 + 交叉引用域）转 PDF 会被 LibreOffice 静默截断：
     // exit 0 但只输出前几页。命中特征时先 roundtrip 规范化修复再导出。
     if (targetExt === "pdf" && normalizeExt(originalExt) === "docx" && await docxNeedsPdfRepair(effectiveInput)) {
-      const repaired = await repairDocxViaRoundtrip(effectiveInput, originalName, tempDir);
+      const repaired = await repairDocxViaRoundtrip(effectiveInput, originalName, tempDir, options);
       if (repaired) effectiveInput = repaired;
     }
     const args = [
@@ -260,7 +275,8 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
       effectiveInput
     ];
 
-    await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10 });
+    await runLibreOffice(LIBREOFFICE_PATH, args, { runtimeDir: RUNTIME_DIR, timeout: 1000 * 60 * 10, signal: options.signal });
+    throwIfCanceled(options.signal);
     const convertedPath = await findConvertedFile(outDir, target);
     if (!convertedPath) {
       throw new OfficeEngineError("OFFICE_CONVERSION_FAILED", {
@@ -279,7 +295,7 @@ async function convertWithLibreOffice(inputPath, outputPath, originalName, targe
   }
 }
 
-async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, originalName) {
+async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, originalName, options = {}) {
   const ext = normalizeExt(inputExt);
   let html;
   // WPS/Word 自动编号前缀（docx 分支填充，见 computeDocxHeadingNumbers）
@@ -311,7 +327,7 @@ async function convertDocumentToMarkdown(inputPath, outputPath, inputExt, origin
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-docmd-"));
     const htmlPath = path.join(tempDir, "converted.html");
     try {
-      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html");
+      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html", options);
       html = await fsp.readFile(htmlPath, "utf8");
     } finally {
       await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -636,7 +652,7 @@ async function externalizeMarkdownImages(markdown, assetsDir, assetsBaseName) {
   return { markdown: out, count: found.length };
 }
 
-async function convertDocumentToText(inputPath, outputPath, inputExt, originalName) {
+async function convertDocumentToText(inputPath, outputPath, inputExt, originalName, options = {}) {
   const ext = normalizeExt(inputExt);
   let text;
   if (ext === "docx") {
@@ -648,7 +664,7 @@ async function convertDocumentToText(inputPath, outputPath, inputExt, originalNa
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-doctxt-"));
     const htmlPath = path.join(tempDir, "converted.html");
     try {
-      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html");
+      await convertWithLibreOffice(inputPath, htmlPath, originalName, "html", options);
       const { htmlToText } = require("./text-docx");
       text = htmlToText(await fsp.readFile(htmlPath, "utf8")).trim();
     } finally {

@@ -3,7 +3,10 @@ const path = require("path");
 const sharp = require("sharp");
 
 const root = path.join(__dirname, "..");
-const sourceMouse = "D:\\鼠鼠打印\\assets\\mouse_avatar.png";
+// 源图不再写死本机绝对路径：默认取仓库内 build/mouse_avatar.png，
+// 或用第一个参数/环境变量指定外部源图，便于在 CI 与其他机器重建。
+const sourceMouse = process.argv[2] || process.env.FLYINGMOUSE_MOUSE_SOURCE
+  || path.join(root, "build", "mouse_avatar.png");
 const outputDir = path.join(root, "public", "assets", "mouse-format");
 
 const canvas = { width: 720, height: 540 };

@@ -21,6 +21,9 @@ async function writeZipArchive(files, outputPath, level) {
   } catch (error) {
     archive.outputStream.destroy(error);
     await completion.catch(() => {});
+    // 调用方以最终输出路径打开该归档；失败后不得留下半成品 ZIP
+    // （同一目录的既有文件与本次临时文件由调用方按各自所有权处理）。
+    await fsp.rm(outputPath, { force: true }).catch(() => {});
     throw error;
   }
 }
@@ -121,7 +124,11 @@ async function listZipEntries(zipPath) {
       zipfile.close();
       resolve(entries);
     });
-    zipfile.on("error", reject);
+    // 条目读取出错时同样要释放文件句柄，否则损坏的 ZIP 会让 fd 泄漏到进程结束。
+    zipfile.on("error", (error) => {
+      try { zipfile.close(); } catch { /* 已关闭或不可关闭时保持原始错误 */ }
+      reject(error);
+    });
     zipfile.readEntry();
   });
 }

@@ -73,16 +73,18 @@ async function convertRasterImage(inputPath, outputPath, target, options = {}) {
   // 转 raw RGB 后走自研 24 位编码器（bmp-output.js）。
   if (normalizedTarget === "bmp") {
     if (animated) warnings.push(warning("ANIMATION_FLATTENED"));
+    // BMP 编码器只接受按 channels 紧密排列的像素。灰度源（1 通道）或灰度+透明
+    // （2 通道）若按 3 通道读取会越界失败，因此先统一到 sRGB 再丢弃 alpha。
     const { data, info } = await sharp(inputPath, {
       page: 0,
       pages: 1,
       limitInputPixels: maxPixels
-    }).rotate().raw().toBuffer({ resolveWithObject: true });
+    }).rotate().toColourspace("srgb").removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const bmp = encodeBmpFromRaw({
       width: info.width,
       height: info.height,
       data,
-      channels: info.channels >= 3 ? info.channels : 3
+      channels: info.channels
     });
     const fsp = require("fs/promises");
     await fsp.writeFile(outputPath, bmp);

@@ -190,3 +190,30 @@ test("an existing directory which rejects actual writes never launches LibreOffi
   assert.equal(launched, false);
   assert.deepEqual(await fsp.readdir(scratch), [], "failed allocation must clean only the workspace it created");
 });
+
+test("cancellation reaches the executor and is never reclassified as an engine failure", async (t) => {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "fm-cancel-"));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const controller = new AbortController();
+  let receivedSignal;
+  const running = runLibreOffice("soffice", [], { runtimeDir: scratch, signal: controller.signal,
+    executor: async (_command, _args, options) => {
+      receivedSignal = options.signal;
+      controller.abort();
+      throw Object.assign(new Error("转换已取消。"), { code: "CONVERSION_CANCELED" });
+    } });
+  await assert.rejects(running, (error) => error.code === "CONVERSION_CANCELED");
+  assert.equal(receivedSignal, controller.signal, "the request signal must be forwarded to the executor");
+});
+
+test("the real executor terminates its child when the request is canceled", async () => {
+  const { defaultExecutor } = require("../office-process");
+  const controller = new AbortController();
+  const started = Date.now();
+  const running = defaultExecutor(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], {
+    signal: controller.signal, timeout: 60000
+  });
+  setTimeout(() => controller.abort(), 200);
+  await assert.rejects(running, (error) => error.code === "CONVERSION_CANCELED");
+  assert.ok(Date.now() - started < 20000, "cancellation must not wait for the process deadline");
+});

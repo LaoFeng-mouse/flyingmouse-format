@@ -40,7 +40,9 @@ test("release workflow restores engines, runs full conversion tests and builds b
     assert.match(workflow, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(workflow, /actions\/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9/);
-  assert.match(workflow, /ci-engines-v1\.tar\.zst/);
+  // 缓存路径必须指向 restore-ci-engines.ps1 实际下载的分卷（output/<assetName>），
+  // 旧的单文件 output/ci-engines-v1.tar.zst 从未产生，缓存因此永远 miss。
+  assert.match(workflow, /output\/ci-engines-v1-win32-\*\.tar\.zst/);
   const packageJson = require("../package.json");
   assert.ok(packageJson.build.files.includes("ci-engines-v1.json"));
   assert.match(packageJson.scripts.dist, /--publish never/);
@@ -48,7 +50,8 @@ test("release workflow restores engines, runs full conversion tests and builds b
   assert.doesNotMatch(jobHeader, /GH_TOKEN/);
   assert.match(workflow, /Restore fixed conversion engines[\s\S]*?GH_TOKEN:[\s\S]*?restore-ci-engines\.ps1/);
   // 云端发布：下载产物 → 创建 Release → 上传资产 → 设 Latest（contents: write）
-  assert.match(workflow, /actions\/download-artifact@v4/);
+  // 制品动作必须按提交固定，不能用可移动的 major tag（发布作业持有 contents: write）。
+  assert.match(workflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /gh release upload/);
   assert.match(workflow, /--draft=false --latest/);

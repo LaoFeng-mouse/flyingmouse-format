@@ -689,7 +689,6 @@ async function withRequestCancellation(req, res, operation) {
 }
 
 app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload.single("file"), conversionProgress.enter, async (req, res) => {
-  let tools = await getTools();
   const file = req.file;
   const originalName = decodeUploadFileName(file?.originalname);
   const requestedTarget = normalizeExt(String(req.body.targetFormat || "").toLowerCase());
@@ -705,6 +704,10 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
     res.status(400).json({ error: "目标格式暂不支持。", errorCode: "UNSUPPORTED_TARGET" });
     return;
   }
+
+  // 能力探测可能触发引擎探针与 Office 准备等待；没有文件或目标格式非法时
+  // 不应先付出这份代价，先做无依赖的拒绝，再探测。
+  let tools = await getTools();
 
   const inputExt = normalizeExt(extFromName(originalName));
   const category = categoryForExt(inputExt);
@@ -815,25 +818,37 @@ app.post("/api/convert", assertLocalWebRequest, conversionProgress.begin, upload
         else await convertCsvToPdf(tabular, outputPath);
       }
     } else if (category === "document" || category === "spreadsheet" || category === "presentation") {
-      if (inputExt === "ofd") {
-        // OFD（国标 GB/T 33190）走自有链路（ofd-convert.js → PDF），LibreOffice 打不开。
-        // OFD 仅开放 PDF；校验所有页面后才允许注册下载结果。
-        // originalName 用于扩展名校验（multer 临时文件无扩展名）。
-        await withRequestCancellation(req, res, signal => convertOfdToPdf(file.path, outputPath, originalName, { signal }));
-      } else if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
-        await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget);
-      } else if (category === "presentation" && requestedTarget === "html") {
-        await convertPresentationToHtml(file.path, outputPath, originalName);
-      } else if (category === "document" && requestedTarget === "md") {
-        await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName);
-      } else if (category === "document" && requestedTarget === "txt") {
-        await convertDocumentToText(file.path, outputPath, inputExt, originalName);
-      } else {
+      // Office 链路过去完全不接受取消：LibreOffice 最长可跑 10 分钟，用户点取消
+      // 只能等超时。这里统一包一层，signal 一路传到 soffice 的进程树终止逻辑。
+      await withRequestCancellation(req, res, async signal => {
+        if (inputExt === "ofd") {
+          // OFD（国标 GB/T 33190）走自有链路（ofd-convert.js → PDF），LibreOffice 打不开。
+          // OFD 仅开放 PDF；校验所有页面后才允许注册下载结果。
+          // originalName 用于扩展名校验（multer 临时文件无扩展名）。
+          await convertOfdToPdf(file.path, outputPath, originalName, { signal });
+          return;
+        }
+        if (category === "presentation" && ["png", "jpg"].includes(requestedTarget)) {
+          await convertPresentationToImages(file.path, outputPath, originalName, requestedTarget, { signal });
+          return;
+        }
+        if (category === "presentation" && requestedTarget === "html") {
+          await convertPresentationToHtml(file.path, outputPath, originalName, { signal });
+          return;
+        }
+        if (category === "document" && requestedTarget === "md") {
+          await convertDocumentToMarkdown(file.path, outputPath, inputExt, originalName, { signal });
+          return;
+        }
+        if (category === "document" && requestedTarget === "txt") {
+          await convertDocumentToText(file.path, outputPath, inputExt, originalName, { signal });
+          return;
+        }
         if (category === "spreadsheet" && inputExt === "xlsx" && requestedTarget === "csv") {
           conversionResult = await inspectXlsxForCsv(file.path);
         }
-        await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget);
-      }
+        await convertWithLibreOffice(file.path, outputPath, originalName, requestedTarget, { signal });
+      });
     } else if (category === "audio" || category === "video") {
       const videoCodec = ["h264", "h265", "av1"].includes(String(req.body?.videoCodec || ""))
         ? String(req.body.videoCodec)

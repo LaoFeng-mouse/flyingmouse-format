@@ -113,22 +113,6 @@ async function convertTextToDocx(raw, source, outputPath, options = {}) {
       paragraphs.push(docxParagraphXml([{ t: "" }]));
       continue;
     }
-    if (source === "md") {
-      const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
-      if (heading) {
-        const level = Number(heading[1].length);
-        const size = [36, 32, 28, 26, 24, 24][level - 1];
-        paragraphs.push(docxParagraphXml(mdInlineRuns(heading[2]), { size, bold: true, after: 120 }));
-        continue;
-      }
-      const bullet = /^[-*]\s+(.+)$/.exec(trimmed);
-      if (bullet) {
-        paragraphs.push(docxParagraphXml([{ t: "• " }, ...mdInlineRuns(bullet[1])], { indent: 360 }));
-        continue;
-      }
-      paragraphs.push(docxParagraphXml(mdInlineRuns(trimmed)));
-      continue;
-    }
     if (source === "html" || source === "htm") {
       // 纯结构标签行（<ul>/</div>/<table> 等）不产生空段落。
       if (/^<\/?(ul|ol|div|table|thead|tbody|tfoot|tr|section|article)\s*>$/i.test(trimmed)) continue;

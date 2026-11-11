@@ -44,6 +44,9 @@ class OfficeEngineError extends Error {
 
 function classifyExecutionError(error, operation) {
   if (error instanceof OfficeEngineError) return error;
+  // Cancellation is a user action, not an engine fault: keep its own code so the
+  // HTTP layer can answer 422/canceled instead of "conversion failed".
+  if (error?.code === "CONVERSION_CANCELED") return error;
   const detail = `${error?.stderr || ""}\n${error?.stdout || ""}\n${error?.message || ""}`;
   let code = operation === "convert" ? "OFFICE_CONVERSION_FAILED" : "OFFICE_ENGINE_START_FAILED";
   if (error?.code === "ENOENT") code = "OFFICE_ENGINE_MISSING";
@@ -91,11 +94,16 @@ async function executeWithProfile(command, commandArgs, options = {}) {
       ...commandArgs
     ];
     try {
-      return await executor(command, args, { timeout: options.timeout });
+      // The signal must reach the executor so a canceled request terminates the
+      // whole soffice tree instead of running to its 10-minute deadline.
+      return await executor(command, args, { timeout: options.timeout, signal: options.signal });
     } catch (error) {
       const classified = classifyExecutionError(error, options.operation);
-      classified.details.profilePathLength = workspace.profileDir.length;
-      classified.details.profileFallback = workspace.fallback;
+      // 取消不是引擎故障：它按原样返回，没有 details，不能在这里补诊断字段。
+      if (classified instanceof OfficeEngineError) {
+        classified.details.profilePathLength = workspace.profileDir.length;
+        classified.details.profileFallback = workspace.fallback;
+      }
       throw classified;
     }
   } catch (error) {

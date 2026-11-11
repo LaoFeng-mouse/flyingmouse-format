@@ -96,3 +96,32 @@ test('a mixed batch reports finished and failed item counts separately from stag
   assert.match(page.find('#progressBatch').textContent,/2\s*\/\s*2/);assert.match(page.find('#progressBatch').textContent,/1 failed/);
   assert.equal(page.find('#progressPercent').textContent,'100%');assert.doesNotMatch(page.find('#progressPanel').className,/success/);assert.equal(page.timers.size,0);
 });
+
+test('the cancel button aborts the in-flight POST and marks the queue canceled', async () => {
+  const page = await pageHarness(() => new Promise(() => {}), {}, { clock: true, progress: () => ({ status: 404, body: {} }) });
+  await page.select(['one.pdf', 'two.pdf']);
+  const pending = page.convert();
+  await turn();
+  assert.equal(page.find('#cancelButton').hidden, false, 'cancel is offered while converting');
+  assert.equal(page.find('#convertButton').disabled, true);
+  await page.find('#cancelButton').dispatch('click');
+  await pending;
+  assert.match(page.find('#statusBox').textContent, /canceled/i);
+  assert.equal(page.find('#cancelButton').hidden, true, 'cancel disappears once the batch settles');
+  assert.match(page.find('#batchList').textContent, /Canceled/);
+  assert.equal(page.find('#convertButton').disabled, false, 'controls are released after cancellation');
+});
+
+test('a canceled batch never starts the remaining queued files', async () => {
+  let started = 0;
+  const page = await pageHarness(() => { started += 1; return new Promise(() => {}); }, {},
+    { clock: true, progress: () => ({ status: 404, body: {} }) });
+  await page.select(['one.pdf', 'two.pdf', 'three.pdf']);
+  const pending = page.convert();
+  await turn();
+  assert.equal(started, 1);
+  await page.find('#cancelButton').dispatch('click');
+  await pending;
+  assert.equal(started, 1, 'later files must not be dispatched after cancellation');
+  assert.equal(page.find('#convertButton').disabled, false);
+});

@@ -7,7 +7,11 @@ output/
 work/
 .playwright-cli/
 bin/*
+# 目录级例外会让 bin/avs3/ 下任何文件都可提交（含本地解码器、DLL、密钥），
+# 而 package.json 的 extraResources 会把整个 bin/avs3 打进安装包。先重新忽略
+# 目录内容，再按文件白名单放行。
 !bin/avs3/
+bin/avs3/*
 !bin/avs3/avs3RM0Decoder.exe
 !bin/avs3/model.bin
 !bin/avs3/THIRD_PARTY_NOTICE.txt

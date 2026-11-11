@@ -20,7 +20,9 @@ jobs:
       - name: Cache fixed conversion engines
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: output/ci-engines-v1.tar.zst
+          # 引擎恢复脚本把分卷下载到 output/<assetName>（core + docstructure），
+          # 旧的单文件路径从未存在，导致缓存永远 miss 且每次重新下载 GB 级分卷。
+          path: output/ci-engines-v1-win32-*.tar.zst
           key: ci-engines-v1-${{ hashFiles('ci-engines-v1.json') }}
 
       - name: Install dependencies

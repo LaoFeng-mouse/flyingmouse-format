@@ -1,6 +1,6 @@
 // 生成鼠鼠版 Microsoft Store APPX logo（替换 build/appx/ 下的橙色闪电旧图标）
 // 源：build/icon.png（512x512 鼠鼠，已通过 mouse-assets.test.js 视觉回归）
-// 用法：node scripts/tmp-gen-appx-logos.js
+// 用法：node scripts/gen-appx-logos.js
 // 输出：build/appx/Square44x44Logo.png / Square150x150Logo.png / StoreLogo.png / Wide310x150Logo.png
 const fs = require('fs');
 const path = require('path');

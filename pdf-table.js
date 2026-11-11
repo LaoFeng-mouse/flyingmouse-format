@@ -107,7 +107,7 @@ function groupPdfItemsIntoRows(items, viewport) {
   return groupPdfItemsIntoLines(items, viewport).map((line) => line.cells);
 }
 
-async function extractPdfRowsByPage(inputPath) {
+async function extractPdfRowsByPage(inputPath, options = {}) {
   const pdfjsLib = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
   const loadingTask = pdfjsLib.getDocument(getPdfjsDocumentOptions({
@@ -121,6 +121,7 @@ async function extractPdfRowsByPage(inputPath) {
     const pdf = await loadingTask.promise;
     assertPdfPages(pdf.numPages);
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      throwIfCanceled(options.signal);
       const page = await pdf.getPage(pageNumber);
       try {
         const viewport = page.getViewport({ scale: 1, rotation: page.rotate || 0 });

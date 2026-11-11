@@ -101,7 +101,8 @@ async function verifyOfdPdf(pdfPath, inspection, { signal } = {}) {
     reportConversionProgress({ stage: "validating", completed: pages.length, total: pages.length, unit: "pages" });
     return { pageCount: pages.length, pages };
   } finally {
-    await fsp.rm(scratch, { recursive: true, force: true });
+    // Windows 上验证用临时文件可能仍被句柄占用；清理失败不得覆盖已验证的结果。
+    await fsp.rm(scratch, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -136,7 +137,8 @@ async function convertOfdToPdf(inputPath, outputPath, originalName, options = {}
     if (error?.errorCode) throw error;
     throw ofdError("OFD_RENDER_FAILED");
   } finally {
-    await fsp.rm(scratch, { recursive: true, force: true });
+    // 清理失败不得把一次成功发布变成失败，也不得掩盖原始转换错误。
+    await fsp.rm(scratch, { recursive: true, force: true }).catch(() => {});
   }
 }
 

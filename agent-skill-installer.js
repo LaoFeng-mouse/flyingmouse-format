@@ -53,12 +53,27 @@ async function validateSourceTree(sourceDir) {
   return realSource;
 }
 
+// 自己递归列目录，不用 fsp.readdir({ recursive: true })：该选项从 Node 18.17 才有，
+// Win7 Legacy staging 派生的是 Electron 22（内置 Node 16），未知选项会被忽略而只返回
+// 顶层条目——安装会「成功」但 scripts/ 里的文件没被复制，skill 因此不可用。
+async function listTree(directory, prefix = "") {
+  const entries = await fsp.readdir(directory, { withFileTypes: true });
+  const output = [];
+  for (const entry of entries) {
+    const relative = prefix ? path.join(prefix, entry.name) : entry.name;
+    output.push(relative);
+    // 父目录先于子项，保证后续 mkdir 在写文件之前完成。
+    if (entry.isDirectory()) output.push(...await listTree(path.join(directory, entry.name), relative));
+  }
+  return output;
+}
+
 // 复制 skill 源到目标目录。逐文件 readdir + readFile/writeFile，不用 fsp.cp：
 // 打包后源在 app.asar（Electron 只读虚拟文件系统）里，Electron 的 asar 补丁
 // 覆盖 stat/readFile/readdir/lstat，但 fs.cp 未被打补丁，fsp.cp 会抛
 // "ENOENT, ... not found in ...app.asar"（2026-08-14 接入 Agent 失败根因）。
 async function copyDirectorySafe(source, destination) {
-  const entries = await fsp.readdir(source, { recursive: true });
+  const entries = await listTree(source);
   for (const entry of entries) {
     const item = path.join(source, entry);
     const stat = fs.lstatSync(item);

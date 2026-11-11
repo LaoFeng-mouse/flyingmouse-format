@@ -28,6 +28,8 @@ function harness() {
   const context = vm.createContext({ state, performance, requests, statuses, FormData, AbortController, setInterval, clearInterval,
     i18n: { language: "en-US" }, t: key => key, rendererLog() {},
     categoryLabel: value => value, isLongTaskTarget: () => false, mouseStateForConversion: () => "converting",
+    isCancellation: error => error?.code === "CONVERSION_CANCELED" || error?.name === "AbortError",
+    mergedDetail: (kind, fileName = "") => kind === "merging" ? "Merging into PDF" : `Merged into ${fileName}`,
     setMouseState() {}, setWorkflowStep() {}, resetProgress() {}, setProgress() {}, setStageProgress() {}, updateProgressDetail() {},
     renderQqMusicConnection() {}, beginConversionProgress() {}, finishConversionProgress() {}, renderBatchList() {}, closePreview() {}, saveConvertedFile() {}, saveAllConvertedFiles() {},
     syncVideoCodecField() {}, syncTextEncodingField() {}, usesTextEncoding:()=>false, syncPdfExcelHint() {}, persistSettings: async () => {}, rememberTarget: () => ({}),
@@ -44,7 +46,7 @@ function harness() {
     }
   });
   for (const name of ["fileInput", "folderInput", "dropZone", "chooseFolderButton", "clearButton", "fileName", "fileMeta", "fileStrip",
-    "batchList", "targetSelect", "convertButton", "downloadButton", "batchSaveButton", "previewButton", "videoCodec", "alphaBackground",
+    "batchList", "targetSelect", "convertButton", "cancelButton", "downloadButton", "batchSaveButton", "previewButton", "videoCodec", "alphaBackground",
     "pdfPassword", "pdfAction", "pdfSplitMode", "pdfGroupSize", "imagePdfMode", "textEncoding", "textEncodingField", "cancelConversionButton", "progressLabel",
     "pdfPasswordField", "pdfActionField", "pdfSplitModeField", "pdfGroupSizeField", "imagePdfModeField",
     "previewTitle", "previewMeta", "previewContent", "previewDrawer", "previewBackdrop", "previewClose"]) context[name] = element();

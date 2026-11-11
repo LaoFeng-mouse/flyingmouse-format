@@ -132,9 +132,22 @@ function updateSettings(settingsPath, patch = {}) {
 // 语义比较（键序/格式无关）：merge 产物与磁盘现状等价时跳过写盘（S2 幂等迁移）。
 // 0.6.4 商店版实证：迁移失败死循环期间每次启动都白写一次 + EXDEV 回退 copy，
 // AppContainer 重定向盘上纯耗 IO；内容未变就不该有磁盘副作用。
+// 实现必须真的与键序无关：直接 JSON.stringify 会因对象字面量构造顺序不同而
+// 误判「已变化」，从而在幂等迁移里产生多余的写盘。
+function canonicalizeSettings(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeSettings);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((result, key) => {
+      result[key] = canonicalizeSettings(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+}
+
 function settingsContentEquals(a, b) {
   try {
-    return JSON.stringify(a) === JSON.stringify(b);
+    return JSON.stringify(canonicalizeSettings(a)) === JSON.stringify(canonicalizeSettings(b));
   } catch {
     return false;
   }

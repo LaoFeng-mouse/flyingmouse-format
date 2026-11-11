@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release/tag name (e.g. v0.6.1) — used when dispatching manually"
-        required: false
-        default: "v0.6.1"
+        description: "Release/tag name (must equal v<package.json version>, e.g. v0.8.4)"
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -29,7 +29,9 @@ jobs:
       - name: Cache fixed conversion engines
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: output/ci-engines-v1.tar.zst
+          # 引擎恢复脚本把分卷下载到 output/<assetName>（core + docstructure），
+          # 旧的单文件路径从未存在，导致缓存永远 miss 且每次重新下载 GB 级分卷。
+          path: output/ci-engines-v1-win32-*.tar.zst
           key: ci-engines-v1-${{ hashFiles('ci-engines-v1.json') }}
 
       - name: Install locked dependencies
@@ -111,7 +113,7 @@ jobs:
           node scripts/inspect-pe.js $win7.FullName
 
       - name: Upload validated installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: flyingmouse-format-${{ github.ref_name }}
           path: |
@@ -227,7 +229,7 @@ jobs:
           wait "$pid" || true
 
       - name: Upload validated DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: flyingmouse-format-${{ github.ref_name }}-mac-${{ matrix.arch }}
           path: dist/FlyingMouse Format-Setup-*-mac-${{ matrix.arch }}.dmg
@@ -244,7 +246,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release-assets
           merge-multiple: true
@@ -255,6 +257,13 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ inputs.release_tag || github.ref_name }}"
+          # 发布标签必须与源码版本一致：否则会把新版本包装成旧标签发布
+          # （手动触发曾默认 v0.6.1，而源码已是 0.8.x）。
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "${TAG#v}" != "$PKG_VERSION" ]; then
+            echo "release tag $TAG does not match package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
           # 标准版 x64 exe/blockmap 重命名为连字符，匹配 latest.yml 的 url
           # （空格会被 GitHub 显示成点，electron-updater 按 url 下载会 404）
           cd release-assets

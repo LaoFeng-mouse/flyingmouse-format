@@ -62,10 +62,12 @@
               </span>
               <span class="drop-main" data-i18n="upload.title">把文件丢给鼠鼠</span>
               <span class="drop-sub" id="dropHint" data-i18n="upload.hint">图片、文档、PDF、WPS、音视频都可以试</span>
-              <span class="drop-folder-line">
-                <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
-              </span>
             </button>
+            <!-- 不能把按钮嵌在 #dropZone 里：HTML 解析器会把内层 button 提到父级之外，
+                 导致 .drop-zone 提前闭合、拖放区布局失效。外层用 div 承载，点击也不会冒泡到文件选择。 -->
+            <div class="drop-folder-line">
+              <button class="ghost-button" id="chooseFolderButton" type="button" data-i18n="upload.chooseFolder">选择文件夹转 PDF</button>
+            </div>
 
             <div class="file-strip" id="fileStrip" hidden>
               <div>
@@ -152,6 +154,7 @@
             </label>
 
             <button class="primary-button" id="convertButton" type="button" disabled data-i18n="action.convert">开始转换</button>
+            <button class="ghost-button cancel-button" id="cancelButton" type="button" hidden data-i18n="action.cancel">取消转换</button>
 
             <div class="progress-panel" id="progressPanel" hidden>
               <div class="progress-header">

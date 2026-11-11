@@ -540,6 +540,16 @@ select {
   color: var(--on-disabled);
 }
 
+/* 转换进行中才出现的取消入口；与主按钮同宽，避免窄窗口下被挤压。 */
+.cancel-button {
+  margin-top: 10px;
+  width: 100%;
+}
+
+.cancel-button[hidden] {
+  display: none;
+}
+
 .ghost-button {
   background: var(--card);
   color: var(--muted);
@@ -902,7 +912,8 @@ input:focus-visible {
 
 .drop-folder-line {
   margin-top: 8px;
-  display: block;
+  /* 网格上下文让内部按钮与旧布局一样撑满面板宽度。 */
+  display: grid;
 }
 
 .drop-folder-line .ghost-button {

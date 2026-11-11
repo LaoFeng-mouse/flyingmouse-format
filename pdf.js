@@ -148,7 +148,9 @@ function pdfCoverageSegments(page) {
 }
 
 async function sourcePdfPages(inputPath, options = {}) {
-  return options.pdfTextPages || (options.extractPdfRowsByPage || extractPdfRowsByPage)(inputPath);
+  // 逐页文字提取是 PDF→TXT/MD/HTML/DOCX 的公共入口；把 signal 透传下去，
+  // 用户取消后不必等整本解析完（未取消时行为不变）。
+  return options.pdfTextPages || (options.extractPdfRowsByPage || extractPdfRowsByPage)(inputPath, options);
 }
 
 function pdfPageNeedsOcr(page) {
@@ -250,7 +252,7 @@ async function fillMissingPdfPageText(inputPath, pages, options = {}) {
     // hide its low OCR quality. Recover non-overlapping, fully visible raw scans
     // at their original aspect ratio and judge each region separately.
     const scanRegions = !options.renderPdfTablePage && missing.every(page => Number.isInteger(page.pageNumber) && Array.isArray(page.lines))
-      ? await extractPdfScanRegions(workspace.inputPath, missing, tempDir) : new Map();
+      ? await extractPdfScanRegions(workspace.inputPath, missing, tempDir, { signal: options.signal }) : new Map();
     for (const page of missing) {
       throwIfCanceled(options.signal);
       const pageNumber = page.pageNumber || pages.indexOf(page) + 1;
@@ -549,7 +551,7 @@ async function convertPdf(inputPath, outputPath, target, options = {}) {
 
   let classification;
   if (target === "docx" || target === "xlsx") {
-    classification = await (options.classifyPdf || classifyPdf)(inputPath);
+    classification = await (options.classifyPdf || classifyPdf)(inputPath, options);
     if (classification.kind !== "native") {
       try {
         return await (options.convertStructuredPdf || convertStructuredPdf)({
@@ -1433,10 +1435,11 @@ async function convertPdfToDocx(inputPath, outputPath, pages, options = {}) {
         if (!result) throw notApplicable;
         const expectedInline = result.expectedInlineParagraphs;
         const includeInlineParagraphs = expectedInline !== undefined;
+        // 段落实序列的校验在下方与 validateNativePdfDocx 的实际输出比对；
+        // 这里只判断「是否允许纯图片行内段落」，不再自我比较（恒真、无信息量）。
         const allowImageOnlyInline = includeInlineParagraphs
           && Number.isSafeInteger(result.rasterizedLineCount) && result.rasterizedLineCount > 0
           && result.hasEditableContent === false
-          && inlineParagraphsEqual(expectedInline, expectedInline)
           && expectedInline.some(paragraph => paragraph.some(token => typeof token.imageSha256 === 'string'));
         const validation = await validateNativePdfDocx(attemptPath,
           { includeInlineParagraphs, allowImageOnlyInline });
@@ -1545,6 +1548,19 @@ async function splitPdfToZip(inputPath, outputPath, options = {}) {
 
   // qpdf 可用时用 --split-pages（支持逐页 / 每 N 页一组，速度快）；否则回退 pdf-lib 逐页拆分。
   if (await commandExists(QPDF_PATH, ["--version"])) {
+    // qpdf 的 --split-pages 会一次性生成与页数等量的文件；没有准入检查时，
+    // 同一份超长 PDF 在装了 qpdf 的机器上能拆、在只能走 pdf-lib 的机器上被拒，
+    // 结果取决于环境。这里用 qpdf 自带的 --show-npages 做廉价页数预算，
+    // 取不到时回退到 pdf-lib 的权威页数（同时保留加密检查）。
+    const shown = await run(QPDF_PATH, ["--show-npages", inputPath], { timeout: 1000 * 60 * 2, signal: options.signal })
+      .catch(() => null);
+    const reportedPages = Number.parseInt(String(shown?.stdout || "").trim(), 10);
+    if (Number.isInteger(reportedPages) && reportedPages > 0) {
+      assertPdfPages(reportedPages);
+    } else {
+      const authoritative = await loadPdfForPageCopy(inputPath);
+      assertPdfPages(authoritative.getPageCount());
+    }
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-pdf-split-"));
     try {
       const prefix = path.join(tempDir, "page-%d.pdf");
@@ -1820,14 +1836,15 @@ async function ocrScannedPdfPages(inputPath) {
 
 // 演示文稿 -> 图片：LibreOffice 转 PDF 后按页渲染为 PNG/JPG（依赖第四批 office-convert.js）。
 // 包内文件按源文件名前缀命名（<源名>-第N页.<格式>），不同 PPT 解压不再互相撞名。
-async function convertPresentationToImages(inputPath, outputPath, originalName, target) {
+async function convertPresentationToImages(inputPath, outputPath, originalName, target, options = {}) {
   const { convertWithLibreOffice } = require("./office-convert");
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ppt-images-"));
   try {
     const pdfPath = path.join(tempDir, "slides.pdf");
-    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf");
+    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf", options);
+    throwIfCanceled(options.signal);
     const base = safeBaseName(originalName);
-    const emitted = await emitPdfPageImages(pdfPath, base, target);
+    const emitted = await emitPdfPageImages(pdfPath, base, target, { signal: options.signal });
     try {
       reportConversionProgress({ stage: "converting" });
       await zipFiles(
@@ -1844,13 +1861,14 @@ async function convertPresentationToImages(inputPath, outputPath, originalName, 
 
 // 演示文稿 -> HTML：LibreOffice 的 pptx->html 导出过滤器在本便携版只输出空页面框架，
 // 因此改为 LO 转 PDF 后用 PDF.js 提取每页文字，生成带标题的可读 HTML。
-async function convertPresentationToHtml(inputPath, outputPath, originalName) {
+async function convertPresentationToHtml(inputPath, outputPath, originalName, options = {}) {
   const { convertWithLibreOffice } = require("./office-convert");
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-ppt-html-"));
   try {
     const pdfPath = path.join(tempDir, "slides.pdf");
-    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf");
-    const pages = await extractPdfRowsByPage(pdfPath);
+    await convertWithLibreOffice(inputPath, pdfPath, originalName, "pdf", options);
+    throwIfCanceled(options.signal);
+    const pages = await extractPdfRowsByPage(pdfPath, { signal: options.signal });
     const visibleText = pages.flatMap((page) => page.rows.flat()).join(" ").trim();
     if (!visibleText) {
       throw new OfficeQualityError("PRESENTATION_HTML_EMPTY", {
@@ -1887,7 +1905,16 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
   try {
     const images = [];
     const pending = new Promise((resolve, reject) => {
+      let failed = false;
+      // 失败时先关闭读取器再拒绝：暂存目录会被清理，但未关闭的 fd 一直留到进程结束。
+      const fail = (error) => {
+        if (failed) return;
+        failed = true;
+        try { zipfile.close(); } catch { /* 保持原始错误 */ }
+        reject(error);
+      };
       zipfile.on("entry", (entry) => {
+        if (failed) return;
         const baseName = path.posix.basename(entry.fileName);
         const ext = path.posix.extname(baseName).toLowerCase().replace(".", "");
         const safeName = sanitize(baseName) || `file-${images.length}`;
@@ -1895,10 +1922,11 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
           const outPath = path.join(tempDir, `${images.length}-${safeName}`);
           readZipEntryToFile(zipfile, entry, outPath)
             .then(() => {
+              if (failed) return;
               images.push({ inputPath: outPath, originalName: safeName });
               zipfile.readEntry();
             })
-            .catch(reject);
+            .catch(fail);
           return;
         }
         zipfile.readEntry();
@@ -1907,7 +1935,7 @@ async function convertZipImagesToPdf(inputPath, outputPath) {
         zipfile.close();
         resolve();
       });
-      zipfile.on("error", reject);
+      zipfile.on("error", fail);
       zipfile.readEntry();
     });
     await pending;

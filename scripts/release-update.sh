@@ -24,7 +24,9 @@ if [[ "${1:-}" == "--check" ]]; then CHECK_ONLY=1; fi
 command -v node >/dev/null || die "node 不在 PATH（需 D:\\Program Files\\nodejs）"
 command -v gh >/dev/null || die "gh CLI 未安装"
 gh auth status >/dev/null 2>&1 || die "gh 未登录"
-[[ -d node_modules/electron-updater ]] || die "缺少 electron-updater 依赖，先 npm install"
+# 本项目已移除 electron-updater（见 docs/分发与合规规范.md），不再要求该依赖；
+# 仅校验构建产物所需的 electron-builder 是否已安装。
+[[ -d node_modules/electron-builder ]] || die "缺少 electron-builder 依赖，先 npm ci"
 
 VERSION=$(node -p "require('./package.json').version")
 log "当前版本: v$VERSION"
@@ -73,7 +75,8 @@ log "产物 OK: $EXE / latest.yml(v$LATEST_VER) / $(basename "$BLOCKMAP")"
 if [[ -z "$TAG_COMMIT" ]]; then
   log "创建并推送 tag $TAG"
   git tag "$TAG"
-  git -c http.proxy=http://127.0.0.1:7897 push origin "$TAG"
+  # 代理交给 git 全局配置；写死本机端口会让没有该代理的机器停在「tag 已建、Release 未建」。
+  git push origin "$TAG"
 fi
 
 NOTES="## FlyingMouse Format v$VERSION

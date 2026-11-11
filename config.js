@@ -6,7 +6,13 @@ const os = require("os");
 const path = require("path");
 
 const ROOT = __dirname;
-const DEFAULT_PORT = Number(process.env.PORT || 5177);
+// PORT 覆盖只接受合法端口；非数字或越界时回落到默认端口，避免 listen(NaN)
+// 抛 ERR_SOCKET_BAD_PORT 让 `node server.js` 直接起不来。
+function resolveDefaultPort(value, fallback = 5177) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : fallback;
+}
+const DEFAULT_PORT = resolveDefaultPort(process.env.PORT);
 const RUNTIME_DIR = process.env.FLYINGMOUSE_RUNTIME_DIR || path.join(os.tmpdir(), "flyingmouse-format-runtime");
 const UPLOAD_DIR = path.join(RUNTIME_DIR, "uploads");
 const OUTPUT_DIR = path.join(RUNTIME_DIR, "converted");
