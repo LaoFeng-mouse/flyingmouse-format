@@ -75,6 +75,7 @@ const pdfGroupSize = document.querySelector("#pdfGroupSize");
 const imagePdfModeField = document.querySelector("#imagePdfModeField");
 const imagePdfMode = document.querySelector("#imagePdfMode");
 const convertButton = document.querySelector("#convertButton");
+const cancelButton = document.querySelector("#cancelButton");
 const clearButton = document.querySelector("#clearButton");
 const statusBox = document.querySelector("#statusBox");
 const downloadButton = document.querySelector("#downloadButton");
@@ -134,6 +135,8 @@ const messages = {
     "upload.limited": "PDF 表格可以转 Excel；Office/WPS 需要内置 LibreOffice",
     "upload.markdownLimited": "Markdown 转 Word/PDF 暂不可用：文档引擎缺失或无法启动，请修复安装。",
     "action.clear": "清空", "action.convert": "开始转换", "action.download": "下载转换后的文件",
+    "action.cancel": "取消转换", "status.canceled": "已取消转换，原文件未修改。",
+    "status.canceling": "正在取消，等待当前步骤结束…",
     "action.save": "保存", "action.saveAll": "保存全部",
     "target.label": "目标格式",
     "target.placeholder": "先选择文件", "target.analyzing": "正在识别", "target.none": "无共同目标格式",
@@ -185,6 +188,8 @@ const messages = {
     "upload.limited": "PDF tables can be converted to Excel; Office/WPS needs bundled LibreOffice",
     "upload.markdownLimited": "Markdown to Word/PDF is unavailable: the document engine is missing or cannot start. Repair the installation.",
     "action.clear": "Clear", "action.convert": "Convert", "action.download": "Download converted file",
+    "action.cancel": "Cancel conversion", "status.canceled": "Conversion canceled; the source file is unchanged.",
+    "status.canceling": "Canceling; waiting for the current step to stop…",
     "action.save": "Save", "action.saveAll": "Save all",
     "target.label": "Target format",
     "target.placeholder": "Select files first", "target.analyzing": "Detecting", "target.none": "No common target format",
@@ -300,16 +305,21 @@ const statusLabels = {
   pending: "等待",
   converting: "转换中",
   success: "完成",
-  error: "失败"
+  error: "失败",
+  canceled: "已取消"
 };
 
 const englishLabels = {
   image: "Image", text: "Text", subtitle: "Subtitle", document: "Word/WPS document", spreadsheet: "Excel/WPS spreadsheet",
   presentation: "PPT/WPS presentation", pdf: "PDF", audio: "Audio", video: "Video", any: "Any file", unknown: "Unknown type"
 };
-const englishStatusLabels = { pending: "Waiting", converting: "Converting", success: "Complete", error: "Failed" };
+const englishStatusLabels = { pending: "Waiting", converting: "Converting", success: "Complete", error: "Failed", canceled: "Canceled" };
 const categoryLabel = (key) => i18n.language === "en-US" ? (englishLabels[key] || englishLabels.unknown) : (labels[key] || labels.unknown);
 const batchStatusLabel = (key) => i18n.language === "en-US" ? (englishStatusLabels[key] || "Waiting") : (statusLabels[key] || statusLabels.pending);
+// 合并队列的行文案；两边共用一份，避免语言切换后残留另一种语言。
+const mergedDetail = (kind, fileName = "") => i18n.language === "en-US"
+  ? (kind === "merging" ? "Merging into PDF" : `Merged into ${fileName}`)
+  : (kind === "merging" ? "正在合并到 PDF" : `已合并到 ${fileName}`);
 
 function extensionOf(name) {
   const parts = String(name || "").split(".");
@@ -463,10 +473,44 @@ function finishConversionProgress() {
 
 // POST owns the result. Polling only describes its current stage; stale or
 // unavailable progress must never complete, fail or mutate another request.
+// 取消感知：用户点取消或看门狗判定停滞后，把 abort 归一成可展示的取消错误，
+// 让每个文件的 catch 分支和批量汇总都能区分「失败」与「已取消」。
+function cancellationError() {
+  const error = new Error(i18n.language === "en-US" ? "Conversion canceled." : "转换已取消。");
+  error.code = "CONVERSION_CANCELED";
+  return error;
+}
+
+function isCancellation(error) {
+  return error?.code === "CONVERSION_CANCELED" || error?.name === "AbortError";
+}
+
+// 停滞判定：只有当进度快照连续这么久没有任何变化时才中断。取值远高于
+// LibreOffice 的 10 分钟内部上限，避免误杀合法长任务，只兜住真正卡死的请求。
+const CONVERSION_STALL_TIMEOUT_MS = 30 * 60 * 1000;
+const CONVERSION_STALL_CHECK_MS = 30 * 1000;
+
+let activeConversion = null;
+
+function cancelActiveConversion() {
+  if (!activeConversion) return false;
+  activeConversion.canceledByUser = true;
+  activeConversion.controller.abort();
+  return true;
+}
+
 async function postConversionWithProgress(url, form) {
   stopProgressRequest();
   const run = state.progressRun;
   const request = { id: crypto.randomUUID(), controller: new AbortController(), timer: null, closed: false };
+  const operation = {
+    controller: new AbortController(),
+    canceledByUser: false,
+    lastProgressAt: Date.now(),
+    lastSignature: "",
+    stallTimer: null
+  };
+  activeConversion = operation;
   state.progressRequest = request;
   const current = () => !request.closed && state.progressRequest === request && state.progressRun === run;
   const poll = async () => {
@@ -475,6 +519,11 @@ async function postConversionWithProgress(url, form) {
       if (response.ok && current()) {
         const snapshot = await response.json();
         if (current() && snapshot?.id === request.id) {
+          const signature = `${snapshot.status}|${snapshot.stage}|${snapshot.completed}|${snapshot.total}|${snapshot.unit}`;
+          if (signature !== operation.lastSignature) {
+            operation.lastSignature = signature;
+            operation.lastProgressAt = Date.now();
+          }
           if (snapshot.status === "running" && Object.hasOwn(progressStages, snapshot.stage)) {
             setStageProgress(snapshot.stage, snapshot.completed, snapshot.total, snapshot.unit);
           } else if (snapshot.status === "succeeded" || snapshot.status === "failed") {
@@ -485,15 +534,44 @@ async function postConversionWithProgress(url, form) {
     } catch { /* A missing progress response is not a failed conversion. */ }
     finally { if (current()) request.timer = setTimeout(poll, 500); }
   };
+  operation.stallTimer = setInterval(() => {
+    if (Date.now() - operation.lastProgressAt < CONVERSION_STALL_TIMEOUT_MS) return;
+    operation.stalled = true;
+    operation.controller.abort();
+  }, CONVERSION_STALL_CHECK_MS);
   try {
     setStageProgress("uploading");
-    const responsePromise = fetch(url, { method: "POST", body: form, headers: { "X-FlyingMouse-Progress-Id": request.id } });
+    const responsePromise = fetch(url, {
+      method: "POST", body: form,
+      headers: { "X-FlyingMouse-Progress-Id": request.id },
+      // 取消即断开连接：服务端 res 'close' 会触发该请求的 AbortController。
+      signal: operation.controller.signal
+    });
     void poll();
     const response = await responsePromise;
     const result = await parseResponse(response);
     if (!response.ok) throw responseError(result, response.status);
+    // 2xx 但正文被截断/为空时，downloadUrl 会缺失，界面会显示「保存 undefined」
+    // 并把服务端已登记的结果变成拿不回的孤儿文件。这里统一视为失败。
+    if (!result || typeof result.downloadUrl !== "string" || !result.downloadUrl) {
+      throw new Error(i18n.language === "en-US"
+        ? "The server returned an incomplete result. Convert the file again."
+        : "服务器返回的结果不完整，请重新转换。");
+    }
     return result;
-  } finally { stopProgressRequest(request); }
+  } catch (error) {
+    if (operation.canceledByUser || operation.stalled || error?.name === "AbortError") {
+      if (operation.stalled && !operation.canceledByUser) {
+        rendererLog("warn", "转换请求停滞超时，已中断");
+      }
+      throw cancellationError();
+    }
+    throw error;
+  } finally {
+    clearInterval(operation.stallTimer);
+    if (activeConversion === operation) activeConversion = null;
+    stopProgressRequest(request);
+  }
 }
 
 function resetProgress() {
@@ -587,8 +665,13 @@ function clearFile() {
   batchList.replaceChildren();
   setSelectPlaceholder(targetSelect, "", t("target.placeholder"));
   if (textEncoding) textEncoding.value = "auto";
+  // PDF/多图相关控件必须按「无文件」重新计算可见性；否则清空后仍显示
+  // 密码、拆分方式等只对已选文件有意义的字段。
   syncVideoCodecField();
+  syncPdfActionFields();
+  syncImagePdfModeField();
   syncPdfExcelHint();
+  if (pdfPassword) pdfPassword.value = "";
   targetSelect.disabled = true;
   convertButton.disabled = true;
   resetDownload();
@@ -739,7 +822,7 @@ function renderBatchList() {
 
   batchList.hidden = false;
   const entries = state.files.map((file, index) => {
-    const result = state.batchResults[index] || { status: "pending", detail: "等待转换" };
+    const result = state.batchResults[index] || { status: "pending", detail: "" };
     const article = document.createElement("article");
     article.className = `batch-item ${result.status}`;
 
@@ -827,7 +910,7 @@ function moveFileInQueue(index, direction) {
 
 function setBatchResult(index, patch) {
   state.batchResults[index] = {
-    ...(state.batchResults[index] || { status: "pending", detail: "等待转换" }),
+    ...(state.batchResults[index] || { status: "pending", detail: "" }),
     ...patch
   };
   renderBatchList();
@@ -947,6 +1030,8 @@ async function acceptFiles(fileList, options = {}) {
   state.files = files;
   state.fileInfos = [];
   if (textEncoding) textEncoding.value = "auto";
+  // 新选择不得沿用上一份文档的 PDF 密码（否则会拿旧口令加密/解密新文件）。
+  if (pdfPassword) pdfPassword.value = "";
   if (textEncodingField) textEncodingField.hidden = true;
   // 文件夹名：来自 <input webkitdirectory> 或拖入文件夹时 File.webkitRelativePath
   // 的第一个路径段（如 "相册2026/001.jpg" -> "相册2026"），用于图片合并 PDF 命名。
@@ -954,7 +1039,7 @@ async function acceptFiles(fileList, options = {}) {
   const folderName = firstRel ? firstRel.webkitRelativePath.split("/")[0] : "";
   state.folderName = folderName && folderName !== firstRel.webkitRelativePath ? folderName : (options.folderName || "");
   resetDownload();
-  state.batchResults = files.map(() => ({ status: "pending", detail: "等待转换" }));
+  state.batchResults = files.map(() => ({ status: "pending", detail: "" }));
   resetProgress();
   setMouseState(files.length > 1 ? "batch" : "analyzing");
   setWorkflowStep("analyze");
@@ -1114,7 +1199,7 @@ async function convertImagesToPdf(files, folderName) {
 
 async function convertMergedImagesToPdf(files, folderName) {
   files.forEach((_file, index) => {
-    setBatchResult(index, { status: "converting", detail: "正在合并到 PDF" });
+    setBatchResult(index, { status: "converting", detail: mergedDetail("merging") });
   });
   setStageProgress("preparing");
 
@@ -1122,7 +1207,7 @@ async function convertMergedImagesToPdf(files, folderName) {
     const result = await convertImagesToPdf(files, folderName);
     state.batchResults = files.map((_file, index) => ({
       status: "success",
-      detail: index === 0 ? result.fileName : `已合并到 ${result.fileName}`,
+      detail: index === 0 ? result.fileName : mergedDetail("merged", result.fileName),
       result: index === 0 ? result : null
     }));
     renderBatchList();
@@ -1138,14 +1223,22 @@ async function convertMergedImagesToPdf(files, folderName) {
     setMouseState("success");
     setWorkflowStep("save");
   } catch (error) {
-    state.batchResults = files.map(() => ({
-      status: "error",
-      detail: error.message || "合并 PDF 失败"
-    }));
-    renderBatchList();
-    setProgress(null, () => i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
-    setStatus(() => i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
+    if (isCancellation(error)) {
+      state.batchResults = files.map(() => ({ status: "canceled", detail: t("status.canceled") }));
+      renderBatchList();
+      setProgress(null, () => t("status.canceled"), "");
+      setStatus(() => t("status.canceled"));
+      setMouseState("upload");
+    } else {
+      state.batchResults = files.map(() => ({
+        status: "error",
+        detail: error.message || "合并 PDF 失败"
+      }));
+      renderBatchList();
+      setProgress(null, () => i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
+      setStatus(() => i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
+      setMouseState("error");
+    }
   } finally {
     setConversionBusy(false);
   }
@@ -1178,7 +1271,7 @@ async function convertPdfsToMerged(files) {
 
 async function convertMergedPdfs(files) {
   files.forEach((_file, index) => {
-    setBatchResult(index, { status: "converting", detail: "正在合并到 PDF" });
+    setBatchResult(index, { status: "converting", detail: mergedDetail("merging") });
   });
   setStageProgress("preparing");
 
@@ -1186,7 +1279,7 @@ async function convertMergedPdfs(files) {
     const result = await convertPdfsToMerged(files);
     state.batchResults = files.map((_file, index) => ({
       status: "success",
-      detail: index === 0 ? result.fileName : `已合并到 ${result.fileName}`,
+      detail: index === 0 ? result.fileName : mergedDetail("merged", result.fileName),
       result: index === 0 ? result : null
     }));
     renderBatchList();
@@ -1202,14 +1295,22 @@ async function convertMergedPdfs(files) {
     setMouseState("success");
     setWorkflowStep("save");
   } catch (error) {
-    state.batchResults = files.map(() => ({
-      status: "error",
-      detail: error.message || "合并 PDF 失败"
-    }));
-    renderBatchList();
-    setProgress(null, () => i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
-    setStatus(() => i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
-    setMouseState("error");
+    if (isCancellation(error)) {
+      state.batchResults = files.map(() => ({ status: "canceled", detail: t("status.canceled") }));
+      renderBatchList();
+      setProgress(null, () => t("status.canceled"), "");
+      setStatus(() => t("status.canceled"));
+      setMouseState("upload");
+    } else {
+      state.batchResults = files.map(() => ({
+        status: "error",
+        detail: error.message || "合并 PDF 失败"
+      }));
+      renderBatchList();
+      setProgress(null, () => i18n.language === "en-US" ? "Merge failed" : "合并失败", "error");
+      setStatus(() => i18n.language === "en-US" ? `PDF merge failed: ${error.message || "Unknown error"}` : `合并 PDF 失败：${error.message || "未知错误"}`, "error");
+      setMouseState("error");
+    }
   } finally {
     setConversionBusy(false);
   }
@@ -1225,6 +1326,12 @@ function setConversionBusy(busy) {
   }
   convertButton.disabled = busy || !state.files.length || !targetSelect.value;
   targetSelect.disabled = busy || !state.files.length;
+  // 取消只在转换进行中可用；隐藏而非禁用，避免空闲时占位。
+  if (cancelButton) {
+    cancelButton.hidden = !busy;
+    cancelButton.disabled = !busy;
+    cancelButton.textContent = t("action.cancel");
+  }
   dropZone.setAttribute("aria-disabled", String(busy));
 }
 
@@ -1255,7 +1362,7 @@ async function convertCurrentFiles() {
     setConversionBusy(true);
     beginConversionProgress(files.length);
     resetDownload();
-    state.batchResults = files.map(() => ({ status: "pending", detail: "等待转换" }));
+    state.batchResults = files.map(() => ({ status: "pending", detail: "" }));
     renderBatchList();
     setMouseState(mouseStateForConversion(targetFormat));
     setStageProgress("preparing");
@@ -1280,6 +1387,7 @@ async function convertCurrentFiles() {
 
     let successCount = 0;
     let failCount = 0;
+    let canceled = false;
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       setBatchResult(index, { status: "converting", detail: i18n.language === "en-US" ? `Converting to ${targetFormat.toUpperCase()}` : `正在转换为 ${targetFormat.toUpperCase()}` });
@@ -1294,6 +1402,18 @@ async function convertCurrentFiles() {
         if (warnings.length) detail += ` — ${warnings.join("；")}`;
         setBatchResult(index, { status: "success", detail, result, elapsedMs: performance.now() - fileStartedAt });
       } catch (error) {
+        if (isCancellation(error)) {
+          // 取消后不再继续后面的文件：后面的引擎调用同样会被立即中断，
+          // 只会刷出一串相同错误。剩余项保持「等待」并标记已取消。
+          canceled = true;
+          setBatchResult(index, { status: "canceled", detail: t("status.canceled"), elapsedMs: performance.now() - fileStartedAt });
+          for (let rest = index + 1; rest < files.length; rest += 1) {
+            if (state.batchResults[rest]?.status === "pending") {
+              setBatchResult(rest, { status: "canceled", detail: t("status.canceled") });
+            }
+          }
+          break;
+        }
         failCount += 1;
         rendererLog("warn", `转换失败: "${file.name || "未知文件"}" -> ${targetFormat}: ${error.message || error}`);
         setBatchResult(index, { status: "error", detail: error.message || (i18n.language === "en-US" ? "Unknown error" : "未知错误"), elapsedMs: performance.now() - fileStartedAt });
@@ -1301,10 +1421,12 @@ async function convertCurrentFiles() {
     }
 
     const completed = successCount + failCount;
-    const type = failCount ? "error" : "success";
-    setProgress(files.length === 1 && failCount ? null : 100, () => i18n.language === "en-US"
-      ? (failCount ? `Processed ${completed}/${files.length}; ${failCount} failed` : "Conversion complete")
-      : (failCount ? `已处理 ${completed}/${files.length}，失败 ${failCount} 个` : "转换完成"), type);
+    const type = canceled ? "" : (failCount ? "error" : "success");
+    setProgress(canceled ? null : (files.length === 1 && failCount ? null : 100), () => canceled
+      ? t("status.canceled")
+      : (i18n.language === "en-US"
+        ? (failCount ? `Processed ${completed}/${files.length}; ${failCount} failed` : "Conversion complete")
+        : (failCount ? `已处理 ${completed}/${files.length}，失败 ${failCount} 个` : "转换完成")), type);
 
     state.batchResults = [...state.batchResults];
     const successful = state.batchResults.filter((item) => item.status === "success" && item.result);
@@ -1323,10 +1445,14 @@ async function convertCurrentFiles() {
     if (successful.length) {
       setWorkflowStep("save");
     }
-    setStatus(() => i18n.language === "en-US"
-      ? (failCount ? `Batch complete: ${successCount} succeeded, ${failCount} failed. Details appear beside each file. ${t("feedback.hint")}` : `Batch complete: ${successCount} succeeded.`)
-      : (failCount ? `批量转换完成：成功 ${successCount} 个，失败 ${failCount} 个。失败原因已显示在对应文件旁边。${t("feedback.hint")}` : `批量转换完成：成功 ${successCount} 个。`),
-    failCount ? (successCount ? "" : "error") : "success");
+    setStatus(() => canceled
+      ? (successCount
+        ? (i18n.language === "en-US" ? `Canceled. ${successCount} file(s) had already finished and can still be saved.` : `已取消。已完成的 ${successCount} 个文件仍可保存。`)
+        : t("status.canceled"))
+      : (i18n.language === "en-US"
+        ? (failCount ? `Batch complete: ${successCount} succeeded, ${failCount} failed. Details appear beside each file. ${t("feedback.hint")}` : `Batch complete: ${successCount} succeeded.`)
+        : (failCount ? `批量转换完成：成功 ${successCount} 个，失败 ${failCount} 个。失败原因已显示在对应文件旁边。${t("feedback.hint")}` : `批量转换完成：成功 ${successCount} 个。`)),
+    canceled ? "" : (failCount ? (successCount ? "" : "error") : "success"));
   } finally {
     try { finishConversionProgress(); } finally { setConversionBusy(false); }
   }
@@ -1685,7 +1811,7 @@ function insertBlankPage(index) {
   const at = Math.min(index + 1, state.files.length);
   state.files.splice(at, 0, blankPage);
   state.fileInfos.splice(at, 0, { extension: "", category: "image", targets: ["pdf"], experimental: false });
-  state.batchResults.splice(at, 0, { status: "pending", detail: "等待转换" });
+  state.batchResults.splice(at, 0, { status: "pending", detail: "" });
   refreshImagePdfQueue();
 }
 
@@ -1700,6 +1826,17 @@ function removeBlankPage(index) {
 
 clearButton.addEventListener("click", clearFile);
 convertButton.addEventListener("click", convertCurrentFiles);
+if (cancelButton) {
+  cancelButton.addEventListener("click", () => {
+    if (!state.isConverting) return;
+    // 不在这里复位 UI：等 POST 真正中断后由各自的 catch/finally 收尾，
+    // 否则其余文件的队列状态会停在「转换中」。
+    setStatus(() => t("status.canceling"), "warn");
+    cancelActiveConversion();
+  });
+}
+// 关窗/刷新时断开未完成的 POST，让服务端按连接关闭取消引擎，避免遗留进程。
+window.addEventListener("beforeunload", () => { cancelActiveConversion(); });
 // P2（2026-09-10 复核）：设置写盘失败不得再打断用户操作。旧回调直接
 // await updateSettings 并拿返回值覆盖 state.settings——IPC 一抛错，语言切换
 // 后面的 refreshLanguage() 被跳过、默认格式更新丢失内存值。统一策略与 S1 启动

@@ -163,10 +163,16 @@ async function prepareImageInput(inputPath, inputName) {
     const { width, height, channels, data } = decodeBmpToRaw(await fsp.readFile(inputPath));
     const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "flyingmouse-bmp-input-"));
     const pngPath = path.join(tempDir, "decoded.png");
-    await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
-      .png()
-      .toFile(pngPath);
-    return { inputPath: pngPath, tempDir };
+    try {
+      await sharp(data, { raw: { width, height, channels }, limitInputPixels: LIMITS.maxImagePixels })
+        .png()
+        .toFile(pngPath);
+      return { inputPath: pngPath, tempDir };
+    } catch (error) {
+      // 与 ICO/HEIC/ffmpeg 分支一致：失败时不留中转目录。
+      await fsp.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      throw error;
+    }
   }
 
   if (isHeicFileSync(inputPath)) {

@@ -33,6 +33,8 @@ function harness({ targets, convert } = {}) {
     summarizeFiles: files => ({ name: files.map(file => file.name).join(", "), meta: "" }),
     extensionOf: name => name.split(".").at(-1), preferredTarget: () => null,
     categoryLabel: value => value, isLongTaskTarget: () => false,
+    isCancellation: error => error?.code === "CONVERSION_CANCELED" || error?.name === "AbortError",
+    mergedDetail: (kind, fileName = "") => kind === "merging" ? "Merging into PDF" : `Merged into ${fileName}`,
     mouseStateForConversion: () => "converting", rendererLog() {},
     setMouseState() {}, setWorkflowStep() {}, resetProgress() {}, setProgress() {},
     setStageProgress() {}, beginConversionProgress() {}, finishConversionProgress() {}, closePreview() {}, renderBatchList() {},
@@ -50,7 +52,7 @@ function harness({ targets, convert } = {}) {
     }
   });
   for (const name of ["fileInput", "folderInput", "dropZone", "chooseFolderButton", "clearButton", "fileName", "fileMeta", "fileStrip",
-    "batchList", "targetSelect", "convertButton", "downloadButton", "batchSaveButton", "previewButton", "videoCodec", "alphaBackground",
+    "batchList", "targetSelect", "convertButton", "cancelButton", "downloadButton", "batchSaveButton", "previewButton", "videoCodec", "alphaBackground",
     "pdfPassword", "pdfAction", "pdfSplitMode", "pdfGroupSize", "imagePdfMode", "textEncoding", "textEncodingField"]) context[name] = element();
   context.targetSelect.disabled = true;
   context.convertButton.disabled = true;

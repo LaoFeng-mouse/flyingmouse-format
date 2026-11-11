@@ -41,7 +41,7 @@ async function fixture(t, { fail = false, prepareOffice = true, officeProbe } = 
   const exported = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(appRoot, "server.js"), "utf8"), {
     __dirname: appRoot, module: exported, exports: exported.exports, process, Buffer, console,
-    setInterval, clearInterval, setTimeout, clearTimeout, URL,
+    setInterval, clearInterval, setTimeout, clearTimeout, URL, AbortController,
     require: name => Object.hasOwn(overrides, name) ? overrides[name]
       : name.startsWith("./") ? require(path.join(appRoot, name)) : require(name)
   });

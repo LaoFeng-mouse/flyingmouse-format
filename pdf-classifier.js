@@ -1,5 +1,7 @@
 const fsp = require("node:fs/promises");
 const { loadPdfjs, getPdfjsDocumentOptions } = require("./pdfjs");
+const { assertPdfPages } = require("./resource-policy");
+const { throwIfCanceled } = require("./conversion-cancellation");
 
 const MIN_NATIVE_CHARACTERS = 24;
 const MIN_PRINTABLE_RATIO = 0.8;
@@ -359,7 +361,7 @@ async function ocrImageCoverageFromOperators(operatorList, OPS, viewport, object
   return count ? 0 : coverage;
 }
 
-async function classifyPdf(inputPath) {
+async function classifyPdf(inputPath, options = {}) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await fsp.readFile(inputPath));
   const loadingTask = pdfjs.getDocument(getPdfjsDocumentOptions({
@@ -371,8 +373,12 @@ async function classifyPdf(inputPath) {
 
   try {
     const pdf = await loadingTask.promise;
+    // 分类要逐页取算子列表；没有页数预算时超长 PDF 会让请求无限期挂住
+    // （该路径没有子进程超时），其它 PDF 链路都先做同样的准入检查。
+    assertPdfPages(pdf.numPages);
     const pages = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      throwIfCanceled(options.signal);
       const page = await pdf.getPage(pageNumber);
       const viewport = page.getViewport({ scale: 1 });
       const [textContent, operatorList] = await Promise.all([

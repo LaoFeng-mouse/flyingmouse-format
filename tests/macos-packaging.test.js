@@ -155,8 +155,8 @@ test("macOS engine preparation uses native arm64 and Intel runners and validates
   assert.match(workflow, /node scripts\/validate-ci-engines\.js/);
   assert.match(workflow, /file .*runtime\/bin\/(?:ffmpeg|pdftoppm)/);
   assert.match(workflow, /sha256/);
-  assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.match(workflow, /actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
   assert.match(workflow, /sha256sum/);
   assert.match(workflow, /gh release upload ci-engines-v1/);
   assert.doesNotMatch(workflow, /--clobber/);
@@ -197,5 +197,5 @@ test("CI and release workflows declare native macOS quality and DMG gates", () =
   assert.match(release, /file .*\.app\/Contents\/MacOS/);
   assert.match(release, /codesign --verify/);
   assert.match(release, /Signature=adhoc\|code object is not signed at all/);
-  assert.match(release, /actions\/upload-artifact@v4/);
+  assert.match(release, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
 });

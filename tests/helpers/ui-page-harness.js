@@ -96,7 +96,14 @@ async function pageHarness(convert, bridge = {}, services = {}) {
       if (["/api/convert", "/api/convert-images-to-pdf", "/api/merge-pdfs"].includes(url)) {
         const file = options.body.get("file") || options.body.getAll('files')[0]; requests.push(file.name);
         conversionHeaders.push(options.headers);
-        const result = await convert(file, requests.length, url, options.body);
+        // 与真实 fetch 一致：请求被 abort 时以 AbortError 拒绝，供取消路径测试使用。
+        const aborted = new Promise((_, reject) => {
+          if (!options.signal) return;
+          options.signal.addEventListener("abort", () => {
+            reject(Object.assign(new Error("The operation was aborted."), { name: "AbortError" }));
+          }, { once: true });
+        });
+        const result = await Promise.race([convert(file, requests.length, url, options.body), aborted]);
         return response(result.body, result.status);
       }
       throw new Error(`Unexpected HTTP request: ${url}`);

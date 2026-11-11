@@ -104,7 +104,12 @@ try {
     if (Test-Path -LiteralPath $destination) {
       # bin/avs3 因 .gitignore 例外被 git 跟踪，CI checkout 自带；其内容与引擎 bundle 一致
       # （bundle 由本机 bin/ 打包），直接复用，避免 Move-Item 冲突。
-      Write-Host "Skipping existing engine directory: $directory (already present)"
+      # 其余引擎目录必须来自本次校验过的 bundle：静默复用会让 SHA-256 门禁形同失效，
+      # 打包进去的是未经验证的旧引擎，因此这里直接失败并提示清理。
+      if ($directory -ne "avs3") {
+        throw "bin/$directory already exists; remove it before restoring the SHA-pinned engines."
+      }
+      Write-Host "Reusing tracked avs3 engine directory (git-tracked, identical to the bundle)."
       continue
     }
     Move-Item -LiteralPath (Join-Path $stage $directory) -Destination $destination

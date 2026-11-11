@@ -149,7 +149,8 @@ function parseAss(source, format, warnings) {
   let section = "";
   let fields = null;
   const cues = [];
-  for (const raw of source.replace(/\r\n?/g, "\n").split("\n")) {
+  // 与 parseBlocks 一致：带 UTF-8 BOM 的 ASS/SSA 首行会被当成章节外的内容而报错。
+  for (const raw of source.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "").split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith(";")) continue;
     const heading = line.match(/^\[([^\]]+)\]$/);

@@ -1,6 +1,7 @@
 const { execFile, spawn } = require("node:child_process");
 const path = require("node:path");
 const ownedTasks = require("./owned-tasks");
+const { cancellationError } = require("./conversion-cancellation");
 const MAX_BUFFER = 1024 * 1024;
 
 // soffice.com owns a soffice.bin child. execFile's built-in timeout kills only
@@ -28,6 +29,7 @@ function defaultExecutor(command, args, options = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
       const captured = {
         stdout: Buffer.concat(output.stdout, lengths.stdout).toString("utf8"),
         stderr: Buffer.concat(output.stderr, lengths.stderr).toString("utf8")
@@ -92,6 +94,13 @@ function defaultExecutor(command, args, options = {}) {
         code, killed: Boolean(signal)
       }));
     });
+    // Cancellation must go through the same tree-terminating path as a timeout:
+    // killing only the launcher on Windows leaves soffice.bin and its profile lock.
+    function onAbort() {
+      if (!settled) stop(cancellationError());
+    }
+    if (options.signal?.aborted) { onAbort(); return; }
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     const timeout = options.timeout;
     if (Number.isFinite(timeout) && timeout > 0) timer = setTimeout(() => {
       stop(Object.assign(new Error("LibreOffice process exceeded its deadline"), {

@@ -4,9 +4,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const sharp = require('sharp');
 const { loadPdfjs, getPdfjsDocumentOptions } = require('./pdfjs');
+const { throwIfCanceled } = require('./conversion-cancellation');
 
 const MAX_IMAGE_PIXELS = 50_000_000;
 const MAX_PAGE_PIXELS = 100_000_000;
+// pdf.js 对未能解析的图像对象只会挂起回调，不会报错。没有上限时整次扫描件
+// OCR 会永久停在这里；超时按「区域不可用」降级到整页渲染。
+const IMAGE_OBJECT_TIMEOUT_MS = 10000;
 const IDENTITY = [1, 0, 0, 1, 0, 0];
 function multiply(a, b) {
   return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1], a[0]*b[2]+a[2]*b[3],
@@ -73,7 +77,7 @@ async function imageToPng(image, ImageKind, outputPath) {
   return true;
 }
 
-async function extractPdfScanRegions(inputPath, nativePages, directory) {
+async function extractPdfScanRegions(inputPath, nativePages, directory, options = {}) {
   const lib=await loadPdfjs();
   const task=lib.getDocument(getPdfjsDocumentOptions({ data:new Uint8Array(await fs.readFile(inputPath)), disableFontFace:true,
     useSystemFonts:true, isEvalSupported:false, maxImageSize:MAX_IMAGE_PIXELS }));
@@ -81,6 +85,7 @@ async function extractPdfScanRegions(inputPath, nativePages, directory) {
   try {
     const pdf=await task.promise;
     for (const native of nativePages) {
+      throwIfCanceled(options.signal);
       const page=await pdf.getPage(native.pageNumber);
       try {
         const viewport=page.getViewport({scale:1,rotation:page.rotate || 0});
@@ -88,7 +93,12 @@ async function extractPdfScanRegions(inputPath, nativePages, directory) {
         const regions=[];
         for (let i=0;i<placements.length;i++) {
           const placement=placements[i];
-          const image=await new Promise(resolve=>page.objs.get(placement.id,resolve));
+          const image=await new Promise(resolve=>{
+            let timer=null;
+            const done=value=>{ if(timer) clearTimeout(timer); resolve(value); };
+            timer=setTimeout(()=>done(null),IMAGE_OBJECT_TIMEOUT_MS);
+            try { page.objs.get(placement.id, done); } catch { done(null); }
+          });
           const outputPath=path.join(directory,`scan-${native.pageNumber}-${i}.png`);
           if (!(await imageToPng(image,lib.ImageKind,outputPath))) { regions.length=0; break; }
           regions.push({ outputPath,bbox:placement.bbox });

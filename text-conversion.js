@@ -71,6 +71,9 @@ function escapeHtmlAttribute(value) {
 function isSafeMarkdownLink(href) {
   const value = String(href || "").trim();
   if (!value) return false;
+  // 以 // 开头的协议相对地址在本地导出的 HTML 里会解析成 file://host（UNC），
+  // 打开文档时可能触发外部 SMB 连接；与 isSafeMarkdownImage 保持一致地拒绝。
+  if (value.startsWith("//")) return false;
   if (/^(?:https?:|mailto:)/i.test(value)) return true;
   return /^(?:#|\/|\.\/|\.\.\/)/.test(value);
 }

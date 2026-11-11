@@ -4,6 +4,9 @@
 //   - 元素 -> 对象；属性键加 "@" 前缀；文本存 "#text"（纯文本元素直接返回文本字符串）
 //   - 同名重复子元素 -> 数组
 // 解析失败抛 { code: "XML_JSON_PARSE_FAILED" }，避免把原始 XML 文本伪装成 JSON。
+// 解析与 model→JSON 都是递归实现；限制嵌套层级把栈溢出换成可读的解析错误。
+const MAX_XML_NESTING_DEPTH = 256;
+
 function parseError(message, position) {
   const error = new Error(`XML 解析失败：${message}${position != null ? `（位置 ${position}）` : ""}`);
   error.code = "XML_JSON_PARSE_FAILED";
@@ -74,7 +77,10 @@ function parseXmlToJson(xml) {
     return decodeXmlEntities(cleaned.slice(start, index));
   }
 
-  function parseElement() {
+  function parseElement(depth = 0) {
+    // 无上限的递归在深层嵌套 XML 上会抛 RangeError（栈溢出），
+    // 绕过 XML_JSON_PARSE_FAILED 约定并让调用方拿不到可读原因。
+    if (depth > MAX_XML_NESTING_DEPTH) throw parseError("XML 嵌套层级过深", index);
     expect("<");
     const name = readName();
     const attributes = Object.create(null);
@@ -117,7 +123,7 @@ function parseXmlToJson(xml) {
           index = end + 3;
           continue;
         }
-        children.push(parseElement());
+        children.push(parseElement(depth + 1));
       } else {
         text += readText();
       }

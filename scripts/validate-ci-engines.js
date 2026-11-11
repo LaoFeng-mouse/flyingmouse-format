@@ -15,9 +15,50 @@ function isSafeRelativePath(value) {
   return !normalized.split("/").some((part) => part === "" || part === "." || part === "..");
 }
 
+function validatePartDefinition(key, part, index) {
+  const label = `${key}[${index}]`;
+  if (!part || typeof part !== "object" || Array.isArray(part)) {
+    throw new Error(`Engine asset ${label} must be an object.`);
+  }
+  if (typeof part.assetName !== "string" || !/^[A-Za-z0-9._-]+\.tar\.zst$/.test(part.assetName)) {
+    throw new Error(`Engine asset ${label} has an invalid asset name.`);
+  }
+  if (!Array.isArray(part.requiredFiles) || part.requiredFiles.length === 0) {
+    throw new Error(`Engine asset ${label} must list required files.`);
+  }
+  for (const requiredFile of part.requiredFiles) {
+    if (!isSafeRelativePath(requiredFile)) {
+      throw new Error(`Engine asset ${label} contains an unsafe required file: ${requiredFile}`);
+    }
+  }
+  // 分卷本身不带 available：可用性由外层条目统一声明。这里只要求哈希确已固定，
+  // 未固定的分卷必须显式写成 available:false + sha256:null。
+  if (part.sha256 === null) {
+    if (part.available !== false) throw new Error(`Engine asset ${label} must declare availability for an unpinned part.`);
+    return part;
+  }
+  if (typeof part.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(part.sha256)) {
+    throw new Error(`Engine asset ${label} must contain a valid SHA-256.`);
+  }
+  return part;
+}
+
+// win32-x64 的引擎超过 GitHub 单资产上限，manifest 用 parts 声明多个分卷；
+// darwin-* 仍是单资产。两种形状都要走同一套名称/路径/SHA 校验，否则
+// --platform win32 会在 selectEngineAsset 里直接报“invalid asset name”。
 function validateAssetDefinition(key, asset) {
   if (!asset || typeof asset !== "object" || Array.isArray(asset)) {
     throw new Error(`Engine asset ${key} must be an object.`);
+  }
+  if (Array.isArray(asset.parts)) {
+    if (asset.parts.length === 0) throw new Error(`Engine asset ${key} must declare at least one part.`);
+    const parts = asset.parts.map((part, index) => validatePartDefinition(key, part, index));
+    const names = new Set();
+    for (const part of parts) {
+      if (names.has(part.assetName)) throw new Error(`Engine asset ${key} declares a duplicate part: ${part.assetName}`);
+      names.add(part.assetName);
+    }
+    return { ...asset, parts, requiredFiles: parts.flatMap((part) => part.requiredFiles) };
   }
   if (typeof asset.assetName !== "string" || !/^[A-Za-z0-9._-]+\.tar\.zst$/.test(asset.assetName)) {
     throw new Error(`Engine asset ${key} has an invalid asset name.`);
@@ -38,6 +79,12 @@ function validateAssetDefinition(key, asset) {
     throw new Error(`Engine asset ${key} must contain a valid SHA-256.`);
   }
   return asset;
+}
+
+function assetExpectedHashes(asset) {
+  return Array.isArray(asset?.parts)
+    ? asset.parts.map((part) => ({ name: part.assetName, sha256: part.sha256 }))
+    : [{ name: asset?.assetName, sha256: asset?.sha256 }];
 }
 
 function selectEngineAsset(manifest, platform, arch) {
@@ -148,8 +195,27 @@ function main(argv = process.argv.slice(2)) {
     : selectEngineAsset(manifest, options.platform, options.arch);
   if (options.bundle) {
     if (asset.available !== true) throw new Error(`Cannot verify an archive hash for unpinned ${key}.`);
-    const actualHash = sha256File(options.bundle);
-    if (actualHash !== asset.sha256) throw new Error(`Engine bundle SHA-256 mismatch. Expected ${asset.sha256}, got ${actualHash}.`);
+    const expected = assetExpectedHashes(asset);
+    if (expected.length === 1) {
+      const actualHash = sha256File(options.bundle);
+      if (actualHash !== expected[0].sha256) {
+        throw new Error(`Engine bundle SHA-256 mismatch. Expected ${expected[0].sha256}, got ${actualHash}.`);
+      }
+    } else {
+      // 多分卷：把 --bundle 当作包含各分卷的目录，逐个比对声明的 SHA-256。
+      const stats = fs.statSync(options.bundle, { throwIfNoEntry: false });
+      if (!stats?.isDirectory()) {
+        throw new Error(`Multi-volume engines require --bundle to be a directory containing ${expected.length} archives.`);
+      }
+      for (const part of expected) {
+        const candidate = path.join(options.bundle, part.name);
+        if (!fs.existsSync(candidate)) throw new Error(`Engine bundle is missing ${part.name}.`);
+        const actualHash = sha256File(candidate);
+        if (actualHash !== part.sha256) {
+          throw new Error(`Engine bundle SHA-256 mismatch for ${part.name}. Expected ${part.sha256}, got ${actualHash}.`);
+        }
+      }
+    }
   }
   validateEngineDirectory(options.root, asset);
   if (options.platform === "darwin") {

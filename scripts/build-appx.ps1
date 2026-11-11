@@ -5,7 +5,8 @@ param(
     [string]$PythonPath,
     [string]$WinUnpackedPath,
     [string]$StageDirectory,
-    [string]$MakeAppxPath = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\makeappx.exe',
+    # 留空时从已安装的 Windows SDK 里自动选取最新版本；写死单个版本会让其他 SDK 机器直接失败。
+    [string]$MakeAppxPath = '',
     [string]$MinVersion = '10.0.19041.0',
     [string]$MaxVersionTested = '10.0.26100.0'
 )
@@ -45,7 +46,21 @@ $finalOutput = [IO.Path]::GetFullPath($OutputPath)
 $packageExtension = [IO.Path]::GetExtension($finalOutput).ToLowerInvariant()
 if ($packageExtension -notin @('.appx', '.msix')) { throw 'OutputPath must end in .msix or .appx.' }
 if (Test-Path -LiteralPath $finalOutput) { throw "Output already exists; choose another OutputPath: $finalOutput" }
-if (-not (Test-Path -LiteralPath $MakeAppxPath -PathType Leaf)) { throw "MakeAppx was not found: $MakeAppxPath" }
+if (-not $MakeAppxPath) {
+    $sdkRoot = ${env:ProgramFiles(x86)}
+    if (-not $sdkRoot) { $sdkRoot = $env:ProgramFiles }
+    $sdkBinRoot = Join-Path $sdkRoot 'Windows Kits\10\bin'
+    if (Test-Path -LiteralPath $sdkBinRoot -PathType Container) {
+        $candidate = Get-ChildItem -LiteralPath $sdkBinRoot -Directory |
+            ForEach-Object { Join-Path $_.FullName 'x64\makeappx.exe' } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Sort-Object -Descending | Select-Object -First 1
+        if ($candidate) { $MakeAppxPath = $candidate }
+    }
+}
+if (-not $MakeAppxPath -or -not (Test-Path -LiteralPath $MakeAppxPath -PathType Leaf)) {
+    throw "MakeAppx was not found. Pass -MakeAppxPath with the SDK x64 makeappx.exe path."
+}
 if (-not $PythonPath) {
     foreach ($candidate in @('python', 'python3')) {
         $pythonCommand = Get-Command $candidate -ErrorAction SilentlyContinue

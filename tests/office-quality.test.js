@@ -89,7 +89,8 @@ test("server wires Office quality results into the existing warning and bilingua
   assert.match(source, /inspectXlsxForCsv\(file\.path\)/);
   assert.match(source, /conversionResult\s*=\s*await inspectXlsxForCsv/);
   // 演示文稿 HTML 已改走 LO->PDF->文本提取（不再依赖 LO 的 html 导出过滤器）
-  assert.match(source, /convertPresentationToHtml\(file\.path, outputPath, originalName\)/);
+  // 取消支持把请求 signal 一并传入；调用形态变化不再依赖固定参数表。
+  assert.match(source, /convertPresentationToHtml\(file\.path, outputPath, originalName, \{ signal \}\)/);
   assert.doesNotMatch(source, /validatePresentationHtml\(await fsp\.readFile/);
   assert.match(source, /payload\.messages\s*=\s*error\.messages/);
 });
